@@ -39,7 +39,7 @@ interface HerdrLaunchResult {
 
 export async function startRun(options: StartOptions): Promise<StartResult> {
   const runner = options.runner ?? nodeCommandRunner;
-  const result = await createRun({ ...options, withWorktrees: true, runner });
+  const result = await createRun({ ...options, withWorktrees: startRequiresWorktrees(options), runner });
   const statePath = result.statePath;
   const state = result.state;
   const launched: LaunchRef[] = [];
@@ -95,6 +95,11 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
     await writeJsonAtomic(statePath, state);
     throw error;
   }
+}
+
+function startRequiresWorktrees(options: StartOptions): boolean {
+  const selectedRoles = options.roles?.length ? options.roles : ['planner', 'implementer', 'reviewer', 'tester'];
+  return selectedRoles.includes('implementer') || Boolean(options.plannerWorktree && selectedRoles.includes('planner'));
 }
 
 export function formatStartText(result: StartResult): string {
@@ -297,7 +302,7 @@ function parsePaneMetadata(stdout: string): { paneId: string | null; workspaceId
   const parsed = parseJsonRecord(stdout);
   const records = metadataContainers(parsed);
   return {
-    paneId: stringFromRecords(records, ['pane_id', 'paneId', 'id', 'herdr_pane_id']),
+    paneId: explicitPaneIdFromRecords(records),
     workspaceId: stringFromRecords(records, ['workspace_id', 'workspaceId', 'herdr_workspace_id']),
     tabId: stringFromRecords(records, ['tab_id', 'tabId', 'herdr_tab_id'])
   };
@@ -334,6 +339,25 @@ function metadataContainers(value: Record<string, unknown>): Record<string, unkn
     }
   }
   return containers;
+}
+
+function explicitPaneIdFromRecords(records: Record<string, unknown>[]): string | null {
+  return stringFromRecords(records, ['pane_id', 'paneId', 'herdr_pane_id']) ?? stringFromPaneContainers(records);
+}
+
+function stringFromPaneContainers(records: Record<string, unknown>[]): string | null {
+  for (const record of records) {
+    for (const key of ['pane', 'terminal']) {
+      const child = record[key];
+      if (child && typeof child === 'object' && !Array.isArray(child)) {
+        const id = (child as Record<string, unknown>).id;
+        if (typeof id === 'string' && id.length > 0) {
+          return id;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function stringFromRecords(records: Record<string, unknown>[], keys: string[]): string | null {

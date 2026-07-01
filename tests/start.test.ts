@@ -67,9 +67,9 @@ describe('start orchestration', () => {
 
   it('binds current lead, launches planner and staged implementer, and leaves reviewer/tester slot-only', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr pane current --current': okJson({ pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' }),
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
       [worktreeCommand('launch-sessions')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', RUN_ID, 'implementer'), branch: `pi-herd/${RUN_ID}/impl` }),
-      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-planner --session-id 2026-07-01T12-00-00-launch-sessions-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-planner --session-id 2026-07-01T12-00-00-launch-sessions-planner': okJson(envelopedPane('cli:agent:start', { pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' })),
       'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-launch-sessions.\nGoal: Launch sessions\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-launch-sessions/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
       'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' },
       'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --cwd DIR/.worktrees/pi-herd/2026-07-01T12-00-00-launch-sessions/implementer --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --session-id 2026-07-01T12-00-00-launch-sessions-implementer': okJson({ pane_id: 'impl-pane', workspace_id: 'lead-ws', tab_id: 'impl-tab' })
@@ -94,11 +94,33 @@ describe('start orchestration', () => {
     expect(result.state.roles.reviewer?.herdr_pane_id).toBeNull();
     expect(result.state.roles.tester?.status).toBe('staged');
     expect(result.state.roles.tester?.herdr_pane_id).toBeNull();
+    expect(runner.calls.some((call) => call.startsWith('git status '))).toBe(true);
     expect(runner.calls.some((call) => call.includes('reviewer'))).toBe(false);
 
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.launch_metadata?.launch_method).toBe('herdr-agent-start');
     expect(saved.roles.planner?.launch_metadata?.prompt_method).toBe('pane-send-text-enter');
+  });
+
+  it('does not require a clean repo for planner-only starts without planner worktrees', async () => {
+    const runner = new RecordingRunner({
+      'git rev-parse --show-toplevel': { exitCode: 0, stdout: `${dir}\n`, stderr: '' },
+      'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' },
+      'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees': { exitCode: 0, stdout: 'M src/start.ts\n', stderr: '' },
+      ...normalize({
+        'herdr workspace create --cwd DIR --label pi-herd planner-only lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
+        'herdr agent start pi-herd-2026-07-01T12-00-00-planner-only-lead --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-planner-only-lead --session-id 2026-07-01T12-00-00-planner-only-lead': okJson({ pane_id: 'new-lead-pane', workspace_id: 'new-lead-ws', tab_id: 'new-lead-tab' }),
+        'herdr agent start pi-herd-2026-07-01T12-00-00-planner-only-planner --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-planner-only-planner --session-id 2026-07-01T12-00-00-planner-only-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'new-lead-ws', tab_id: 'planner-tab' }),
+        'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-planner-only.\nGoal: Planner only\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-planner-only/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+        'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+      })
+    });
+
+    const result = await startRun({ cwd: dir, goal: 'Planner only', now: NOW, roles: ['planner'], runner, env: {} });
+
+    expect(result.state.roles.planner?.worktree_path).toBeNull();
+    expect(result.state.roles.planner?.status).toBe('working');
+    expect(runner.calls.some((call) => call.startsWith('git status '))).toBe(false);
   });
 
   it('creates a lead workspace and session when no current lead is verified', async () => {
@@ -205,4 +227,8 @@ function worktreeCommand(slug: string): string {
 
 function okJson(value: unknown): CommandResult {
   return { exitCode: 0, stdout: JSON.stringify(value), stderr: '' };
+}
+
+function envelopedPane(id: string, pane: Record<string, unknown>): Record<string, unknown> {
+  return { id, result: { pane } };
 }
