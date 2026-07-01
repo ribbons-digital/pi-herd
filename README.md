@@ -15,6 +15,7 @@ Implementation is planned as ordered GitHub issues and pull requests.
 - [Product spec](docs/spec.md)
 - [Slice plan](docs/slices.md)
 - [Approval plan](docs/approval-plan.md)
+- [Capability report](docs/capabilities/herdr-pi-capability-report.md)
 - [Domain language](CONTEXT.md)
 - [ADRs](docs/adr/)
 
