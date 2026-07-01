@@ -6,4 +6,5 @@ We chose this because per-worktree artifact copies make collection ambiguous, wh
 
 Slice 2 creates the canonical directory during `pi-herd run create`.
 The initial contents are `REQUEST.md`, `state.json`, `logs/`, and `inbox/`.
+Slice 3 may then materialize selected role worktrees outside the canonical run directory and update `state.json` with their paths, branches, provider-derived workspace ids, and materialization status.
 Future slices add worker artifacts such as `PLAN.md`, `IMPLEMENTATION_NOTES.md`, `REVIEW.md`, `TEST_REPORT.md`, `FINAL_SUMMARY.md`, and `MERGE_DECISION.md` as their roles run.

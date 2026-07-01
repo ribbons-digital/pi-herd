@@ -50,9 +50,9 @@ Resolution should prefer explicit flags, then a lead or pane binding, then a sin
 _Avoid_: silently defaulting to the newest run when multiple runs are active
 
 **Run lifecycle**:
-The state of a run as active, completed, or abandoned.
+The state of a run as active, completed, abandoned, or failed.
 Active-run resolution only considers active runs unless the user explicitly selects another run.
-_Avoid_: treating old completed runs as candidates for implicit command targeting
+_Avoid_: treating old completed, abandoned, or failed runs as candidates for implicit command targeting
 
 **Worker completion**:
 The condition where a worker session is considered done for orchestration purposes.
@@ -116,6 +116,7 @@ _Avoid_: treating reviewer or tester branches as merge targets
 
 **Role worktree view**:
 An isolated worktree assigned to a role for inspecting, editing, or testing the run's source state.
+Slice 3 materializes the implementer worktree when `pi-herd run create --with-worktrees` is passed and can also materialize the planner worktree with `--planner-worktree`.
 Reviewer and tester worktrees should be refreshed from the implementation branch rather than sharing the implementer's worktree.
 _Avoid_: multiple workers operating in the same source worktree by default
 
@@ -163,3 +164,5 @@ The reviewer should leave a worker request for the lead, and the lead decides wh
 Developer: Should reviewer and tester use the implementer's worktree?
 Domain expert: No.
 They should get isolated role worktree views refreshed from the implementation branch.
+Developer: What does Slice 3 create when I pass `--with-worktrees`?
+Domain expert: It creates the implementer worktree, optionally creates the planner worktree with `--planner-worktree`, and keeps reviewer and tester worktrees pending.

@@ -11,7 +11,7 @@ export type RunStatus = 'active' | 'completed' | 'abandoned' | 'failed';
 export type RoleStatus = 'pending' | 'staged' | 'working' | 'done' | 'incomplete' | 'blocked' | 'failed';
 export type WorktreeStatus = 'pending' | 'materialized';
 
-/** Options for creating a canonical run state directory without launching workers. */
+/** Options for creating canonical run artifacts and optional role worktrees without launching workers. */
 export interface RunCreateOptions {
   cwd: string;
   goal: string;
@@ -19,7 +19,9 @@ export interface RunCreateOptions {
   roles?: BuiltInRole[];
   baseRef?: string;
   now?: Date;
+  /** Materialize the implementer worktree when the implementer role is selected. */
   withWorktrees?: boolean;
+  /** Also materialize the planner worktree when worktree creation is enabled and the planner role is selected. */
   plannerWorktree?: boolean;
   runner?: CommandRunner;
 }

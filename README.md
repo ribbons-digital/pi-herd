@@ -10,7 +10,8 @@ It is Pi-first, but the core model is harness-neutral so future harnesses can be
 Design approved.
 Slice 0 capability discovery is complete.
 Slice 1 CLI foundation is complete.
-Slice 2 run state and artifact model is implemented on the current branch.
+Slice 2 run state and artifact model is complete.
+Slice 3 worktree orchestration is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -44,7 +45,10 @@ By default it creates pending role records for `planner`, `implementer`, `review
 Pass `--role` one or more times to limit the selected roles, `--base-ref` to override the detected branch or commit, `--json` for the saved state, or `--config` for a custom config path.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and not traverse symlinks.
 Pass `--with-worktrees` to materialize the implementation worktree while leaving reviewer and tester worktrees pending.
+Worktree creation requires a clean repository outside `.pi-herd/runs` and `.worktrees`, refuses existing target paths or branches, uses Herdr first, and falls back to `git worktree add` when Herdr cannot return matching metadata.
 Pass `--planner-worktree` with `--with-worktrees` to also materialize a planner worktree.
+Created worktrees use `.worktrees/pi-herd/{run_slug}/{role}` and are listed in text output with their branch and provider.
+If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
 It does not create panes or worker sessions.
 
 ## Local development

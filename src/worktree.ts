@@ -7,6 +7,7 @@ import type { RunState } from './run-state.js';
 
 const WORKTREE_CREATE_TIMEOUT_MS = 120_000;
 
+/** Options for materializing Slice 3 role worktrees without launching panes or sessions. */
 export interface WorktreeMaterializeOptions {
   state: RunState;
   runner: CommandRunner;
@@ -15,6 +16,7 @@ export interface WorktreeMaterializeOptions {
   onMaterialized?: (worktree: MaterializedWorktree) => Promise<void>;
 }
 
+/** A role worktree created by Herdr or raw git fallback. */
 export interface MaterializedWorktree {
   role: BuiltInRole;
   branch: string;
@@ -23,6 +25,7 @@ export interface MaterializedWorktree {
   herdr_workspace_id: string | null;
 }
 
+/** Materialize the implementer worktree and optionally the planner worktree. */
 export async function materializeWorktrees(options: WorktreeMaterializeOptions): Promise<MaterializedWorktree[]> {
   await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
   const roles = rolesToMaterialize(options.state, options.plannerWorktree);
@@ -71,6 +74,7 @@ function roleWorktreePath(repoRoot: string, runSlug: string, role: BuiltInRole):
   return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runSlug, role);
 }
 
+/** Refuse worktree creation when the repository has uncommitted changes outside ignored paths. */
 export async function assertRepoClean(runner: CommandRunner, repoRoot: string, ignorePaths: string[] = []): Promise<void> {
   const excludes = Array.from(new Set(['.pi-herd/runs', '.worktrees', ...ignorePaths].filter(Boolean))).map((path) => `:!${path}`);
   const result = await runner.run('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ...excludes], { cwd: repoRoot });

@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 2 run state implemented on the current branch.
+Status: Reviewed draft with Slice 3 worktree orchestration implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -165,7 +165,9 @@ The state schema should start with this shape:
 State writes should be atomic.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
-`pi-herd run create --with-worktrees` also materializes the implementation worktree and records its path and branch in `state.json`.
+`pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree status, and Herdr workspace id when available in `state.json`.
+`--planner-worktree` with `--with-worktrees` also materializes the planner worktree.
+If worktree materialization fails after state creation, pi-herd persists any successful materializations, marks the run `failed`, and excludes it from active-run resolution.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -314,7 +316,8 @@ Reviewer and tester worktrees are refreshed from the implementation branch.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
-Raw git worktree commands are the fallback.
+Raw `git worktree add` commands are the fallback when Herdr fails or returns JSON that does not match the requested absolute path and branch.
+Worktree materialization requires a clean repository outside ignored run and worktree paths, refuses existing target paths, refuses existing branches, and rejects symlink components in the worktree path.
 
 ## Canonical run directory
 
@@ -441,8 +444,8 @@ pi-herd merge-plan
 pi-herd cleanup
 ```
 
-`run create` supports early state creation before launch behavior is implemented.
-It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementation worktree materialization, `--planner-worktree` for eager planner worktree materialization, `--json` for machine-readable state output, and `--config` for a custom config file.
+`run create` supports early state and worktree creation before launch behavior is implemented.
+It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization, `--json` for machine-readable state output, and `--config` for a custom config file.
 `start` is the user-facing command once orchestration launch exists.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.

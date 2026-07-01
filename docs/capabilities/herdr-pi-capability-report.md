@@ -297,7 +297,8 @@ If `herdr agent send` does not provide submit semantics:
 
 If Herdr worktree commands fail:
 
-- Fall back to raw `git worktree add` and then open the resulting path in Herdr.
+- Fall back to raw `git worktree add` for Slice 3 run creation, where panes and Herdr workspace opening are out of scope.
+- Later launch slices may open an existing raw-git fallback worktree in Herdr when a visible pane or workspace is needed.
 
 If Herdr Pi integration is missing:
 
@@ -309,6 +310,7 @@ If Herdr Pi integration is missing:
 
 - Slice 1 `doctor` should check Herdr server status, Pi command availability, Herdr Pi integration status, git repo, and git worktree support.
 - Slice 2 state stores Herdr workspace, tab, and pane ids plus a nullable `session_ref` placeholder for harness session identity.
+- Slice 3 worktree creation should call Herdr first, trust the result only when JSON metadata matches the requested branch and absolute path, and fall back to raw `git worktree add` without creating panes or sessions.
 - Slice 4 should use `herdr agent start` where possible.
 - Slice 5 prompt sending should use pane send-text plus Enter.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.
