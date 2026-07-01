@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { nodeCommandRunner } from '../src/command-runner.js';
@@ -7,13 +7,16 @@ import { createRun, resolveActiveRun, type RunState } from '../src/run-state.js'
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 
 let dir: string;
+let extraDirs: string[];
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'pi-herd-worktree-'));
+  extraDirs = [];
 });
 
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
+  await Promise.all(extraDirs.map((extraDir) => rm(extraDir, { recursive: true, force: true })));
 });
 
 class HerdrFailingGitRunner implements CommandRunner {
@@ -169,11 +172,35 @@ describe('worktree orchestration', () => {
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
   });
 
+  it('excludes the canonical run directory when runs_dir is the repository root', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('.'), 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/root-runs/impl --base main --path DIR/.worktrees/pi-herd/root-runs/implementer --label pi-herd root-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/root-runs/implementer'))
+    }));
+
+    const result = await createRun({ cwd: dir, goal: 'Root runs', now: new Date('2026-07-01T12:00:00.000Z'), withWorktrees: true, runner });
+
+    expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
+    expect(runner.calls).toContain(`${dir}$ git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!2026-07-01T12-00-00-root-runs`);
+  });
+
   it('refuses an existing worktree path before creation', async () => {
     await mkdir(join(dir, '.worktrees/pi-herd/path-exists/implementer'), { recursive: true });
     const runner = new RecordingRunner(baseResponses({}));
 
     await expect(createRun({ cwd: dir, goal: 'Path exists', withWorktrees: true, runner })).rejects.toThrow(/Worktree path already exists/);
+  });
+
+  it('refuses symlink components in worktree paths before provider creation', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'pi-herd-worktree-target-'));
+    extraDirs.push(outside);
+    await symlink(outside, join(dir, '.worktrees'));
+    const runner = new RecordingRunner(baseResponses({}));
+
+    await expect(createRun({ cwd: dir, goal: 'Symlink worktree root', withWorktrees: true, runner })).rejects.toThrow(/Worktree path must not include symbolic links/);
+    expect(runner.calls.some((call) => call.includes('herdr worktree create'))).toBe(false);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
   it('falls back to git when Herdr omits required metadata', async () => {

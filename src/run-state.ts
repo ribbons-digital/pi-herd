@@ -157,7 +157,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
         state,
         runner,
         plannerWorktree: options.plannerWorktree,
-        cleanCheckIgnorePaths,
+        cleanCheckIgnorePaths: [...cleanCheckIgnorePaths, relative(repoRoot, runDir)],
         onMaterialized: async () => {
           state.updated_at = new Date().toISOString();
           await writeJsonAtomic(statePath, state);

@@ -1,6 +1,6 @@
-import { access } from 'node:fs/promises';
+import { access, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { CommandRunner } from './command-runner.js';
 import { DEFAULT_WORKTREES_DIR, type BuiltInRole } from './defaults.js';
 import type { RunState } from './run-state.js';
@@ -32,6 +32,7 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
       continue;
     }
     const worktreePath = roleWorktreePath(options.state.repo_root, options.state.run_slug, role);
+    await assertNoSymlinkPathComponents(options.state.repo_root, worktreePath);
     await assertPathAvailable(worktreePath);
     await assertBranchAvailable(options.runner, options.state.repo_root, record.branch);
     const result = await createWorktreeHerdrFirst({
@@ -69,7 +70,7 @@ function roleWorktreePath(repoRoot: string, runSlug: string, role: BuiltInRole):
 }
 
 export async function assertRepoClean(runner: CommandRunner, repoRoot: string, ignorePaths: string[] = []): Promise<void> {
-  const excludes = Array.from(new Set(['.pi-herd/runs', '.worktrees', ...ignorePaths])).map((path) => `:!${path}`);
+  const excludes = Array.from(new Set(['.pi-herd/runs', '.worktrees', ...ignorePaths].filter(Boolean))).map((path) => `:!${path}`);
   const result = await runner.run('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ...excludes], { cwd: repoRoot });
   if (result.exitCode !== 0) {
     throw new Error(`Could not check repository status: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git status failed'}`);
@@ -86,6 +87,32 @@ async function assertPathAvailable(path: string): Promise<void> {
     return;
   }
   throw new Error(`Worktree path already exists: ${path}`);
+}
+
+async function assertNoSymlinkPathComponents(repoRoot: string, worktreePath: string): Promise<void> {
+  const relativeWorktreePath = relative(repoRoot, worktreePath);
+  if (!relativeWorktreePath || relativeWorktreePath === '..' || relativeWorktreePath.startsWith(`..${sep}`) || isAbsolute(relativeWorktreePath)) {
+    throw new Error('Worktree path must stay within the repository root.');
+  }
+  let current = repoRoot;
+  for (const segment of relativeWorktreePath.split(sep)) {
+    current = resolve(current, segment);
+    try {
+      const stat = await lstat(current);
+      if (stat.isSymbolicLink()) {
+        throw new Error('Worktree path must not include symbolic links.');
+      }
+    } catch (error) {
+      if (isNodeErrorWithCode(error, 'ENOENT')) {
+        return;
+      }
+      throw error;
+    }
+  }
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 async function assertBranchAvailable(runner: CommandRunner, repoRoot: string, branch: string): Promise<void> {
