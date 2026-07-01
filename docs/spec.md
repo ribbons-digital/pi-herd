@@ -164,6 +164,7 @@ The state schema should start with this shape:
 State writes should be atomic.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
+`pi-herd run create --with-worktrees` also materializes the implementation worktree and records its path and branch in `state.json`.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -440,7 +441,7 @@ pi-herd cleanup
 ```
 
 `run create` supports early state creation before launch behavior is implemented.
-It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--json` for machine-readable state output, and `--config` for a custom config file.
+It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementation worktree materialization, `--planner-worktree` for eager planner worktree materialization, `--json` for machine-readable state output, and `--config` for a custom config file.
 `start` is the user-facing command once orchestration launch exists.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.

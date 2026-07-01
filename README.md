@@ -30,6 +30,7 @@ pi-herd doctor
 pi-herd doctor --json
 pi-herd run create "replace legacy auth refresh flow"
 pi-herd run create "plan auth refresh" --role planner --base-ref main --json
+pi-herd run create "implement auth refresh" --with-worktrees
 ```
 
 `pi-herd init` creates `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates under `.pi-herd/prompts/`, and safe ignore entries.
@@ -42,7 +43,9 @@ Warnings do not make the command fail, but hard failures such as invalid config 
 By default it creates pending role records for `planner`, `implementer`, `reviewer`, and `tester`.
 Pass `--role` one or more times to limit the selected roles, `--base-ref` to override the detected branch or commit, `--json` for the saved state, or `--config` for a custom config path.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and not traverse symlinks.
-It does not create worktrees, panes, or worker sessions.
+Pass `--with-worktrees` to materialize the implementation worktree while leaving reviewer and tester worktrees pending.
+Pass `--planner-worktree` with `--with-worktrees` to also materialize a planner worktree.
+It does not create panes or worker sessions.
 
 ## Local development
 

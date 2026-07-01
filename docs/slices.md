@@ -98,6 +98,8 @@ Goal: Create and track role worktrees safely.
 
 Deliverable: `pi-herd run create --with-worktrees` or equivalent creates the implementation worktree and any eagerly materialized role worktrees.
 
+Status: In progress.
+
 Scope:
 
 - Herdr worktree creation first.

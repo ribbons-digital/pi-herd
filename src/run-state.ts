@@ -2,12 +2,10 @@ import { access, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } 
 import { constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { promisify } from 'node:util';
-import { execFile } from 'node:child_process';
 import { defaultConfig, loadConfig, resolveConfigPath } from './config.js';
+import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
-
-const execFileAsync = promisify(execFile);
+import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
 
 export type RunStatus = 'active' | 'completed' | 'abandoned';
 export type RoleStatus = 'pending' | 'staged' | 'working' | 'done' | 'incomplete' | 'blocked' | 'failed';
@@ -21,6 +19,9 @@ export interface RunCreateOptions {
   roles?: BuiltInRole[];
   baseRef?: string;
   now?: Date;
+  withWorktrees?: boolean;
+  plannerWorktree?: boolean;
+  runner?: CommandRunner;
 }
 
 /** Files and directories created for a new run. */
@@ -31,6 +32,7 @@ export interface RunCreateResult {
   inboxDir: string;
   logsDir: string;
   created: string[];
+  worktrees: MaterializedWorktree[];
 }
 
 export interface LeadBinding {
@@ -84,17 +86,22 @@ export interface ActiveRunSummary {
   canonical_run_dir: string;
 }
 
-/** Create run artifacts and pending role records, but no worktrees, panes, or sessions. */
+/** Create run artifacts and optional worktrees, but no panes or sessions. */
 export async function createRun(options: RunCreateOptions): Promise<RunCreateResult> {
   const goal = options.goal.trim();
   if (!goal) {
     throw new Error('Run goal must be a non-empty string.');
   }
 
-  const repoRoot = await resolveRepoRoot(options.cwd);
+  const runner = options.runner ?? nodeCommandRunner;
+  const repoRoot = await resolveRepoRoot(options.cwd, runner);
   const config = await loadConfigIfPresent(options.configPath ? options.cwd : repoRoot, options.configPath);
   const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
   await assertNoSymlinkPathComponents(repoRoot, runsRoot);
+  const cleanCheckIgnorePaths = [relative(repoRoot, runsRoot), '.worktrees'];
+  if (options.withWorktrees) {
+    await assertRepoClean(runner, repoRoot, cleanCheckIgnorePaths);
+  }
   const now = options.now ?? new Date();
   const createdAt = now.toISOString();
   const baseSlug = slugify(goal);
@@ -121,7 +128,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
     created_at: createdAt,
     updated_at: createdAt,
     repo_root: repoRoot,
-    base_ref: options.baseRef ?? await resolveBaseRef(repoRoot),
+    base_ref: options.baseRef ?? await resolveBaseRef(repoRoot, runner),
     canonical_run_dir: runDir,
     lead_binding: {
       role: 'lead',
@@ -143,12 +150,23 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   await writeJsonAtomic(statePath, state);
   created.push(statePath);
 
-  return { state, requestPath, statePath, inboxDir, logsDir, created };
+  const worktrees = options.withWorktrees ? await materializeWorktrees({
+    state,
+    runner,
+    plannerWorktree: options.plannerWorktree,
+    cleanCheckIgnorePaths,
+    onMaterialized: async () => {
+      state.updated_at = new Date().toISOString();
+      await writeJsonAtomic(statePath, state);
+    }
+  }) : [];
+
+  return { state, requestPath, statePath, inboxDir, logsDir, created, worktrees };
 }
 
 /** Return active runs sorted by creation time, ignoring completed or abandoned runs. */
-export async function listActiveRuns(cwd: string, configPath?: string): Promise<ActiveRunSummary[]> {
-  const repoRoot = await resolveRepoRoot(cwd);
+export async function listActiveRuns(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary[]> {
+  const repoRoot = await resolveRepoRoot(cwd, runner);
   const config = await loadConfigIfPresent(configPath ? cwd : repoRoot, configPath);
   const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
   await assertNoSymlinkPathComponents(repoRoot, runsRoot);
@@ -173,8 +191,8 @@ export async function listActiveRuns(cwd: string, configPath?: string): Promise<
 }
 
 /** Resolve an explicit run selector or the only active run, failing on ambiguity. */
-export async function resolveActiveRun(cwd: string, selector?: string, configPath?: string): Promise<ActiveRunSummary> {
-  const activeRuns = await listActiveRuns(cwd, configPath);
+export async function resolveActiveRun(cwd: string, selector?: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary> {
+  const activeRuns = await listActiveRuns(cwd, configPath, runner);
   if (selector) {
     if (selector === 'latest') {
       if (!activeRuns.length) {
@@ -202,7 +220,7 @@ export async function resolveActiveRun(cwd: string, selector?: string, configPat
 
 /** Format the human-readable result for `pi-herd run create`. */
 export function formatRunCreateText(result: RunCreateResult): string {
-  return [
+  const lines = [
     `Created run ${result.state.run_id}`,
     `Goal: ${result.state.goal}`,
     `Run directory: ${result.state.canonical_run_dir}`,
@@ -210,7 +228,11 @@ export function formatRunCreateText(result: RunCreateResult): string {
     `State: ${result.statePath}`,
     `Inbox: ${result.inboxDir}`,
     `Logs: ${result.logsDir}`
-  ].join('\n') + '\n';
+  ];
+  for (const worktree of result.worktrees) {
+    lines.push(`Worktree ${worktree.role}: ${worktree.path} (${worktree.branch}, ${worktree.provider})`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 /** Parse a CLI role flag into a supported built-in Slice 2 role. */
@@ -234,13 +256,12 @@ async function loadConfigIfPresent(cwd: string, configPath?: string) {
   return loadConfig(path);
 }
 
-async function resolveRepoRoot(cwd: string): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd });
-    return stdout.trim() || resolve(cwd);
-  } catch {
-    return resolve(cwd);
+async function resolveRepoRoot(cwd: string, runner: CommandRunner): Promise<string> {
+  const result = await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd });
+  if (result.exitCode === 0) {
+    return result.stdout.trim() || resolve(cwd);
   }
+  return resolve(cwd);
 }
 
 function resolveRunsRoot(repoRoot: string, runsDir: string): string {
@@ -292,22 +313,16 @@ function isNodeErrorWithCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }
 
-async function resolveBaseRef(repoRoot: string): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: repoRoot });
-    const branch = stdout.trim();
-    if (branch) {
-      return branch;
-    }
-  } catch {
-    // Fall through for detached HEAD, unborn non-standard repos, or non-git directories.
+async function resolveBaseRef(repoRoot: string, runner: CommandRunner): Promise<string> {
+  const branch = await runner.run('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: repoRoot });
+  if (branch.exitCode === 0 && branch.stdout.trim()) {
+    return branch.stdout.trim();
   }
-  try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot });
-    return stdout.trim() || 'main';
-  } catch {
-    return 'main';
+  const commit = await runner.run('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot });
+  if (commit.exitCode === 0 && commit.stdout.trim()) {
+    return commit.stdout.trim();
   }
+  return 'main';
 }
 
 function formatRunTimestamp(date: Date): string {

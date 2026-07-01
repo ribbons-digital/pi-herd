@@ -11,7 +11,7 @@ const HELP = `pi-herd
 Usage:
   pi-herd doctor [--json] [--config PATH]
   pi-herd init [--force] [--config PATH]
-  pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]
+  pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd --help
 
 Commands:
@@ -76,7 +76,7 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
     if (command === 'run') {
       const subcommand = argv[1];
       if (!subcommand || subcommand === '--help' || subcommand === '-h') {
-        process.stdout.write('Usage: pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        process.stdout.write('Usage: pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
         return 0;
       }
       if (subcommand !== 'create') {
@@ -88,6 +88,8 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
         options: {
           role: { type: 'string', multiple: true },
           'base-ref': { type: 'string' },
+          'with-worktrees': { type: 'boolean', default: false },
+          'planner-worktree': { type: 'boolean', default: false },
           json: { type: 'boolean', default: false },
           config: { type: 'string' },
           help: { type: 'boolean', short: 'h', default: false }
@@ -95,12 +97,21 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
         allowPositionals: true
       });
       if (values.help) {
-        process.stdout.write('Usage: pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        process.stdout.write('Usage: pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
         return 0;
       }
       const goal = positionals.join(' ').trim();
       const roles = values.role?.map(parseRole);
-      const result = await createRun({ cwd, goal, configPath: values.config, roles, baseRef: values['base-ref'] });
+      const result = await createRun({
+        cwd,
+        goal,
+        configPath: values.config,
+        roles,
+        baseRef: values['base-ref'],
+        withWorktrees: values['with-worktrees'],
+        plannerWorktree: values['planner-worktree'],
+        runner: nodeCommandRunner
+      });
       if (values.json) {
         process.stdout.write(`${JSON.stringify(result.state, null, 2)}\n`);
       } else {

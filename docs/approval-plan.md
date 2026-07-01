@@ -64,3 +64,9 @@ Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Implement Slice 3 worktree orchestration without Herdr pane or worker launch.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
+
+## Slice 3 implementation guardrails
+
+- [ ] Keep reviewer and tester worktrees pending until activation or refresh.
+- [ ] Do not start Pi sessions, send prompts, or create Herdr panes in Slice 3.
+- [ ] Let no-mistakes handle final validation, PR updates, and CI.
