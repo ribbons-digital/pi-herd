@@ -87,8 +87,8 @@ It is a normal visible harness session, not a hidden controller.
 If `pi-herd start` is invoked from a detectable Pi session with Herdr context, that current session should become the lead.
 If it is invoked from shell or outside detectable context, pi-herd should create a lead pane/session.
 
-The exact lead-detection source of truth must be verified in Slice 0.
-Candidate sources include environment variables, Herdr pane metadata, Pi session metadata, or Herdr integration state.
+Slice 0 verified the lead-detection contract.
+A command running with `HERDR_ENV=1`, `HERDR_PANE_ID`, and `PI_CODING_AGENT=true` is a Pi lead candidate, and pi-herd should verify the pane with Herdr before binding it as the lead.
 
 ### Worker sessions
 
@@ -382,8 +382,8 @@ Statuses:
 - `blocked`: worker explicitly reports it is blocked
 - `failed`: orchestration or process error
 
-The exact harness activity source of truth must be verified in Slice 0.
-Candidate sources include Herdr agent status, pane process status, Pi integration status, or recent output wait conditions.
+Slice 0 verified that Herdr agent status, pane process state, Pi integration metadata, and wait events are activity signals, not completion by themselves.
+Herdr `done` was listed in wait help but not observed in the live probe, so pi-herd must continue to require stopped or idle-like activity plus required artifact validation before marking a worker `done`.
 
 ## Staged activation
 

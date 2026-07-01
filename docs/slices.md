@@ -1,8 +1,8 @@
 # pi-herd Slice Plan
 
-Status: Reviewed draft for user approval.
+Status: Design approved, with Slice 0 complete.
 
-Each slice has one clear deliverable and will become one GitHub issue after final approval.
+Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
 
 ## Slice 0: Herdr and Pi capability discovery
@@ -10,6 +10,8 @@ Each slice should be implemented on a branch and merged by pull request.
 Goal: Verify the real Herdr and Pi command shapes before product code depends on them.
 
 Deliverable: A capability report and ADR documenting launch, send, read, wait, lead detection, and completion-signal contracts.
+
+Result: Complete in [the capability report](capabilities/herdr-pi-capability-report.md) and [ADR 0008](adr/0008-herdr-pi-capability-contract.md).
 
 Scope:
 
