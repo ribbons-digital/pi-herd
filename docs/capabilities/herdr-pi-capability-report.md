@@ -308,7 +308,7 @@ If Herdr Pi integration is missing:
 ## Decisions for implementation slices
 
 - Slice 1 `doctor` should check Herdr server status, Pi command availability, Herdr Pi integration status, git repo, and git worktree support.
-- Slice 2 state should store both Herdr pane ids and human-friendly agent names.
+- Slice 2 state stores Herdr workspace, tab, and pane ids plus a nullable `session_ref` placeholder for harness session identity.
 - Slice 4 should use `herdr agent start` where possible.
 - Slice 5 prompt sending should use pane send-text plus Enter.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

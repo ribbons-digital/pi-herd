@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery complete.
+Status: Design approved, with Slice 0 capability discovery, Slice 1 CLI foundation, and Slice 2 run state complete on the current branch.
 
 ## Review provenance
 
@@ -9,6 +9,8 @@ Opus 4.8 reviewed the draft with high-effort thinking and requested changes.
 The executor debated the requested changes with Opus 4.8 until consensus.
 The current docs incorporate the consensus.
 Slice 0 verified the Herdr and Pi capability contract and recorded it in the capability report and ADR 0008.
+Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation, tests, and README updates in PR #13.
+Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
 
 ## Files to approve
 
@@ -46,8 +48,8 @@ Slice 0 verified the Herdr and Pi capability contract and recorded it in the cap
 ## Slice plan to approve
 
 - [x] Slice 0: Herdr and Pi capability discovery.
-- [ ] Slice 1: CLI foundation, doctor, and init.
-- [ ] Slice 2: Run state and artifact model.
+- [x] Slice 1: CLI foundation, doctor, and init.
+- [x] Slice 2: Run state and artifact model.
 - [ ] Slice 3: Worktree orchestration.
 - [ ] Slice 4: Herdr pane and session launch.
 - [ ] Slice 5: Messaging and lead commands.
@@ -57,8 +59,8 @@ Slice 0 verified the Herdr and Pi capability contract and recorded it in the cap
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 0
+## After Slice 2
 
 - [ ] Continue with one branch and one PR per issue.
-- [ ] Use the verified capability contract before implementing Slice 1.
+- [ ] Implement Slice 3 worktree orchestration without Herdr pane or worker launch.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.

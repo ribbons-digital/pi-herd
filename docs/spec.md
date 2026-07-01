@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft for user approval.
+Status: Reviewed draft with Slice 2 run state implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -64,7 +64,7 @@ The canonical run directory uses `run_id`:
 
 `run_slug` is a human-friendly selector derived from the goal.
 Slugs are conveniences, not canonical identity.
-If two active or historical runs would share a slug, pi-herd should apply a deterministic suffix or require the user to select by `run_id`.
+If two active or historical runs would share a slug, pi-herd applies a deterministic numeric suffix before requiring the user to select by `run_id`.
 
 ### Run lifecycle
 
@@ -114,8 +114,8 @@ The state schema should start with this shape:
   "run_slug": "auth-refresh",
   "goal": "replace legacy auth refresh flow",
   "status": "active",
-  "created_at": "2026-07-01T12:00:00+10:00",
-  "updated_at": "2026-07-01T12:05:00+10:00",
+  "created_at": "2026-07-01T12:00:00.000Z",
+  "updated_at": "2026-07-01T12:00:00.000Z",
   "repo_root": "/Users/shiang/projects/example",
   "base_ref": "main",
   "canonical_run_dir": "/Users/shiang/projects/example/.pi-herd/runs/2026-07-01T12-00-00-auth-refresh",
@@ -130,11 +130,11 @@ The state schema should start with this shape:
   "roles": {
     "planner": {
       "role": "planner",
-      "status": "working",
+      "status": "pending",
       "harness": "pi",
-      "branch": "pi-herd/auth-refresh/plan",
-      "worktree_path": "/Users/shiang/projects/example/.worktrees/pi-herd/auth-refresh/planner",
-      "worktree_status": "materialized",
+      "branch": "pi-herd/auth-refresh/planner",
+      "worktree_path": null,
+      "worktree_status": "pending",
       "herdr_workspace_id": null,
       "herdr_tab_id": null,
       "herdr_pane_id": null,
@@ -144,12 +144,18 @@ The state schema should start with this shape:
     },
     "reviewer": {
       "role": "reviewer",
-      "status": "staged",
+      "status": "pending",
       "harness": "pi",
+      "branch": "pi-herd/auth-refresh/reviewer",
       "source_ref": "pi-herd/auth-refresh/impl",
       "worktree_path": null,
       "worktree_status": "pending",
-      "required_artifacts": ["REVIEW.md"]
+      "herdr_workspace_id": null,
+      "herdr_tab_id": null,
+      "herdr_pane_id": null,
+      "session_ref": null,
+      "required_artifacts": ["REVIEW.md"],
+      "last_activity_at": null
     }
   }
 }
@@ -157,6 +163,8 @@ The state schema should start with this shape:
 
 State writes should be atomic.
 Concurrent runs write separate state files.
+`pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
+The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
 
@@ -224,15 +232,18 @@ It should not maintain a static global model catalog.
 Default config should stay small:
 
 ```yaml
+schema_version: 1
 harness:
   default: pi
   profiles:
     pi:
       command: pi
-      provider: null
-      model: null
-      thinking: null
+paths:
+  runs_dir: .pi-herd/runs
+  prompts_dir: .pi-herd/prompts
 ```
+
+`paths.runs_dir` must be repository-relative, remain inside the repository root, and avoid symlink path components.
 
 Per-role overrides are supported but should not clutter the default generated config:
 
@@ -429,6 +440,7 @@ pi-herd cleanup
 ```
 
 `run create` supports early state creation before launch behavior is implemented.
+It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--json` for machine-readable state output, and `--config` for a custom config file.
 `start` is the user-facing command once orchestration launch exists.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.

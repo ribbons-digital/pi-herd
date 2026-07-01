@@ -4,21 +4,27 @@ import { parseArgs } from 'node:util';
 import { runDoctor, formatDoctorText } from './doctor.js';
 import { nodeCommandRunner } from './command-runner.js';
 import { runInit, formatInitText } from './init.js';
+import { createRun, formatRunCreateText, parseRole } from './run-state.js';
 
 const HELP = `pi-herd
 
 Usage:
   pi-herd doctor [--json] [--config PATH]
   pi-herd init [--force] [--config PATH]
+  pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd --help
 
 Commands:
   doctor  Check the local environment and pi-herd config.
   init    Create .pi-herd config, run directory, prompts, and ignore entries.
+  run     Create and manage orchestration run state.
 `;
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()): Promise<number> {
   try {
+    if (argv[0] === '--') {
+      argv = argv.slice(1);
+    }
     const command = argv[0];
     if (!command || command === '--help' || command === '-h') {
       process.stdout.write(HELP);
@@ -64,6 +70,42 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       }
       const result = await runInit({ cwd, configPath: values.config, force: values.force });
       process.stdout.write(formatInitText(result));
+      return 0;
+    }
+
+    if (command === 'run') {
+      const subcommand = argv[1];
+      if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+        process.stdout.write('Usage: pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        return 0;
+      }
+      if (subcommand !== 'create') {
+        process.stderr.write(`Unknown run command: ${subcommand}\n`);
+        return 1;
+      }
+      const { values, positionals } = parseArgs({
+        args: argv.slice(2),
+        options: {
+          role: { type: 'string', multiple: true },
+          'base-ref': { type: 'string' },
+          json: { type: 'boolean', default: false },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: true
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd run create <goal> [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        return 0;
+      }
+      const goal = positionals.join(' ').trim();
+      const roles = values.role?.map(parseRole);
+      const result = await createRun({ cwd, goal, configPath: values.config, roles, baseRef: values['base-ref'] });
+      if (values.json) {
+        process.stdout.write(`${JSON.stringify(result.state, null, 2)}\n`);
+      } else {
+        process.stdout.write(formatRunCreateText(result));
+      }
       return 0;
     }
 
