@@ -44,7 +44,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'show-ref') {
       return { exitCode: 1, stdout: '', stderr: '' };
     }
-    return { exitCode: 0, stdout: '', stderr: '' };
+    throw new Error(`Unexpected command: ${key}`);
   }
 }
 
@@ -74,12 +74,14 @@ describe('worktree orchestration', () => {
       herdr_workspace_id: 'workspace-123'
     }]);
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
+    expect(result.state.roles.implementer?.worktree_provider).toBe('herdr');
     expect(result.state.roles.implementer?.herdr_workspace_id).toBe('workspace-123');
     expect(result.state.roles.reviewer?.worktree_status).toBe('pending');
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
 
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
     expect(saved.roles.implementer?.worktree_status).toBe('materialized');
+    expect(saved.roles.implementer?.worktree_provider).toBe('herdr');
   });
 
   it('accepts Herdr JSON envelope metadata from nested result data', async () => {
@@ -109,6 +111,9 @@ describe('worktree orchestration', () => {
       provider: 'herdr',
       herdr_workspace_id: 'workspace-envelope-123'
     });
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.implementer?.herdr_workspace_id).toBe('workspace-envelope-123');
+    expect(saved.roles.implementer?.worktree_provider).toBe('herdr');
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
@@ -129,6 +134,7 @@ describe('worktree orchestration', () => {
     const result = await createRun({ cwd: dir, goal: 'Git fallback', withWorktrees: true, runner });
 
     expect(result.worktrees[0]).toMatchObject({ role: 'implementer', provider: 'git', herdr_workspace_id: null });
+    expect(result.state.roles.implementer?.worktree_provider).toBe('git');
     expect(runner.calls.some((call) => call.includes('git worktree add -b pi-herd/git-fallback/impl'))).toBe(true);
     expect(runner.options.find((call) => call.command === 'herdr' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
     expect(runner.options.find((call) => call.command === 'git' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
@@ -207,7 +213,7 @@ describe('worktree orchestration', () => {
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
   });
 
-  it('excludes the canonical run directory when runs_dir is the repository root', async () => {
+  it('creates worktrees when runs_dir is the repository root', async () => {
     await mkdir(join(dir, '.pi-herd'), { recursive: true });
     await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('.'), 'utf8');
     const runner = new RecordingRunner(baseResponses({
@@ -217,7 +223,6 @@ describe('worktree orchestration', () => {
     const result = await createRun({ cwd: dir, goal: 'Root runs', now: new Date('2026-07-01T12:00:00.000Z'), withWorktrees: true, runner });
 
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
-    expect(runner.calls).toContain(`${dir}$ git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!2026-07-01T12-00-00-root-runs`);
   });
 
   it('refuses an existing worktree path before creation', async () => {

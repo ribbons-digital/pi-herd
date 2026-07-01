@@ -9,7 +9,8 @@ Slice 2 implements the first schema version.
 `pi-herd run create` writes `schema_version: 1`, a timestamp-plus-slug `run_id`, a human-friendly `run_slug`, the original goal, lifecycle timestamps, repository root, base ref, canonical run directory, a lead binding placeholder, and selected role records.
 The initial selected roles default to `planner`, `implementer`, `reviewer`, and `tester`, or can be limited with repeated `--role` flags.
 Role records start as `pending` with `worktree_path: null` and `worktree_status: pending` before optional worktree materialization.
-Slice 3 updates selected role records to `worktree_status: materialized` with `worktree_path` and Herdr workspace id when `--with-worktrees` or `--planner-worktree` materializes them.
+Slice 3 updates selected role records to `worktree_status: materialized` with `worktree_path` and `worktree_provider` when `--with-worktrees` or `--planner-worktree` materializes them.
+`herdr_workspace_id` is recorded only when Herdr-managed materialization succeeds; raw `git worktree add` fallback records `worktree_provider: git` and leaves `herdr_workspace_id: null`.
 If materialization fails, pi-herd persists the latest state, keeps any successful role materializations, marks the run `failed`, and excludes it from active-run resolution.
 
 Run state writes are atomic: pi-herd writes a temporary JSON file in the run directory and renames it into place.

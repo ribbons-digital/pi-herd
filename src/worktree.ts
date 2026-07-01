@@ -13,6 +13,7 @@ export interface WorktreeMaterializeOptions {
   runner: CommandRunner;
   plannerWorktree?: boolean;
   cleanCheckIgnorePaths?: string[];
+  skipCleanCheck?: boolean;
   onMaterialized?: (worktree: MaterializedWorktree) => Promise<void>;
 }
 
@@ -27,7 +28,9 @@ export interface MaterializedWorktree {
 
 /** Materialize the implementer worktree and optionally the planner worktree. */
 export async function materializeWorktrees(options: WorktreeMaterializeOptions): Promise<MaterializedWorktree[]> {
-  await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
+  if (!options.skipCleanCheck) {
+    await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
+  }
   const roles = rolesToMaterialize(options.state, options.plannerWorktree);
   const materialized: MaterializedWorktree[] = [];
 
@@ -51,6 +54,7 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
     });
     record.worktree_path = result.path;
     record.worktree_status = 'materialized';
+    record.worktree_provider = result.provider;
     record.herdr_workspace_id = result.herdr_workspace_id;
     materialized.push(result);
     await options.onMaterialized?.(result);

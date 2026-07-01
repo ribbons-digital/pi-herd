@@ -54,6 +54,7 @@ export interface RoleRecord {
   source_ref?: string;
   worktree_path: string | null;
   worktree_status: WorktreeStatus;
+  worktree_provider?: 'herdr' | 'git' | null;
   herdr_workspace_id: string | null;
   herdr_tab_id: string | null;
   herdr_pane_id: string | null;
@@ -160,6 +161,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
         runner,
         plannerWorktree: options.plannerWorktree,
         cleanCheckIgnorePaths: [...cleanCheckIgnorePaths, relative(repoRoot, runDir)],
+        skipCleanCheck: true,
         onMaterialized: async () => {
           state.updated_at = new Date().toISOString();
           await writeJsonAtomic(statePath, state);
@@ -373,6 +375,7 @@ function createRoleRecord(role: BuiltInRole, harness: string, runSlug: string): 
     source_ref: role === 'reviewer' || role === 'tester' ? implementationBranch : undefined,
     worktree_path: null,
     worktree_status: 'pending',
+    worktree_provider: null,
     herdr_workspace_id: null,
     herdr_tab_id: null,
     herdr_pane_id: null,

@@ -102,13 +102,14 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       }
       const goal = positionals.join(' ').trim();
       const roles = values.role?.map(parseRole);
+      const withWorktrees = Boolean(values['with-worktrees'] || values['planner-worktree']);
       const result = await createRun({
         cwd,
         goal,
         configPath: values.config,
         roles,
         baseRef: values['base-ref'],
-        withWorktrees: values['with-worktrees'],
+        withWorktrees,
         plannerWorktree: values['planner-worktree'],
         runner: nodeCommandRunner
       });
