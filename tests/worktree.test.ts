@@ -51,7 +51,7 @@ describe('worktree orchestration', () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/add-worktrees/impl --base main --path DIR/.worktrees/pi-herd/add-worktrees/implementer --label pi-herd add-worktrees implementer --no-focus --json': {
         exitCode: 0,
-        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/add-worktrees/implementer') }),
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/add-worktrees/implementer'), branch: 'pi-herd/add-worktrees/impl' }),
         stderr: ''
       }
     }));
@@ -78,6 +78,36 @@ describe('worktree orchestration', () => {
 
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
     expect(saved.roles.implementer?.worktree_status).toBe('materialized');
+  });
+
+  it('accepts Herdr JSON envelope metadata from nested result data', async () => {
+    const checkoutPath = join(dir, '.worktrees/pi-herd/herdr-envelope/implementer');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/herdr-envelope/impl --base main --path DIR/.worktrees/pi-herd/herdr-envelope/implementer --label pi-herd herdr-envelope implementer --no-focus --json': {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          ok: true,
+          result: {
+            data: {
+              workspace: { id: 'workspace-envelope-123' },
+              worktree: { checkout_path: checkoutPath, branch_name: 'pi-herd/herdr-envelope/impl' }
+            }
+          }
+        }),
+        stderr: ''
+      }
+    }));
+
+    const result = await createRun({ cwd: dir, goal: 'Herdr envelope', withWorktrees: true, runner });
+
+    expect(result.worktrees[0]).toEqual({
+      role: 'implementer',
+      branch: 'pi-herd/herdr-envelope/impl',
+      path: checkoutPath,
+      provider: 'herdr',
+      herdr_workspace_id: 'workspace-envelope-123'
+    });
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
   it('falls back to git worktree when Herdr creation fails', async () => {
@@ -227,7 +257,7 @@ describe('worktree orchestration', () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/wrong-path/impl --base main --path DIR/.worktrees/pi-herd/wrong-path/implementer --label pi-herd wrong-path implementer --no-focus --json': {
         exitCode: 0,
-        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer') }),
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer'), branch: 'pi-herd/wrong-path/impl' }),
         stderr: ''
       },
       'git worktree add -b pi-herd/wrong-path/impl DIR/.worktrees/pi-herd/wrong-path/implementer main': {
@@ -387,7 +417,14 @@ function baseResponses(overrides: Record<string, CommandResult>): Record<string,
 function herdrSuccess(workspaceId: string, checkoutPath: string): CommandResult {
   return {
     exitCode: 0,
-    stdout: JSON.stringify({ workspace_id: workspaceId, checkout_path: checkoutPath }),
+    stdout: JSON.stringify({ workspace_id: workspaceId, checkout_path: checkoutPath, branch: branchFromCheckoutPath(checkoutPath) }),
     stderr: ''
   };
+}
+
+function branchFromCheckoutPath(checkoutPath: string): string {
+  const parts = checkoutPath.split(/[\\/]/);
+  const role = parts[parts.length - 1] ?? '';
+  const slug = parts[parts.length - 2] ?? '';
+  return `pi-herd/${slug}/${role === 'implementer' ? 'impl' : role}`;
 }

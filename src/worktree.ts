@@ -181,19 +181,21 @@ function parseHerdrWorktreeResult(stdout: string, options: {
   path: string;
 }): MaterializedWorktree | null {
   const value = parseJsonRecord(stdout);
-  const workspaceId = stringFromAny(value, ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
-  const path = stringFromAny(value, ['path', 'checkout_path', 'worktree_path']);
-  const branch = stringFromAny(value, ['branch', 'branch_name']);
-  if (!workspaceId || !path || !isAbsolute(path) || resolve(path) !== resolve(options.path) || (branch && branch !== options.branch)) {
-    return null;
+  for (const container of herdrMetadataContainers(value)) {
+    const workspaceId = stringFromRecords([container, childRecord(container, 'workspace'), childRecord(container, 'worktree')], ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
+    const path = stringFromRecords([container, childRecord(container, 'worktree'), childRecord(container, 'checkout')], ['path', 'checkout_path', 'worktree_path']);
+    const branch = stringFromRecords([container, childRecord(container, 'worktree'), childRecord(container, 'checkout')], ['branch', 'branch_name']);
+    if (workspaceId && path && branch === options.branch && isAbsolute(path) && resolve(path) === resolve(options.path)) {
+      return {
+        role: options.role,
+        branch: options.branch,
+        path: options.path,
+        provider: 'herdr',
+        herdr_workspace_id: workspaceId
+      };
+    }
   }
-  return {
-    role: options.role,
-    branch: options.branch,
-    path: options.path,
-    provider: 'herdr',
-    herdr_workspace_id: workspaceId
-  };
+  return null;
 }
 
 function parseJsonRecord(stdout: string): Record<string, unknown> {
@@ -208,11 +210,43 @@ function parseJsonRecord(stdout: string): Record<string, unknown> {
   return Object.create(null) as Record<string, unknown>;
 }
 
-function stringFromAny(value: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const item = value[key];
-    if (typeof item === 'string' && item.length > 0) {
-      return item;
+function herdrMetadataContainers(value: Record<string, unknown>): Record<string, unknown>[] {
+  const containers: Record<string, unknown>[] = [];
+  const queue = [value];
+  while (queue.length > 0) {
+    const container = queue.shift();
+    if (!container) {
+      continue;
+    }
+    containers.push(container);
+    for (const key of ['result', 'data']) {
+      const child = childRecord(container, key);
+      if (child) {
+        queue.push(child);
+      }
+    }
+  }
+  return containers;
+}
+
+function childRecord(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const child = value[key];
+  if (child && typeof child === 'object' && !Array.isArray(child)) {
+    return child as Record<string, unknown>;
+  }
+  return null;
+}
+
+function stringFromRecords(records: Array<Record<string, unknown> | null>, keys: string[]): string | null {
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+    for (const key of keys) {
+      const item = record[key];
+      if (typeof item === 'string' && item.length > 0) {
+        return item;
+      }
     }
   }
   return null;
