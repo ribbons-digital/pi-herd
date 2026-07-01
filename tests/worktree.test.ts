@@ -243,69 +243,69 @@ describe('worktree orchestration', () => {
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
-  it('rejects successful Herdr creation when required metadata is omitted', async () => {
-    const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/incomplete-herdr/impl --base main --path DIR/.worktrees/pi-herd/incomplete-herdr/implementer --label pi-herd incomplete-herdr implementer --no-focus --json': {
+  it.each([
+    {
+      name: 'required metadata is omitted',
+      goal: 'Incomplete Herdr',
+      slug: 'incomplete-herdr',
+      response: () => ({
         exitCode: 0,
         stdout: JSON.stringify({ checkout_path: join(dir, '.worktrees/pi-herd/incomplete-herdr/implementer') }),
         stderr: ''
-      }
-    }));
-
-    await expect(createRun({ cwd: dir, goal: 'Incomplete Herdr', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
-    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
-  });
-
-  it('rejects successful Herdr creation when the reported checkout path is wrong', async () => {
-    const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/wrong-path/impl --base main --path DIR/.worktrees/pi-herd/wrong-path/implementer --label pi-herd wrong-path implementer --no-focus --json': {
+      }),
+      expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
+    },
+    {
+      name: 'the reported checkout path is wrong',
+      goal: 'Wrong path',
+      slug: 'wrong-path',
+      response: () => ({
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer'), branch: 'pi-herd/wrong-path/impl' }),
         stderr: ''
-      }
-    }));
-
-    await expect(createRun({ cwd: dir, goal: 'Wrong path', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
-    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
-  });
-
-  it('rejects successful Herdr creation when the reported branch is wrong', async () => {
-    const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/wrong-branch/impl --base main --path DIR/.worktrees/pi-herd/wrong-branch/implementer --label pi-herd wrong-branch implementer --no-focus --json': {
+      }),
+      expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
+    },
+    {
+      name: 'the reported branch is wrong',
+      goal: 'Wrong branch',
+      slug: 'wrong-branch',
+      response: () => ({
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/wrong-branch/implementer'), branch: 'pi-herd/other/impl' }),
         stderr: ''
-      }
-    }));
-
-    await expect(createRun({ cwd: dir, goal: 'Wrong branch', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
-    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
-  });
-
-  it('reports unusable Herdr metadata without attempting git fallback', async () => {
-    const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/bad-herdr/impl --base main --path DIR/.worktrees/pi-herd/bad-herdr/implementer --label pi-herd bad-herdr implementer --no-focus --json': {
+      }),
+      expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
+    },
+    {
+      name: 'incomplete JSON is returned',
+      goal: 'Bad Herdr',
+      slug: 'bad-herdr',
+      response: () => ({
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123' }),
         stderr: ''
-      }
-    }));
-
-    await expect(createRun({ cwd: dir, goal: 'Bad Herdr', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
-    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
-  });
-
-  it('fails closed after a Herdr timeout without attempting git fallback', async () => {
-    const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/herdr-timeout/impl --base main --path DIR/.worktrees/pi-herd/herdr-timeout/implementer --label pi-herd herdr-timeout implementer --no-focus --json': {
+      }),
+      expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
+    },
+    {
+      name: 'Herdr times out',
+      goal: 'Herdr timeout',
+      slug: 'herdr-timeout',
+      response: () => ({
         exitCode: null,
         stdout: '',
         stderr: '',
         timedOut: true
-      }
+      }),
+      expectedError: /Herdr: herdr worktree create timed out/
+    }
+  ])('rejects Herdr worktree creation when $name without attempting git fallback', async ({ goal, slug, response, expectedError }) => {
+    const runner = new RecordingRunner(baseResponses({
+      [herdrCreateCommand(slug)]: response()
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'Herdr timeout', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create timed out/);
+    await expect(createRun({ cwd: dir, goal, withWorktrees: true, runner })).rejects.toThrow(expectedError);
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
@@ -389,6 +389,10 @@ describe('worktree orchestration', () => {
 
 function configWithRunsDir(runsDir: string): string {
   return `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: ${JSON.stringify(runsDir)}\n  prompts_dir: .pi-herd/prompts\n`;
+}
+
+function herdrCreateCommand(slug: string): string {
+  return `herdr worktree create --cwd DIR --branch pi-herd/${slug}/impl --base main --path DIR/.worktrees/pi-herd/${slug}/implementer --label pi-herd ${slug} implementer --no-focus --json`;
 }
 
 function baseResponses(overrides: Record<string, CommandResult>): Record<string, CommandResult> {
