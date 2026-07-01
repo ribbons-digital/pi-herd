@@ -11,7 +11,7 @@ The current docs incorporate the consensus.
 Slice 0 verified the Herdr and Pi capability contract and recorded it in the capability report and ADR 0008.
 Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation, tests, and README updates in PR #13.
 Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
-Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git fallback, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
+Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after nonzero Herdr creation failures, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
 
 ## Files to approve
 
@@ -70,5 +70,5 @@ Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git 
 ## Slice 4 implementation guardrails
 
 - [ ] Keep reviewer and tester worktrees pending until activation or refresh.
-- [ ] Preserve Herdr-first worktree creation with raw git fallback for materialization paths.
+- [ ] Preserve Herdr-first worktree creation with raw git fallback only after nonzero Herdr creation failures.
 - [ ] Let no-mistakes handle final validation, PR updates, and CI.
