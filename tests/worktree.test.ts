@@ -30,12 +30,14 @@ class HerdrFailingGitRunner implements CommandRunner {
 
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
+  options: Array<{ command: string; args: string[]; cwd?: string; timeoutMs?: number }> = [];
 
   constructor(private readonly responses: Record<string, CommandResult>) {}
 
-  async run(command: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
+  async run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(`${options?.cwd ?? ''}$ ${key}`);
+    this.options.push({ command, args, cwd: options?.cwd, timeoutMs: options?.timeoutMs });
     if (this.responses[key]) {
       return this.responses[key];
     }
@@ -128,6 +130,9 @@ describe('worktree orchestration', () => {
 
     expect(result.worktrees[0]).toMatchObject({ role: 'implementer', provider: 'git', herdr_workspace_id: null });
     expect(runner.calls.some((call) => call.includes('git worktree add -b pi-herd/git-fallback/impl'))).toBe(true);
+    expect(runner.options.find((call) => call.command === 'herdr' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
+    expect(runner.options.find((call) => call.command === 'git' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
+    expect(runner.options.find((call) => call.command === 'git' && call.args[0] === 'show-ref')?.timeoutMs).toBeUndefined();
   });
 
   it('optionally creates a planner worktree without materializing reviewer or tester', async () => {

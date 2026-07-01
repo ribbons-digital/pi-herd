@@ -5,6 +5,8 @@ import type { CommandRunner } from './command-runner.js';
 import { DEFAULT_WORKTREES_DIR, type BuiltInRole } from './defaults.js';
 import type { RunState } from './run-state.js';
 
+const WORKTREE_CREATE_TIMEOUT_MS = 120_000;
+
 export interface WorktreeMaterializeOptions {
   state: RunState;
   runner: CommandRunner;
@@ -151,14 +153,14 @@ async function createWorktreeHerdrFirst(options: {
     label,
     '--no-focus',
     '--json'
-  ], { cwd: options.repoRoot });
+  ], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
 
   const herdrResult = herdr.exitCode === 0 ? parseHerdrWorktreeResult(herdr.stdout, options) : null;
   if (herdrResult) {
     return herdrResult;
   }
 
-  const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot });
+  const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
   if (git.exitCode !== 0) {
     const herdrDetail = herdr.exitCode === 0
       ? 'herdr worktree create returned unusable JSON metadata'
