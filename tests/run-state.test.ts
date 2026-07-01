@@ -33,7 +33,7 @@ describe('run state', () => {
     expect(result.state.lead_binding.harness).toBe('pi');
     expect(result.state.roles.planner?.required_artifacts).toEqual(['PLAN.md']);
     expect(result.state.roles.implementer?.source_ref).toBeUndefined();
-    expect(result.state.roles.reviewer?.source_ref).toBe('pi-herd/replace-legacy-auth-refresh-flow/impl');
+    expect(result.state.roles.reviewer?.source_ref).toBe('pi-herd/2026-07-01T12-00-00-replace-legacy-auth-refresh-flow/impl');
 
     await expect(readFile(result.requestPath, 'utf8')).resolves.toContain('Goal: Replace legacy auth refresh flow');
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;

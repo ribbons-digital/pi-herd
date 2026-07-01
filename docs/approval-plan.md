@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery, Slice 1 CLI foundation, and Slice 2 run state complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery, Slice 1 CLI foundation, Slice 2 run state, and Slice 3 worktree orchestration complete on the current branch.
 
 ## Review provenance
 
@@ -10,7 +10,8 @@ The executor debated the requested changes with Opus 4.8 until consensus.
 The current docs incorporate the consensus.
 Slice 0 verified the Herdr and Pi capability contract and recorded it in the capability report and ADR 0008.
 Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation, tests, and README updates in PR #13.
-Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
+Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
+Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
 
 ## Files to approve
 
@@ -38,6 +39,7 @@ Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, 
 - [ ] Bind a current Pi session as lead when detectable.
 - [ ] Keep lead-owned orchestration and worker requests through artifacts or inbox.
 - [ ] Use one canonical run directory under `.pi-herd/runs/{run_id}`.
+- [ ] Materialize the implementer worktree on `--with-worktrees` and the planner worktree only when explicitly requested.
 - [ ] Use isolated worktree views for reviewer and tester, materialized lazily when needed.
 - [ ] Treat harness idle as a signal, not completion by itself.
 - [ ] Use the Slice 0 Herdr and Pi capability contract for launch, prompt sending, lead binding, and completion signals.
@@ -50,7 +52,7 @@ Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, 
 - [x] Slice 0: Herdr and Pi capability discovery.
 - [x] Slice 1: CLI foundation, doctor, and init.
 - [x] Slice 2: Run state and artifact model.
-- [ ] Slice 3: Worktree orchestration.
+- [x] Slice 3: Worktree orchestration.
 - [ ] Slice 4: Herdr pane and session launch.
 - [ ] Slice 5: Messaging and lead commands.
 - [ ] Slice 6: Status, wait, and collect.
@@ -59,8 +61,14 @@ Slice 2 adds `pi-herd run create`, canonical run artifacts, pending role state, 
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 2
+## After Slice 3
 
 - [ ] Continue with one branch and one PR per issue.
-- [ ] Implement Slice 3 worktree orchestration without Herdr pane or worker launch.
+- [ ] Implement Slice 4 Herdr pane and session launch without changing Slice 3 worktree safety guarantees.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
+
+## Slice 4 implementation guardrails
+
+- [ ] Keep reviewer and tester worktrees pending until activation or refresh.
+- [ ] Preserve Herdr-first worktree creation with raw git fallback only after Herdr creation exits nonzero or fails to spawn.
+- [ ] Let no-mistakes handle final validation, PR updates, and CI.

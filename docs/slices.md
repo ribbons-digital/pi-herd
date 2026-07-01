@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0, Slice 1, and Slice 2 complete on the current branch.
+Status: Design approved, with Slice 0, Slice 1, and Slice 2 complete, and Slice 3 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -61,7 +61,7 @@ Goal: Implement run creation without launching workers.
 
 Deliverable: `pi-herd run create` creates run state and canonical artifacts.
 
-Status: Implemented on the current branch.
+Status: Complete.
 
 Result: `pi-herd run create` creates the canonical run directory, `REQUEST.md`, `state.json`, `logs/`, `inbox/`, pending selected-role records, and active-run resolution helpers.
 
@@ -69,7 +69,7 @@ Scope:
 
 - Run id and run slug generation.
 - Slug collision handling.
-- Run lifecycle statuses: active, completed, abandoned.
+- Run lifecycle statuses: active, completed, abandoned, failed.
 - Canonical run directory creation.
 - `REQUEST.md` creation.
 - `state.json` creation using the approved schema.
@@ -98,6 +98,8 @@ Goal: Create and track role worktrees safely.
 
 Deliverable: `pi-herd run create --with-worktrees` or equivalent creates the implementation worktree and any eagerly materialized role worktrees.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Herdr worktree creation first.
@@ -108,6 +110,17 @@ Scope:
 - Reviewer and tester worktree records remain `worktree: pending` until activation or refresh.
 - Dirty worktree checks.
 - Clear worktree paths and branches in output.
+
+Implemented notes:
+
+- `--with-worktrees` creates the implementer worktree when the implementer role is selected.
+- `--planner-worktree` implies `--with-worktrees` and creates the planner worktree when the planner role is selected.
+- Worktrees are created under `.worktrees/pi-herd/{run_id}/{role}`.
+- Herdr metadata must match the requested path and branch before it is trusted.
+- Raw `git worktree add` is used only when Herdr worktree creation exits nonzero or Herdr cannot be spawned.
+- Herdr timeouts and successful Herdr creation with unusable, missing, or mismatched metadata fail clearly instead of attempting git fallback against the same target.
+- Existing target paths, existing branches, symlink path components, and dirty repositories are refused before provider creation.
+- If a later worktree fails after an earlier one succeeds, persisted state keeps the successful role materialized and marks the run `failed`.
 
 Out of scope:
 

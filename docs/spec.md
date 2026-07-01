@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 2 run state implemented on the current branch.
+Status: Reviewed draft with Slice 3 worktree orchestration implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -63,8 +63,8 @@ The canonical run directory uses `run_id`:
 ```
 
 `run_slug` is a human-friendly selector derived from the goal.
-Slugs are conveniences, not canonical identity.
-If two active or historical runs would share a slug, pi-herd applies a deterministic numeric suffix before requiring the user to select by `run_id`.
+Slugs are conveniences, not canonical identity, and may repeat across runs created at different timestamps.
+If a slug selector matches multiple active runs, pi-herd requires the user to select by `run_id`.
 
 ### Run lifecycle
 
@@ -73,6 +73,7 @@ A run has a lifecycle status:
 - `active`: the run can be selected by implicit active-run resolution.
 - `completed`: the run is finished and should not be implicitly selected.
 - `abandoned`: the run was stopped or cleaned up without completion and should not be implicitly selected.
+- `failed`: creation or orchestration failed and should not be implicitly selected.
 
 Active-run resolution only considers active runs unless the user explicitly selects another run.
 `--run latest` is allowed only as an explicit selector.
@@ -132,9 +133,10 @@ The state schema should start with this shape:
       "role": "planner",
       "status": "pending",
       "harness": "pi",
-      "branch": "pi-herd/auth-refresh/planner",
+      "branch": "pi-herd/2026-07-01T12-00-00-auth-refresh/planner",
       "worktree_path": null,
       "worktree_status": "pending",
+      "worktree_provider": null,
       "herdr_workspace_id": null,
       "herdr_tab_id": null,
       "herdr_pane_id": null,
@@ -146,10 +148,11 @@ The state schema should start with this shape:
       "role": "reviewer",
       "status": "pending",
       "harness": "pi",
-      "branch": "pi-herd/auth-refresh/reviewer",
-      "source_ref": "pi-herd/auth-refresh/impl",
+      "branch": "pi-herd/2026-07-01T12-00-00-auth-refresh/reviewer",
+      "source_ref": "pi-herd/2026-07-01T12-00-00-auth-refresh/impl",
       "worktree_path": null,
       "worktree_status": "pending",
+      "worktree_provider": null,
       "herdr_workspace_id": null,
       "herdr_tab_id": null,
       "herdr_pane_id": null,
@@ -164,6 +167,9 @@ The state schema should start with this shape:
 State writes should be atomic.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
+`pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree provider, worktree status, and Herdr workspace id when available in `state.json`.
+`--planner-worktree` implies `--with-worktrees` and also materializes the planner worktree.
+If worktree materialization fails after state creation, pi-herd persists any successful materializations, marks the run `failed`, and excludes it from active-run resolution.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -296,23 +302,26 @@ Multiple workers must not operate in the same source worktree by default.
 Default worktree root:
 
 ```text
-.worktrees/pi-herd/{run_slug}/{role}
+.worktrees/pi-herd/{run_id}/{role}
 ```
 
 Default implementation branch:
 
 ```text
-pi-herd/{run_slug}/impl
+pi-herd/{run_id}/impl
 ```
 
 The implementer owns the implementation branch and implementation worktree.
-The implementer worktree and implementation branch should be created eagerly when the implementation role is selected.
+`pi-herd run create --with-worktrees` creates the implementer worktree and implementation branch when the implementer role is selected.
+`--planner-worktree` also creates the planner worktree and branch when the planner role is selected.
 Reviewer and tester role worktree views should be materialized lazily when those roles are activated or refreshed.
 Reviewer and tester worktrees are refreshed from the implementation branch.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
-Raw git worktree commands are the fallback.
+Raw `git worktree add` commands are the fallback only when Herdr worktree creation exits nonzero or Herdr cannot be spawned.
+If Herdr times out or exits successfully but omits required metadata or returns JSON that does not match the requested absolute path and branch, pi-herd fails clearly instead of attempting git fallback against the same target.
+Worktree materialization requires a clean repository outside ignored run and worktree paths, refuses existing target paths, refuses existing branches, and rejects symlink components in the worktree path.
 
 ## Canonical run directory
 
@@ -439,8 +448,8 @@ pi-herd merge-plan
 pi-herd cleanup
 ```
 
-`run create` supports early state creation before launch behavior is implemented.
-It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--json` for machine-readable state output, and `--config` for a custom config file.
+`run create` supports early state and worktree creation before launch behavior is implemented.
+It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
 `start` is the user-facing command once orchestration launch exists.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.

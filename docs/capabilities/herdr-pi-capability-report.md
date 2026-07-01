@@ -68,7 +68,8 @@ Implementation contract:
 
 - Capture the workspace id returned by `worktree create` for any linked worktree.
 - Use that linked worktree workspace id when removing the worktree through Herdr.
-- Fall back to raw `git worktree` commands when Herdr worktree creation fails or does not expose required metadata.
+- Fall back to raw `git worktree` commands only when Herdr worktree creation exits nonzero or Herdr cannot be spawned.
+- If Herdr times out or exits successfully but does not expose usable matching metadata, fail clearly instead of attempting git fallback against the same target.
 
 ### Tab and pane
 
@@ -295,9 +296,10 @@ If `herdr agent send` does not provide submit semantics:
 
 - Use `herdr pane send-text` followed by `herdr pane send-keys enter`.
 
-If Herdr worktree commands fail:
+If Herdr worktree creation exits nonzero or Herdr cannot be spawned:
 
-- Fall back to raw `git worktree add` and then open the resulting path in Herdr.
+- Fall back to raw `git worktree add` for Slice 3 run creation, where panes and Herdr workspace opening are out of scope.
+- Later launch slices may open an existing raw-git fallback worktree in Herdr when a visible pane or workspace is needed.
 
 If Herdr Pi integration is missing:
 
@@ -309,6 +311,8 @@ If Herdr Pi integration is missing:
 
 - Slice 1 `doctor` should check Herdr server status, Pi command availability, Herdr Pi integration status, git repo, and git worktree support.
 - Slice 2 state stores Herdr workspace, tab, and pane ids plus a nullable `session_ref` placeholder for harness session identity.
+- Slice 3 worktree creation should call Herdr first, trust the result only when JSON metadata matches the requested branch and absolute path, and fall back to raw `git worktree add` without creating panes or sessions only when Herdr exits nonzero or cannot be spawned.
+- If Herdr times out or exits successfully without usable matching metadata, Slice 3 should fail clearly rather than attempt git fallback against the same target.
 - Slice 4 should use `herdr agent start` where possible.
 - Slice 5 prompt sending should use pane send-text plus Enter.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.
