@@ -163,16 +163,17 @@ async function createWorktreeHerdrFirst(options: {
     '--json'
   ], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
 
-  const herdrResult = herdr.exitCode === 0 ? parseHerdrWorktreeResult(herdr.stdout, options) : null;
-  if (herdrResult) {
-    return herdrResult;
+  if (herdr.exitCode === 0) {
+    const herdrResult = parseHerdrWorktreeResult(herdr.stdout, options);
+    if (herdrResult) {
+      return herdrResult;
+    }
+    throw new Error(`Could not create worktree for ${options.role}. Herdr: herdr worktree create returned unusable JSON metadata`);
   }
 
   const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
   if (git.exitCode !== 0) {
-    const herdrDetail = herdr.exitCode === 0
-      ? 'herdr worktree create returned unusable JSON metadata'
-      : firstLine(herdr.stderr) || firstLine(herdr.stdout) || herdr.error?.message || 'herdr worktree create failed';
+    const herdrDetail = firstLine(herdr.stderr) || firstLine(herdr.stdout) || herdr.error?.message || 'herdr worktree create failed';
     const gitDetail = firstLine(git.stderr) || firstLine(git.stdout) || git.error?.message || 'git worktree add failed';
     throw new Error(`Could not create worktree for ${options.role}. Herdr: ${herdrDetail}. Git: ${gitDetail}`);
   }

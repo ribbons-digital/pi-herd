@@ -243,89 +243,56 @@ describe('worktree orchestration', () => {
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
-  it('falls back to git when Herdr omits required metadata', async () => {
+  it('rejects successful Herdr creation when required metadata is omitted', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/incomplete-herdr/impl --base main --path DIR/.worktrees/pi-herd/incomplete-herdr/implementer --label pi-herd incomplete-herdr implementer --no-focus --json': {
         exitCode: 0,
         stdout: JSON.stringify({ checkout_path: join(dir, '.worktrees/pi-herd/incomplete-herdr/implementer') }),
         stderr: ''
-      },
-      'git worktree add -b pi-herd/incomplete-herdr/impl DIR/.worktrees/pi-herd/incomplete-herdr/implementer main': {
-        exitCode: 0,
-        stdout: '',
-        stderr: ''
       }
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Incomplete Herdr', withWorktrees: true, runner });
-
-    expect(result.worktrees[0]).toMatchObject({ role: 'implementer', provider: 'git', herdr_workspace_id: null });
-    expect(result.state.roles.implementer?.herdr_workspace_id).toBeNull();
+    await expect(createRun({ cwd: dir, goal: 'Incomplete Herdr', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
-  it('falls back to git when Herdr reports the wrong checkout path', async () => {
+  it('rejects successful Herdr creation when the reported checkout path is wrong', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/wrong-path/impl --base main --path DIR/.worktrees/pi-herd/wrong-path/implementer --label pi-herd wrong-path implementer --no-focus --json': {
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer'), branch: 'pi-herd/wrong-path/impl' }),
         stderr: ''
-      },
-      'git worktree add -b pi-herd/wrong-path/impl DIR/.worktrees/pi-herd/wrong-path/implementer main': {
-        exitCode: 0,
-        stdout: '',
-        stderr: ''
       }
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Wrong path', withWorktrees: true, runner });
-
-    expect(result.worktrees[0]).toMatchObject({
-      role: 'implementer',
-      path: join(dir, '.worktrees/pi-herd/wrong-path/implementer'),
-      provider: 'git',
-      herdr_workspace_id: null
-    });
+    await expect(createRun({ cwd: dir, goal: 'Wrong path', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
-  it('falls back to git when Herdr reports the wrong branch', async () => {
+  it('rejects successful Herdr creation when the reported branch is wrong', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/wrong-branch/impl --base main --path DIR/.worktrees/pi-herd/wrong-branch/implementer --label pi-herd wrong-branch implementer --no-focus --json': {
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/wrong-branch/implementer'), branch: 'pi-herd/other/impl' }),
         stderr: ''
-      },
-      'git worktree add -b pi-herd/wrong-branch/impl DIR/.worktrees/pi-herd/wrong-branch/implementer main': {
-        exitCode: 0,
-        stdout: '',
-        stderr: ''
       }
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Wrong branch', withWorktrees: true, runner });
-
-    expect(result.worktrees[0]).toMatchObject({
-      role: 'implementer',
-      branch: 'pi-herd/wrong-branch/impl',
-      provider: 'git',
-      herdr_workspace_id: null
-    });
+    await expect(createRun({ cwd: dir, goal: 'Wrong branch', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
-  it('reports unusable Herdr metadata when git fallback also fails', async () => {
+  it('reports unusable Herdr metadata without attempting git fallback', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/bad-herdr/impl --base main --path DIR/.worktrees/pi-herd/bad-herdr/implementer --label pi-herd bad-herdr implementer --no-focus --json': {
         exitCode: 0,
         stdout: JSON.stringify({ workspace_id: 'workspace-123' }),
         stderr: ''
-      },
-      'git worktree add -b pi-herd/bad-herdr/impl DIR/.worktrees/pi-herd/bad-herdr/implementer main': {
-        exitCode: 128,
-        stdout: '',
-        stderr: 'git failed\n'
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'Bad Herdr', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata\. Git: git failed/);
+    await expect(createRun({ cwd: dir, goal: 'Bad Herdr', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create returned unusable JSON metadata/);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
   it('reports both Herdr and git failures when no provider can create a worktree', async () => {
