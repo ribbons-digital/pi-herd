@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 complete.
+Status: Design approved, with Slice 0 and Slice 1 complete.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -34,6 +34,8 @@ Goal: Create a working TypeScript CLI foundation with validated config and envir
 
 Deliverable: `pi-herd doctor` and `pi-herd init` work locally using the verified capability contract.
 
+Result: Complete in PR #13.
+
 Scope:
 
 - TypeScript project scaffold.
@@ -58,6 +60,8 @@ Out of scope:
 Goal: Implement run creation without launching workers.
 
 Deliverable: `pi-herd run create` creates run state and canonical artifacts.
+
+Status: In progress.
 
 Scope:
 
