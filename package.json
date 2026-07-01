@@ -1,0 +1,36 @@
+{
+  "name": "pi-herd",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Visible Pi session orchestration through Herdr panes and git worktrees.",
+  "type": "module",
+  "bin": {
+    "pi-herd": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "lint": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "pi",
+    "herdr",
+    "orchestration"
+  ],
+  "author": "Ribbons Digital",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.0.0+sha512.b8fef5494bd3fe4cbd4edabd0745df2ee5be3e4b0b8b08fa643aa3e4c6702ccc0f00d68fa8a8c9858a735a0032485a44990ed2810526c875e416f001b17df12b",
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
