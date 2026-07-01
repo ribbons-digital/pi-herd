@@ -319,8 +319,8 @@ Reviewer and tester worktrees are refreshed from the implementation branch.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
-Raw `git worktree add` commands are the fallback only when Herdr worktree creation exits nonzero.
-If Herdr exits successfully but omits required metadata or returns JSON that does not match the requested absolute path and branch, pi-herd fails clearly instead of attempting git fallback against the same target.
+Raw `git worktree add` commands are the fallback only when Herdr worktree creation exits nonzero or Herdr cannot be spawned.
+If Herdr times out or exits successfully but omits required metadata or returns JSON that does not match the requested absolute path and branch, pi-herd fails clearly instead of attempting git fallback against the same target.
 Worktree materialization requires a clean repository outside ignored run and worktree paths, refuses existing target paths, refuses existing branches, and rejects symlink components in the worktree path.
 
 ## Canonical run directory

@@ -45,8 +45,8 @@ By default it creates pending role records for `planner`, `implementer`, `review
 Pass `--role` one or more times to limit the selected roles, `--base-ref` to override the detected branch or commit, `--json` for the saved state, or `--config` for a custom config path.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and not traverse symlinks.
 Pass `--with-worktrees` to materialize the implementation worktree while leaving reviewer and tester worktrees pending.
-Worktree creation requires a clean repository outside the configured runs directory and `.worktrees`, refuses existing target paths or branches, uses Herdr first, and falls back to `git worktree add` only when Herdr creation exits nonzero.
-If Herdr creation exits successfully but returns missing, unusable, or mismatched metadata, pi-herd fails clearly instead of attempting git fallback against the same target.
+Worktree creation requires a clean repository outside the configured runs directory and `.worktrees`, refuses existing target paths or branches, uses Herdr first, and falls back to `git worktree add` only when Herdr creation exits nonzero or Herdr cannot be spawned.
+If Herdr creation times out or exits successfully but returns missing, unusable, or mismatched metadata, pi-herd fails clearly instead of attempting git fallback against the same target.
 Pass `--planner-worktree` to also materialize a planner worktree; it implies `--with-worktrees`.
 Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in text output with their branch and provider.
 If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.

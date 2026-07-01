@@ -117,8 +117,8 @@ Implemented notes:
 - `--planner-worktree` implies `--with-worktrees` and creates the planner worktree when the planner role is selected.
 - Worktrees are created under `.worktrees/pi-herd/{run_id}/{role}`.
 - Herdr metadata must match the requested path and branch before it is trusted.
-- Raw `git worktree add` is used only when Herdr worktree creation exits nonzero.
-- Successful Herdr creation with unusable, missing, or mismatched metadata fails clearly instead of attempting git fallback against the same target.
+- Raw `git worktree add` is used only when Herdr worktree creation exits nonzero or Herdr cannot be spawned.
+- Herdr timeouts and successful Herdr creation with unusable, missing, or mismatched metadata fail clearly instead of attempting git fallback against the same target.
 - Existing target paths, existing branches, symlink path components, and dirty repositories are refused before provider creation.
 - If a later worktree fails after an earlier one succeeds, persisted state keeps the successful role materialized and marks the run `failed`.
 
