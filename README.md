@@ -8,7 +8,8 @@ It is Pi-first, but the core model is harness-neutral so future harnesses can be
 ## Status
 
 Design approved.
-Implementation is planned as ordered GitHub issues and pull requests.
+Slice 0 capability discovery is complete.
+Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
 
