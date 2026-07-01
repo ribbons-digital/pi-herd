@@ -11,7 +11,8 @@ Design approved.
 Slice 0 capability discovery is complete.
 Slice 1 CLI foundation is complete.
 Slice 2 run state and artifact model is complete.
-Slice 3 worktree orchestration is implemented on the current branch.
+Slice 3 worktree orchestration is complete.
+Slice 4 Herdr pane and session launch is in progress.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -32,6 +33,7 @@ pi-herd doctor --json
 pi-herd run create "replace legacy auth refresh flow"
 pi-herd run create "plan auth refresh" --role planner --base-ref main --json
 pi-herd run create "implement auth refresh" --with-worktrees
+pi-herd start "replace legacy auth refresh flow"
 ```
 
 `pi-herd init` creates `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates under `.pi-herd/prompts/`, and safe ignore entries.
@@ -51,6 +53,11 @@ Pass `--planner-worktree` to also materialize a planner worktree; it implies `--
 Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in text output with their branch and provider.
 If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
 It does not create panes or worker sessions.
+
+`pi-herd start` creates the run artifacts, checks that the repository is clean outside ignored pi-herd paths before materializing worktrees, materializes the implementer worktree when selected, binds the current Pi/Herdr pane as lead when verified, or creates a lead session when needed.
+It launches and activates the planner with an initial kickoff prompt.
+It launches the implementer as a staged session in the implementation worktree.
+Reviewer and tester remain staged slots with pending worktrees until later activation slices.
 
 ## Local development
 

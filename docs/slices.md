@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0, Slice 1, and Slice 2 complete, and Slice 3 implemented on the current branch.
+Status: Design approved, with Slice 0, Slice 1, Slice 2, and Slice 3 complete, and Slice 4 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -134,6 +134,8 @@ Goal: Create visible Herdr panes and launch harness sessions.
 
 Deliverable: `pi-herd start` creates or binds lead, opens worker panes, launches Pi sessions, and activates only planner by default.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Herdr workspace/tab/pane helpers.
@@ -145,6 +147,16 @@ Scope:
 - Planner kickoff prompt.
 - State persistence for pane/session refs.
 - Harness adapter exposes enough launch metadata for later capability mismatch warnings.
+
+Implemented notes:
+
+- `pi-herd start <goal>` reuses run creation and implementer worktree materialization, including clean repository checks before worktree creation.
+- The current Pi/Herdr pane is bound as lead only after Herdr pane verification.
+- When no current lead can be verified, pi-herd creates a lead workspace/session.
+- Planner is launched and activated with a kickoff prompt submitted through pane send-text plus Enter.
+- Implementer is launched as a staged session in the materialized implementation worktree.
+- Reviewer and tester remain staged role slots with pending worktrees and no launched sessions.
+- Launch refs and additive launch metadata are persisted after each successful launch so partial failures remain recoverable.
 
 Out of scope:
 

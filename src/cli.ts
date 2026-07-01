@@ -5,6 +5,7 @@ import { runDoctor, formatDoctorText } from './doctor.js';
 import { nodeCommandRunner } from './command-runner.js';
 import { runInit, formatInitText } from './init.js';
 import { createRun, formatRunCreateText, parseRole } from './run-state.js';
+import { formatStartText, startRun } from './start.js';
 
 const HELP = `pi-herd
 
@@ -12,12 +13,14 @@ Usage:
   pi-herd doctor [--json] [--config PATH]
   pi-herd init [--force] [--config PATH]
   pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
+  pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd --help
 
 Commands:
   doctor  Check the local environment and pi-herd config.
   init    Create .pi-herd config, run directory, prompts, and ignore entries.
   run     Create and manage orchestration run state.
+  start   Create or bind lead, launch visible sessions, and activate planner.
 `;
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()): Promise<number> {
@@ -70,6 +73,42 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       }
       const result = await runInit({ cwd, configPath: values.config, force: values.force });
       process.stdout.write(formatInitText(result));
+      return 0;
+    }
+
+    if (command === 'start') {
+      const { values, positionals } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          role: { type: 'string', multiple: true },
+          'base-ref': { type: 'string' },
+          'planner-worktree': { type: 'boolean', default: false },
+          json: { type: 'boolean', default: false },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: true
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        return 0;
+      }
+      const goal = positionals.join(' ').trim();
+      const roles = values.role?.map(parseRole);
+      const result = await startRun({
+        cwd,
+        goal,
+        configPath: values.config,
+        roles,
+        baseRef: values['base-ref'],
+        plannerWorktree: values['planner-worktree'],
+        runner: nodeCommandRunner
+      });
+      if (values.json) {
+        process.stdout.write(`${JSON.stringify(result.state, null, 2)}\n`);
+      } else {
+        process.stdout.write(formatStartText(result));
+      }
       return 0;
     }
 
