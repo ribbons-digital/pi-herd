@@ -13,6 +13,7 @@ export type RunStatus = 'active' | 'completed' | 'abandoned';
 export type RoleStatus = 'pending' | 'staged' | 'working' | 'done' | 'incomplete' | 'blocked' | 'failed';
 export type WorktreeStatus = 'pending' | 'materialized';
 
+/** Options for creating a canonical run state directory without launching workers. */
 export interface RunCreateOptions {
   cwd: string;
   goal: string;
@@ -22,6 +23,7 @@ export interface RunCreateOptions {
   now?: Date;
 }
 
+/** Files and directories created for a new run. */
 export interface RunCreateResult {
   state: RunState;
   requestPath: string;
@@ -56,6 +58,7 @@ export interface RoleRecord {
   last_activity_at: string | null;
 }
 
+/** Persisted schema_version 1 state for a pi-herd orchestration run. */
 export interface RunState {
   schema_version: 1;
   run_id: string;
@@ -71,6 +74,7 @@ export interface RunState {
   roles: Partial<Record<BuiltInRole, RoleRecord>>;
 }
 
+/** Minimal active-run data used for implicit and explicit run selection. */
 export interface ActiveRunSummary {
   run_id: string;
   run_slug: string;
@@ -80,6 +84,7 @@ export interface ActiveRunSummary {
   canonical_run_dir: string;
 }
 
+/** Create run artifacts and pending role records, but no worktrees, panes, or sessions. */
 export async function createRun(options: RunCreateOptions): Promise<RunCreateResult> {
   const goal = options.goal.trim();
   if (!goal) {
@@ -141,6 +146,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   return { state, requestPath, statePath, inboxDir, logsDir, created };
 }
 
+/** Return active runs sorted by creation time, ignoring completed or abandoned runs. */
 export async function listActiveRuns(cwd: string, configPath?: string): Promise<ActiveRunSummary[]> {
   const repoRoot = await resolveRepoRoot(cwd);
   const config = await loadConfigIfPresent(configPath ? cwd : repoRoot, configPath);
@@ -166,6 +172,7 @@ export async function listActiveRuns(cwd: string, configPath?: string): Promise<
   return active.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
+/** Resolve an explicit run selector or the only active run, failing on ambiguity. */
 export async function resolveActiveRun(cwd: string, selector?: string, configPath?: string): Promise<ActiveRunSummary> {
   const activeRuns = await listActiveRuns(cwd, configPath);
   if (selector) {
@@ -193,6 +200,7 @@ export async function resolveActiveRun(cwd: string, selector?: string, configPat
   throw new Error(`Multiple active runs found. Pass --run <run_id|slug>.\n${formatRunChoices(activeRuns)}`);
 }
 
+/** Format the human-readable result for `pi-herd run create`. */
 export function formatRunCreateText(result: RunCreateResult): string {
   return [
     `Created run ${result.state.run_id}`,
@@ -205,6 +213,7 @@ export function formatRunCreateText(result: RunCreateResult): string {
   ].join('\n') + '\n';
 }
 
+/** Parse a CLI role flag into a supported built-in Slice 2 role. */
 export function parseRole(value: string): BuiltInRole {
   if (value === 'planner' || value === 'implementer' || value === 'reviewer' || value === 'tester') {
     return value;

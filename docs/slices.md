@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 and Slice 1 complete.
+Status: Design approved, with Slice 0, Slice 1, and Slice 2 complete on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -61,7 +61,9 @@ Goal: Implement run creation without launching workers.
 
 Deliverable: `pi-herd run create` creates run state and canonical artifacts.
 
-Status: In progress.
+Status: Implemented on the current branch.
+
+Result: `pi-herd run create` creates the canonical run directory, `REQUEST.md`, `state.json`, `logs/`, `inbox/`, pending selected-role records, and active-run resolution helpers.
 
 Scope:
 
@@ -77,6 +79,13 @@ Scope:
 - Multiple active run ambiguity handling.
 - Atomic state writes.
 - Token-aware output constants.
+
+Implemented notes:
+
+- `--role` can be repeated to select any subset of `planner`, `implementer`, `reviewer`, and `tester`.
+- `--base-ref` overrides the detected current branch or commit.
+- `--json` prints the saved state.
+- Configured `paths.runs_dir` must be repository-relative, stay inside the repo root, and avoid symlink path components.
 
 Out of scope:
 
