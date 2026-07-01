@@ -63,8 +63,8 @@ The canonical run directory uses `run_id`:
 ```
 
 `run_slug` is a human-friendly selector derived from the goal.
-Slugs are conveniences, not canonical identity.
-If two active or historical runs would share a slug, pi-herd applies a deterministic numeric suffix before requiring the user to select by `run_id`.
+Slugs are conveniences, not canonical identity, and may repeat across runs created at different timestamps.
+If a slug selector matches multiple active runs, pi-herd requires the user to select by `run_id`.
 
 ### Run lifecycle
 
@@ -133,7 +133,7 @@ The state schema should start with this shape:
       "role": "planner",
       "status": "pending",
       "harness": "pi",
-      "branch": "pi-herd/auth-refresh/planner",
+      "branch": "pi-herd/2026-07-01T12-00-00-auth-refresh/planner",
       "worktree_path": null,
       "worktree_status": "pending",
       "worktree_provider": null,
@@ -148,8 +148,8 @@ The state schema should start with this shape:
       "role": "reviewer",
       "status": "pending",
       "harness": "pi",
-      "branch": "pi-herd/auth-refresh/reviewer",
-      "source_ref": "pi-herd/auth-refresh/impl",
+      "branch": "pi-herd/2026-07-01T12-00-00-auth-refresh/reviewer",
+      "source_ref": "pi-herd/2026-07-01T12-00-00-auth-refresh/impl",
       "worktree_path": null,
       "worktree_status": "pending",
       "worktree_provider": null,
@@ -302,13 +302,13 @@ Multiple workers must not operate in the same source worktree by default.
 Default worktree root:
 
 ```text
-.worktrees/pi-herd/{run_slug}/{role}
+.worktrees/pi-herd/{run_id}/{role}
 ```
 
 Default implementation branch:
 
 ```text
-pi-herd/{run_slug}/impl
+pi-herd/{run_id}/impl
 ```
 
 The implementer owns the implementation branch and implementation worktree.

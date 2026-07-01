@@ -115,7 +115,7 @@ Implemented notes:
 
 - `--with-worktrees` creates the implementer worktree when the implementer role is selected.
 - `--planner-worktree` implies `--with-worktrees` and creates the planner worktree when the planner role is selected.
-- Worktrees are created under `.worktrees/pi-herd/{run_slug}/{role}`.
+- Worktrees are created under `.worktrees/pi-herd/{run_id}/{role}`.
 - Herdr metadata must match the requested path and branch before it is trusted.
 - Raw `git worktree add` is used only when Herdr worktree creation exits nonzero.
 - Successful Herdr creation with unusable, missing, or mismatched metadata fails clearly instead of attempting git fallback against the same target.

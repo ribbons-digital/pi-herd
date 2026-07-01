@@ -48,7 +48,7 @@ Pass `--with-worktrees` to materialize the implementation worktree while leaving
 Worktree creation requires a clean repository outside the configured runs directory and `.worktrees`, refuses existing target paths or branches, uses Herdr first, and falls back to `git worktree add` only when Herdr creation exits nonzero.
 If Herdr creation exits successfully but returns missing, unusable, or mismatched metadata, pi-herd fails clearly instead of attempting git fallback against the same target.
 Pass `--planner-worktree` to also materialize a planner worktree; it implies `--with-worktrees`.
-Created worktrees use `.worktrees/pi-herd/{run_slug}/{role}` and are listed in text output with their branch and provider.
+Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in text output with their branch and provider.
 If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
 It does not create panes or worker sessions.
 

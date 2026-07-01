@@ -145,7 +145,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   };
 
   for (const role of roles) {
-    state.roles[role] = createRoleRecord(role, harness, runSlug);
+    state.roles[role] = createRoleRecord(role, harness, runId);
   }
 
   await writeFile(requestPath, formatRequest(state), 'utf8');
@@ -364,14 +364,14 @@ async function allocateRunDirectory(repoRoot: string, runsRoot: string, timestam
   return { runId, runSlug, runDir };
 }
 
-function createRoleRecord(role: BuiltInRole, harness: string, runSlug: string): RoleRecord {
+function createRoleRecord(role: BuiltInRole, harness: string, runId: string): RoleRecord {
   const defaults = ROLE_DEFAULTS[role];
-  const implementationBranch = `pi-herd/${runSlug}/impl`;
+  const implementationBranch = `pi-herd/${runId}/impl`;
   return {
     role,
     status: 'pending',
     harness,
-    branch: role === 'implementer' ? implementationBranch : `pi-herd/${runSlug}/${role}`,
+    branch: role === 'implementer' ? implementationBranch : `pi-herd/${runId}/${role}`,
     source_ref: role === 'reviewer' || role === 'tester' ? implementationBranch : undefined,
     worktree_path: null,
     worktree_status: 'pending',

@@ -39,7 +39,7 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
     if (!record?.branch) {
       continue;
     }
-    const worktreePath = roleWorktreePath(options.state.repo_root, options.state.run_slug, role);
+    const worktreePath = roleWorktreePath(options.state.repo_root, options.state.run_id, role);
     await assertNoSymlinkPathComponents(options.state.repo_root, worktreePath);
     await assertPathAvailable(worktreePath);
     await assertBranchAvailable(options.runner, options.state.repo_root, record.branch);
@@ -74,8 +74,8 @@ function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltIn
   return roles;
 }
 
-function roleWorktreePath(repoRoot: string, runSlug: string, role: BuiltInRole): string {
-  return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runSlug, role);
+function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
+  return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runId, role);
 }
 
 /** Refuse worktree creation when the repository has uncommitted changes outside ignored paths. */

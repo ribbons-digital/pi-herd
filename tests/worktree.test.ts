@@ -9,6 +9,9 @@ import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 let dir: string;
 let extraDirs: string[];
 
+const RUN_NOW = new Date('2026-07-01T12:00:00.000Z');
+const RUN_PREFIX = '2026-07-01T12-00-00';
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'pi-herd-worktree-'));
   extraDirs = [];
@@ -51,25 +54,25 @@ class RecordingRunner implements CommandRunner {
 describe('worktree orchestration', () => {
   it('creates implementer worktree through Herdr first and persists state', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/add-worktrees/impl --base main --path DIR/.worktrees/pi-herd/add-worktrees/implementer --label pi-herd add-worktrees implementer --no-focus --json': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-add-worktrees/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-add-worktrees/implementer --label pi-herd add-worktrees implementer --no-focus --json': {
         exitCode: 0,
-        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/add-worktrees/implementer'), branch: 'pi-herd/add-worktrees/impl' }),
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-add-worktrees/implementer'), branch: 'pi-herd/2026-07-01T12-00-00-add-worktrees/impl' }),
         stderr: ''
       }
     }));
 
     const result = await createRun({
       cwd: dir,
+      now: RUN_NOW,
       goal: 'Add worktrees',
-      now: new Date('2026-07-01T12:00:00.000Z'),
       withWorktrees: true,
       runner
     });
 
     expect(result.worktrees).toEqual([{
       role: 'implementer',
-      branch: 'pi-herd/add-worktrees/impl',
-      path: join(dir, '.worktrees/pi-herd/add-worktrees/implementer'),
+      branch: 'pi-herd/2026-07-01T12-00-00-add-worktrees/impl',
+      path: join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-add-worktrees/implementer'),
       provider: 'herdr',
       herdr_workspace_id: 'workspace-123'
     }]);
@@ -84,17 +87,33 @@ describe('worktree orchestration', () => {
     expect(saved.roles.implementer?.worktree_provider).toBe('herdr');
   });
 
-  it('accepts Herdr JSON envelope metadata from nested result data', async () => {
-    const checkoutPath = join(dir, '.worktrees/pi-herd/herdr-envelope/implementer');
+  it('uses run ids for worktree branches and paths across repeated goals', async () => {
+    const secondRunId = '2026-07-01T12-01-00-repeat-goal';
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/herdr-envelope/impl --base main --path DIR/.worktrees/pi-herd/herdr-envelope/implementer --label pi-herd herdr-envelope implementer --no-focus --json': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-repeat-goal/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-repeat-goal/implementer --label pi-herd repeat-goal implementer --no-focus --json': herdrSuccess('first-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-repeat-goal/implementer')),
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-01-00-repeat-goal/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-01-00-repeat-goal/implementer --label pi-herd repeat-goal implementer --no-focus --json': herdrSuccess('second-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-01-00-repeat-goal/implementer'))
+    }));
+
+    const first = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Repeat goal', withWorktrees: true, runner });
+    const second = await createRun({ cwd: dir, now: new Date('2026-07-01T12:01:00.000Z'), goal: 'Repeat goal', withWorktrees: true, runner });
+
+    expect(first.state.run_slug).toBe('repeat-goal');
+    expect(second.state.run_slug).toBe('repeat-goal');
+    expect(second.state.roles.implementer?.branch).toBe(`pi-herd/${secondRunId}/impl`);
+    expect(second.state.roles.implementer?.worktree_path).toBe(join(dir, '.worktrees/pi-herd', secondRunId, 'implementer'));
+  });
+
+  it('accepts Herdr JSON envelope metadata from nested result data', async () => {
+    const checkoutPath = join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-herdr-envelope/implementer');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-herdr-envelope/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-herdr-envelope/implementer --label pi-herd herdr-envelope implementer --no-focus --json': {
         exitCode: 0,
         stdout: JSON.stringify({
           ok: true,
           result: {
             data: {
               workspace: { id: 'workspace-envelope-123' },
-              worktree: { checkout_path: checkoutPath, branch_name: 'pi-herd/herdr-envelope/impl' }
+              worktree: { checkout_path: checkoutPath, branch_name: 'pi-herd/2026-07-01T12-00-00-herdr-envelope/impl' }
             }
           }
         }),
@@ -102,11 +121,11 @@ describe('worktree orchestration', () => {
       }
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Herdr envelope', withWorktrees: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Herdr envelope', withWorktrees: true, runner });
 
     expect(result.worktrees[0]).toEqual({
       role: 'implementer',
-      branch: 'pi-herd/herdr-envelope/impl',
+      branch: 'pi-herd/2026-07-01T12-00-00-herdr-envelope/impl',
       path: checkoutPath,
       provider: 'herdr',
       herdr_workspace_id: 'workspace-envelope-123'
@@ -119,23 +138,23 @@ describe('worktree orchestration', () => {
 
   it('falls back to git worktree when Herdr creation fails', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/git-fallback/impl --base main --path DIR/.worktrees/pi-herd/git-fallback/implementer --label pi-herd git-fallback implementer --no-focus --json': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-git-fallback/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-git-fallback/implementer --label pi-herd git-fallback implementer --no-focus --json': {
         exitCode: 1,
         stdout: '',
         stderr: 'herdr unavailable\n'
       },
-      'git worktree add -b pi-herd/git-fallback/impl DIR/.worktrees/pi-herd/git-fallback/implementer main': {
+      'git worktree add -b pi-herd/2026-07-01T12-00-00-git-fallback/impl DIR/.worktrees/pi-herd/2026-07-01T12-00-00-git-fallback/implementer main': {
         exitCode: 0,
         stdout: '',
         stderr: ''
       }
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Git fallback', withWorktrees: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Git fallback', withWorktrees: true, runner });
 
     expect(result.worktrees[0]).toMatchObject({ role: 'implementer', provider: 'git', herdr_workspace_id: null });
     expect(result.state.roles.implementer?.worktree_provider).toBe('git');
-    expect(runner.calls.some((call) => call.includes('git worktree add -b pi-herd/git-fallback/impl'))).toBe(true);
+    expect(runner.calls.some((call) => call.includes('git worktree add -b pi-herd/2026-07-01T12-00-00-git-fallback/impl'))).toBe(true);
     expect(runner.options.find((call) => call.command === 'herdr' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
     expect(runner.options.find((call) => call.command === 'git' && call.args[0] === 'worktree')?.timeoutMs).toBe(120_000);
     expect(runner.options.find((call) => call.command === 'git' && call.args[0] === 'show-ref')?.timeoutMs).toBeUndefined();
@@ -143,11 +162,11 @@ describe('worktree orchestration', () => {
 
   it('optionally creates a planner worktree without materializing reviewer or tester', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/planner-too/impl --base main --path DIR/.worktrees/pi-herd/planner-too/implementer --label pi-herd planner-too implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/planner-too/implementer')),
-      'herdr worktree create --cwd DIR --branch pi-herd/planner-too/planner --base main --path DIR/.worktrees/pi-herd/planner-too/planner --label pi-herd planner-too planner --no-focus --json': herdrSuccess('planner-ws', join(dir, '.worktrees/pi-herd/planner-too/planner'))
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-planner-too/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-planner-too/implementer --label pi-herd planner-too implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-planner-too/implementer')),
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-planner-too/planner --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-planner-too/planner --label pi-herd planner-too planner --no-focus --json': herdrSuccess('planner-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-planner-too/planner'))
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Planner too', withWorktrees: true, plannerWorktree: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Planner too', withWorktrees: true, plannerWorktree: true, runner });
 
     expect(result.worktrees.map((worktree) => worktree.role)).toEqual(['implementer', 'planner']);
     expect(result.state.roles.planner?.worktree_status).toBe('materialized');
@@ -164,7 +183,7 @@ describe('worktree orchestration', () => {
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'Dirty repo', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'Dirty repo', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
   });
 
   it.each([
@@ -179,7 +198,7 @@ describe('worktree orchestration', () => {
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'Dirty pi herd file', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'Dirty pi herd file', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
   });
 
   it('creates a real git fallback worktree in a temporary repository', async () => {
@@ -191,7 +210,7 @@ describe('worktree orchestration', () => {
     await nodeCommandRunner.run('git', ['commit', '-m', 'init'], { cwd: dir });
     const runner = new HerdrFailingGitRunner();
 
-    const result = await createRun({ cwd: dir, goal: 'Real git fallback', withWorktrees: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Real git fallback', withWorktrees: true, runner });
 
     expect(result.worktrees[0]?.provider).toBe('git');
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
@@ -204,10 +223,10 @@ describe('worktree orchestration', () => {
     await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('custom-runs'), 'utf8');
     const runner = new RecordingRunner(baseResponses({
       'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!custom-runs': { exitCode: 0, stdout: '', stderr: '' },
-      'herdr worktree create --cwd DIR --branch pi-herd/custom-runs/impl --base main --path DIR/.worktrees/pi-herd/custom-runs/implementer --label pi-herd custom-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/custom-runs/implementer'))
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-custom-runs/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-custom-runs/implementer --label pi-herd custom-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-custom-runs/implementer'))
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Custom runs', withWorktrees: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Custom runs', withWorktrees: true, runner });
 
     expect(result.state.canonical_run_dir).toContain(join(dir, 'custom-runs'));
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
@@ -217,19 +236,19 @@ describe('worktree orchestration', () => {
     await mkdir(join(dir, '.pi-herd'), { recursive: true });
     await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('.'), 'utf8');
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/root-runs/impl --base main --path DIR/.worktrees/pi-herd/root-runs/implementer --label pi-herd root-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/root-runs/implementer'))
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-root-runs/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-root-runs/implementer --label pi-herd root-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-root-runs/implementer'))
     }));
 
-    const result = await createRun({ cwd: dir, goal: 'Root runs', now: new Date('2026-07-01T12:00:00.000Z'), withWorktrees: true, runner });
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Root runs', withWorktrees: true, runner });
 
     expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
   });
 
   it('refuses an existing worktree path before creation', async () => {
-    await mkdir(join(dir, '.worktrees/pi-herd/path-exists/implementer'), { recursive: true });
+    await mkdir(join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-path-exists/implementer'), { recursive: true });
     const runner = new RecordingRunner(baseResponses({}));
 
-    await expect(createRun({ cwd: dir, goal: 'Path exists', withWorktrees: true, runner })).rejects.toThrow(/Worktree path already exists/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'Path exists', withWorktrees: true, runner })).rejects.toThrow(/Worktree path already exists/);
   });
 
   it('refuses symlink components in worktree paths before provider creation', async () => {
@@ -238,7 +257,7 @@ describe('worktree orchestration', () => {
     await symlink(outside, join(dir, '.worktrees'));
     const runner = new RecordingRunner(baseResponses({}));
 
-    await expect(createRun({ cwd: dir, goal: 'Symlink worktree root', withWorktrees: true, runner })).rejects.toThrow(/Worktree path must not include symbolic links/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'Symlink worktree root', withWorktrees: true, runner })).rejects.toThrow(/Worktree path must not include symbolic links/);
     expect(runner.calls.some((call) => call.includes('herdr worktree create'))).toBe(false);
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
@@ -250,7 +269,7 @@ describe('worktree orchestration', () => {
       slug: 'incomplete-herdr',
       response: () => ({
         exitCode: 0,
-        stdout: JSON.stringify({ checkout_path: join(dir, '.worktrees/pi-herd/incomplete-herdr/implementer') }),
+        stdout: JSON.stringify({ checkout_path: join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-incomplete-herdr/implementer') }),
         stderr: ''
       }),
       expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
@@ -261,7 +280,7 @@ describe('worktree orchestration', () => {
       slug: 'wrong-path',
       response: () => ({
         exitCode: 0,
-        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer'), branch: 'pi-herd/wrong-path/impl' }),
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer'), branch: 'pi-herd/2026-07-01T12-00-00-wrong-path/impl' }),
         stderr: ''
       }),
       expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
@@ -272,7 +291,7 @@ describe('worktree orchestration', () => {
       slug: 'wrong-branch',
       response: () => ({
         exitCode: 0,
-        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/wrong-branch/implementer'), branch: 'pi-herd/other/impl' }),
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-wrong-branch/implementer'), branch: 'pi-herd/other/impl' }),
         stderr: ''
       }),
       expectedError: /Herdr: herdr worktree create returned unusable JSON metadata/
@@ -305,31 +324,31 @@ describe('worktree orchestration', () => {
       [herdrCreateCommand(slug)]: response()
     }));
 
-    await expect(createRun({ cwd: dir, goal, withWorktrees: true, runner })).rejects.toThrow(expectedError);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal, withWorktrees: true, runner })).rejects.toThrow(expectedError);
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
   it('reports both Herdr and git failures when no provider can create a worktree', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/no-provider/impl --base main --path DIR/.worktrees/pi-herd/no-provider/implementer --label pi-herd no-provider implementer --no-focus --json': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-no-provider/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-no-provider/implementer --label pi-herd no-provider implementer --no-focus --json': {
         exitCode: 1,
         stdout: '',
         stderr: 'herdr failed\n'
       },
-      'git worktree add -b pi-herd/no-provider/impl DIR/.worktrees/pi-herd/no-provider/implementer main': {
+      'git worktree add -b pi-herd/2026-07-01T12-00-00-no-provider/impl DIR/.worktrees/pi-herd/2026-07-01T12-00-00-no-provider/implementer main': {
         exitCode: 128,
         stdout: '',
         stderr: 'git failed\n'
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'No provider', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr failed\. Git: git failed/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'No provider', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr failed\. Git: git failed/);
   });
 
   it('persists successful materializations when a later worktree fails', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/partial-failure/impl --base main --path DIR/.worktrees/pi-herd/partial-failure/implementer --label pi-herd partial-failure implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/partial-failure/implementer')),
-      'git show-ref --verify --quiet refs/heads/pi-herd/partial-failure/planner': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-partial-failure/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-partial-failure/implementer --label pi-herd partial-failure implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-partial-failure/implementer')),
+      'git show-ref --verify --quiet refs/heads/pi-herd/2026-07-01T12-00-00-partial-failure/planner': {
         exitCode: 0,
         stdout: '',
         stderr: ''
@@ -338,7 +357,7 @@ describe('worktree orchestration', () => {
 
     let statePath = '';
     try {
-      await createRun({ cwd: dir, goal: 'Partial failure', withWorktrees: true, plannerWorktree: true, runner });
+      await createRun({ cwd: dir, now: RUN_NOW, goal: 'Partial failure', withWorktrees: true, plannerWorktree: true, runner });
     } catch (error) {
       const runs = await readdir(join(dir, '.pi-herd/runs'));
       statePath = join(dir, '.pi-herd/runs', runs[0] ?? '', 'state.json');
@@ -353,19 +372,19 @@ describe('worktree orchestration', () => {
 
   it('marks the run failed when first worktree materialization fails', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'herdr worktree create --cwd DIR --branch pi-herd/first-failure/impl --base main --path DIR/.worktrees/pi-herd/first-failure/implementer --label pi-herd first-failure implementer --no-focus --json': {
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-first-failure/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-first-failure/implementer --label pi-herd first-failure implementer --no-focus --json': {
         exitCode: 1,
         stdout: '',
         stderr: 'herdr failed\n'
       },
-      'git worktree add -b pi-herd/first-failure/impl DIR/.worktrees/pi-herd/first-failure/implementer main': {
+      'git worktree add -b pi-herd/2026-07-01T12-00-00-first-failure/impl DIR/.worktrees/pi-herd/2026-07-01T12-00-00-first-failure/implementer main': {
         exitCode: 128,
         stdout: '',
         stderr: 'git failed\n'
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'First failure', withWorktrees: true, runner })).rejects.toThrow(/Could not create worktree/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'First failure', withWorktrees: true, runner })).rejects.toThrow(/Could not create worktree/);
 
     const runs = await readdir(join(dir, '.pi-herd/runs'));
     const saved = JSON.parse(await readFile(join(dir, '.pi-herd/runs', runs[0] ?? '', 'state.json'), 'utf8')) as RunState;
@@ -376,14 +395,14 @@ describe('worktree orchestration', () => {
 
   it('refuses existing worktree branches before creation', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'git show-ref --verify --quiet refs/heads/pi-herd/branch-exists/impl': {
+      'git show-ref --verify --quiet refs/heads/pi-herd/2026-07-01T12-00-00-branch-exists/impl': {
         exitCode: 0,
         stdout: '',
         stderr: ''
       }
     }));
 
-    await expect(createRun({ cwd: dir, goal: 'Branch exists', withWorktrees: true, runner })).rejects.toThrow(/Branch already exists/);
+    await expect(createRun({ cwd: dir, now: RUN_NOW, goal: 'Branch exists', withWorktrees: true, runner })).rejects.toThrow(/Branch already exists/);
   });
 });
 
@@ -392,7 +411,8 @@ function configWithRunsDir(runsDir: string): string {
 }
 
 function herdrCreateCommand(slug: string): string {
-  return `herdr worktree create --cwd DIR --branch pi-herd/${slug}/impl --base main --path DIR/.worktrees/pi-herd/${slug}/implementer --label pi-herd ${slug} implementer --no-focus --json`;
+  const runId = `${RUN_PREFIX}-${slug}`;
+  return `herdr worktree create --cwd DIR --branch pi-herd/${runId}/impl --base main --path DIR/.worktrees/pi-herd/${runId}/implementer --label pi-herd ${slug} implementer --no-focus --json`;
 }
 
 function baseResponses(overrides: Record<string, CommandResult>): Record<string, CommandResult> {
@@ -420,6 +440,6 @@ function herdrSuccess(workspaceId: string, checkoutPath: string): CommandResult 
 function branchFromCheckoutPath(checkoutPath: string): string {
   const parts = checkoutPath.split(/[\\/]/);
   const role = parts[parts.length - 1] ?? '';
-  const slug = parts[parts.length - 2] ?? '';
-  return `pi-herd/${slug}/${role === 'implementer' ? 'impl' : role}`;
+  const runId = parts[parts.length - 2] ?? '';
+  return `pi-herd/${runId}/${role === 'implementer' ? 'impl' : role}`;
 }
