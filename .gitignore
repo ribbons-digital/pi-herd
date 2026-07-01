@@ -5,5 +5,5 @@ coverage/
 .env
 .env.*
 !.env.example
-.pi-herd/
-.worktrees/
+/.pi-herd/runs/
+/.worktrees/

@@ -9,6 +9,7 @@ It is Pi-first, but the core model is harness-neutral so future harnesses can be
 
 Design approved.
 Slice 0 capability discovery is complete.
+Slice 1 is adding the first TypeScript CLI foundation.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -20,7 +21,29 @@ Implementation continues as ordered GitHub issues and pull requests.
 - [Domain language](CONTEXT.md)
 - [ADRs](docs/adr/)
 
-## Development workflow
+## CLI commands
+
+```bash
+pi-herd init
+pi-herd doctor
+pi-herd doctor --json
+```
+
+`pi-herd init` creates `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates under `.pi-herd/prompts/`, and safe ignore entries.
+It does not overwrite existing config or prompts unless `--force` is passed.
+
+`pi-herd doctor` checks git, git worktree support, Pi, Herdr, Herdr server reachability, Herdr Pi integration status, and the local config when present.
+Warnings do not make the command fail, but hard failures such as invalid config or missing git repo do.
+
+## Local development
+
+```bash
+sfw pnpm install
+sfw pnpm build
+sfw pnpm test
+sfw pnpm lint
+sfw pnpm dev -- doctor
+```
 
 Use `pnpm` for package management.
 Do not use `npm`.
