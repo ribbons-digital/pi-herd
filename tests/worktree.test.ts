@@ -181,6 +181,30 @@ describe('worktree orchestration', () => {
     expect(result.state.roles.implementer?.herdr_workspace_id).toBeNull();
   });
 
+  it('falls back to git when Herdr reports the wrong checkout path', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/wrong-path/impl --base main --path DIR/.worktrees/pi-herd/wrong-path/implementer --label pi-herd wrong-path implementer --no-focus --json': {
+        exitCode: 0,
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/other/implementer') }),
+        stderr: ''
+      },
+      'git worktree add -b pi-herd/wrong-path/impl DIR/.worktrees/pi-herd/wrong-path/implementer main': {
+        exitCode: 0,
+        stdout: '',
+        stderr: ''
+      }
+    }));
+
+    const result = await createRun({ cwd: dir, goal: 'Wrong path', withWorktrees: true, runner });
+
+    expect(result.worktrees[0]).toMatchObject({
+      role: 'implementer',
+      path: join(dir, '.worktrees/pi-herd/wrong-path/implementer'),
+      provider: 'git',
+      herdr_workspace_id: null
+    });
+  });
+
   it('reports unusable Herdr metadata when git fallback also fails', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/bad-herdr/impl --base main --path DIR/.worktrees/pi-herd/bad-herdr/implementer --label pi-herd bad-herdr implementer --no-focus --json': {

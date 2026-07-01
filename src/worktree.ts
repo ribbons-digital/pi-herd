@@ -156,13 +156,13 @@ function parseHerdrWorktreeResult(stdout: string, options: {
   const value = parseJsonRecord(stdout);
   const workspaceId = stringFromAny(value, ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
   const path = stringFromAny(value, ['path', 'checkout_path', 'worktree_path']);
-  if (!workspaceId || !path || !isAbsolute(path)) {
+  if (!workspaceId || !path || !isAbsolute(path) || resolve(path) !== resolve(options.path)) {
     return null;
   }
   return {
     role: options.role,
     branch: stringFromAny(value, ['branch', 'branch_name']) ?? options.branch,
-    path,
+    path: options.path,
     provider: 'herdr',
     herdr_workspace_id: workspaceId
   };
