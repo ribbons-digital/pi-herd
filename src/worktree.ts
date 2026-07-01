@@ -170,6 +170,9 @@ async function createWorktreeHerdrFirst(options: {
     }
     throw new Error(`Could not create worktree for ${options.role}. Herdr: herdr worktree create returned unusable JSON metadata`);
   }
+  if (herdr.timedOut) {
+    throw new Error(`Could not create worktree for ${options.role}. Herdr: herdr worktree create timed out`);
+  }
 
   const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
   if (git.exitCode !== 0) {

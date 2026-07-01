@@ -295,6 +295,20 @@ describe('worktree orchestration', () => {
     expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
   });
 
+  it('fails closed after a Herdr timeout without attempting git fallback', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/herdr-timeout/impl --base main --path DIR/.worktrees/pi-herd/herdr-timeout/implementer --label pi-herd herdr-timeout implementer --no-focus --json': {
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        timedOut: true
+      }
+    }));
+
+    await expect(createRun({ cwd: dir, goal: 'Herdr timeout', withWorktrees: true, runner })).rejects.toThrow(/Herdr: herdr worktree create timed out/);
+    expect(runner.calls.some((call) => call.includes('git worktree add'))).toBe(false);
+  });
+
   it('reports both Herdr and git failures when no provider can create a worktree', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr worktree create --cwd DIR --branch pi-herd/no-provider/impl --base main --path DIR/.worktrees/pi-herd/no-provider/implementer --label pi-herd no-provider implementer --no-focus --json': {
