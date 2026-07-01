@@ -73,6 +73,7 @@ A run has a lifecycle status:
 - `active`: the run can be selected by implicit active-run resolution.
 - `completed`: the run is finished and should not be implicitly selected.
 - `abandoned`: the run was stopped or cleaned up without completion and should not be implicitly selected.
+- `failed`: creation or orchestration failed and should not be implicitly selected.
 
 Active-run resolution only considers active runs unless the user explicitly selects another run.
 `--run latest` is allowed only as an explicit selector.

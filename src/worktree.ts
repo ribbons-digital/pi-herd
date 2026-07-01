@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { CommandRunner } from './command-runner.js';
 import { DEFAULT_WORKTREES_DIR, type BuiltInRole } from './defaults.js';
 import type { RunState } from './run-state.js';
@@ -126,13 +126,16 @@ async function createWorktreeHerdrFirst(options: {
     '--json'
   ], { cwd: options.repoRoot });
 
-  if (herdr.exitCode === 0) {
-    return parseHerdrWorktreeResult(herdr.stdout, options);
+  const herdrResult = herdr.exitCode === 0 ? parseHerdrWorktreeResult(herdr.stdout, options) : null;
+  if (herdrResult) {
+    return herdrResult;
   }
 
   const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot });
   if (git.exitCode !== 0) {
-    const herdrDetail = firstLine(herdr.stderr) || firstLine(herdr.stdout) || herdr.error?.message || 'herdr worktree create failed';
+    const herdrDetail = herdr.exitCode === 0
+      ? 'herdr worktree create returned unusable JSON metadata'
+      : firstLine(herdr.stderr) || firstLine(herdr.stdout) || herdr.error?.message || 'herdr worktree create failed';
     const gitDetail = firstLine(git.stderr) || firstLine(git.stdout) || git.error?.message || 'git worktree add failed';
     throw new Error(`Could not create worktree for ${options.role}. Herdr: ${herdrDetail}. Git: ${gitDetail}`);
   }
@@ -149,14 +152,19 @@ function parseHerdrWorktreeResult(stdout: string, options: {
   role: BuiltInRole;
   branch: string;
   path: string;
-}): MaterializedWorktree {
+}): MaterializedWorktree | null {
   const value = parseJsonRecord(stdout);
+  const workspaceId = stringFromAny(value, ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
+  const path = stringFromAny(value, ['path', 'checkout_path', 'worktree_path']);
+  if (!workspaceId || !path || !isAbsolute(path)) {
+    return null;
+  }
   return {
     role: options.role,
     branch: stringFromAny(value, ['branch', 'branch_name']) ?? options.branch,
-    path: stringFromAny(value, ['path', 'checkout_path', 'worktree_path']) ?? options.path,
+    path,
     provider: 'herdr',
-    herdr_workspace_id: stringFromAny(value, ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id'])
+    herdr_workspace_id: workspaceId
   };
 }
 
@@ -167,7 +175,7 @@ function parseJsonRecord(stdout: string): Record<string, unknown> {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    // Herdr succeeded but returned unexpected output. Keep fallback fields from requested options.
+    return Object.create(null) as Record<string, unknown>;
   }
   return Object.create(null) as Record<string, unknown>;
 }

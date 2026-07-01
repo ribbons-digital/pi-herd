@@ -69,7 +69,7 @@ Scope:
 
 - Run id and run slug generation.
 - Slug collision handling.
-- Run lifecycle statuses: active, completed, abandoned.
+- Run lifecycle statuses: active, completed, abandoned, failed.
 - Canonical run directory creation.
 - `REQUEST.md` creation.
 - `state.json` creation using the approved schema.

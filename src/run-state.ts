@@ -7,7 +7,7 @@ import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
 
-export type RunStatus = 'active' | 'completed' | 'abandoned';
+export type RunStatus = 'active' | 'completed' | 'abandoned' | 'failed';
 export type RoleStatus = 'pending' | 'staged' | 'working' | 'done' | 'incomplete' | 'blocked' | 'failed';
 export type WorktreeStatus = 'pending' | 'materialized';
 
@@ -150,21 +150,31 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   await writeJsonAtomic(statePath, state);
   created.push(statePath);
 
-  const worktrees = options.withWorktrees ? await materializeWorktrees({
-    state,
-    runner,
-    plannerWorktree: options.plannerWorktree,
-    cleanCheckIgnorePaths,
-    onMaterialized: async () => {
+  let worktrees: MaterializedWorktree[] = [];
+  if (options.withWorktrees) {
+    try {
+      worktrees = await materializeWorktrees({
+        state,
+        runner,
+        plannerWorktree: options.plannerWorktree,
+        cleanCheckIgnorePaths,
+        onMaterialized: async () => {
+          state.updated_at = new Date().toISOString();
+          await writeJsonAtomic(statePath, state);
+        }
+      });
+    } catch (error) {
+      state.status = 'failed';
       state.updated_at = new Date().toISOString();
       await writeJsonAtomic(statePath, state);
+      throw error;
     }
-  }) : [];
+  }
 
   return { state, requestPath, statePath, inboxDir, logsDir, created, worktrees };
 }
 
-/** Return active runs sorted by creation time, ignoring completed or abandoned runs. */
+/** Return active runs sorted by creation time, ignoring non-active runs. */
 export async function listActiveRuns(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary[]> {
   const repoRoot = await resolveRepoRoot(cwd, runner);
   const config = await loadConfigIfPresent(configPath ? cwd : repoRoot, configPath);
