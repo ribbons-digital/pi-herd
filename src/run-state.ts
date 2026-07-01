@@ -1,6 +1,6 @@
-import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -88,12 +88,13 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
 
   const repoRoot = await resolveRepoRoot(options.cwd);
   const config = await loadConfigIfPresent(options.configPath ? options.cwd : repoRoot, options.configPath);
-  const runsRoot = resolve(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  await assertNoSymlinkPathComponents(repoRoot, runsRoot);
   const now = options.now ?? new Date();
   const createdAt = now.toISOString();
   const baseSlug = slugify(goal);
   const timestamp = formatRunTimestamp(now);
-  const { runId, runSlug, runDir } = await allocateRunDirectory(runsRoot, timestamp, baseSlug);
+  const { runId, runSlug, runDir } = await allocateRunDirectory(repoRoot, runsRoot, timestamp, baseSlug);
   const inboxDir = join(runDir, 'inbox');
   const logsDir = join(runDir, 'logs');
   const requestPath = join(runDir, 'REQUEST.md');
@@ -143,7 +144,8 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
 export async function listActiveRuns(cwd: string, configPath?: string): Promise<ActiveRunSummary[]> {
   const repoRoot = await resolveRepoRoot(cwd);
   const config = await loadConfigIfPresent(configPath ? cwd : repoRoot, configPath);
-  const runsRoot = resolve(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  await assertNoSymlinkPathComponents(repoRoot, runsRoot);
   let entries: string[];
   try {
     entries = await readdir(runsRoot);
@@ -232,6 +234,55 @@ async function resolveRepoRoot(cwd: string): Promise<string> {
   }
 }
 
+function resolveRunsRoot(repoRoot: string, runsDir: string): string {
+  if (isAbsolute(runsDir)) {
+    throw new Error('Config paths.runs_dir must be a repository-relative path.');
+  }
+  const runsRoot = resolve(repoRoot, runsDir);
+  if (!isPathInside(repoRoot, runsRoot)) {
+    throw new Error('Config paths.runs_dir must stay within the repository root.');
+  }
+  return runsRoot;
+}
+
+async function assertNoSymlinkPathComponents(repoRoot: string, runsRoot: string): Promise<void> {
+  const relativeRunsRoot = relative(repoRoot, runsRoot);
+  if (!relativeRunsRoot) {
+    return;
+  }
+  let current = repoRoot;
+  for (const segment of relativeRunsRoot.split(sep)) {
+    current = join(current, segment);
+    try {
+      const stat = await lstat(current);
+      if (stat.isSymbolicLink()) {
+        throw new Error('Config paths.runs_dir must not include symbolic links.');
+      }
+    } catch (error) {
+      if (isNodeErrorWithCode(error, 'ENOENT')) {
+        return;
+      }
+      throw error;
+    }
+  }
+}
+
+async function assertRealPathInsideRepo(repoRoot: string, runsRoot: string): Promise<void> {
+  const [realRepoRoot, realRunsRoot] = await Promise.all([realpath(repoRoot), realpath(runsRoot)]);
+  if (!isPathInside(realRepoRoot, realRunsRoot)) {
+    throw new Error('Config paths.runs_dir must stay within the repository root.');
+  }
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relativeCandidate = relative(root, candidate);
+  return relativeCandidate === '' || (!relativeCandidate.startsWith(`..${sep}`) && relativeCandidate !== '..' && !isAbsolute(relativeCandidate));
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === code;
+}
+
 async function resolveBaseRef(repoRoot: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: repoRoot });
@@ -254,8 +305,9 @@ function formatRunTimestamp(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, '').replace(/:/g, '-');
 }
 
-async function allocateRunDirectory(runsRoot: string, timestamp: string, baseSlug: string): Promise<{ runId: string; runSlug: string; runDir: string }> {
+async function allocateRunDirectory(repoRoot: string, runsRoot: string, timestamp: string, baseSlug: string): Promise<{ runId: string; runSlug: string; runDir: string }> {
   await mkdir(runsRoot, { recursive: true });
+  await assertRealPathInsideRepo(repoRoot, runsRoot);
   for (let index = 1; index < 1000; index += 1) {
     const runSlug = index === 1 ? baseSlug : `${baseSlug}-${index}`;
     const runId = `${timestamp}-${runSlug}`;

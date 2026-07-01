@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -94,10 +94,38 @@ describe('run state', () => {
 
   it('uses configured runs directory when config is present', async () => {
     await mkdir(join(dir, '.pi-herd'), { recursive: true });
-    await writeFile(join(dir, '.pi-herd/config.yaml'), 'schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: custom-runs\n  prompts_dir: .pi-herd/prompts\n', 'utf8');
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('custom-runs'), 'utf8');
 
     const result = await createRun({ cwd: dir, goal: 'Custom path' });
 
     expect(result.state.canonical_run_dir).toContain(join(dir, 'custom-runs'));
   });
+
+  it('rejects an absolute configured runs directory', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir(join(dir, 'outside-runs')), 'utf8');
+
+    await expect(createRun({ cwd: dir, goal: 'Bad absolute path' })).rejects.toThrow(/repository-relative path/);
+  });
+
+  it('rejects a configured runs directory that escapes the repository', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('../outside-runs'), 'utf8');
+
+    await expect(createRun({ cwd: dir, goal: 'Bad parent path' })).rejects.toThrow(/repository root/);
+    await expect(listActiveRuns(dir)).rejects.toThrow(/repository root/);
+  });
+
+  it('rejects a configured runs directory that traverses a symlink', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await mkdir(join(dir, 'outside-runs-target'));
+    await symlink(join(dir, 'outside-runs-target'), join(dir, '.pi-herd/runs-link'));
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('.pi-herd/runs-link'), 'utf8');
+
+    await expect(createRun({ cwd: dir, goal: 'Bad symlink path' })).rejects.toThrow(/symbolic links/);
+  });
 });
+
+function configWithRunsDir(runsDir: string): string {
+  return `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: ${JSON.stringify(runsDir)}\n  prompts_dir: .pi-herd/prompts\n`;
+}
