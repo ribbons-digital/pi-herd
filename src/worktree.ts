@@ -69,7 +69,7 @@ function roleWorktreePath(repoRoot: string, runSlug: string, role: BuiltInRole):
 }
 
 export async function assertRepoClean(runner: CommandRunner, repoRoot: string, ignorePaths: string[] = []): Promise<void> {
-  const excludes = Array.from(new Set(['.pi-herd', '.worktrees', ...ignorePaths])).map((path) => `:!${path}`);
+  const excludes = Array.from(new Set(['.pi-herd/runs', '.worktrees', ...ignorePaths])).map((path) => `:!${path}`);
   const result = await runner.run('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ...excludes], { cwd: repoRoot });
   if (result.exitCode !== 0) {
     throw new Error(`Could not check repository status: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git status failed'}`);
@@ -156,12 +156,13 @@ function parseHerdrWorktreeResult(stdout: string, options: {
   const value = parseJsonRecord(stdout);
   const workspaceId = stringFromAny(value, ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
   const path = stringFromAny(value, ['path', 'checkout_path', 'worktree_path']);
-  if (!workspaceId || !path || !isAbsolute(path) || resolve(path) !== resolve(options.path)) {
+  const branch = stringFromAny(value, ['branch', 'branch_name']);
+  if (!workspaceId || !path || !isAbsolute(path) || resolve(path) !== resolve(options.path) || (branch && branch !== options.branch)) {
     return null;
   }
   return {
     role: options.role,
-    branch: stringFromAny(value, ['branch', 'branch_name']) ?? options.branch,
+    branch: options.branch,
     path: options.path,
     provider: 'herdr',
     herdr_workspace_id: workspaceId

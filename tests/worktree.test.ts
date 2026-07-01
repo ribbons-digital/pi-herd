@@ -113,7 +113,7 @@ describe('worktree orchestration', () => {
 
   it('refuses dirty repositories before creating worktrees', async () => {
     const runner = new RecordingRunner(baseResponses({
-      'git status --porcelain --untracked-files=all -- . :!.pi-herd :!.worktrees :!.pi-herd/runs': {
+      'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees': {
         exitCode: 0,
         stdout: ' M src/index.ts\n',
         stderr: ''
@@ -121,6 +121,21 @@ describe('worktree orchestration', () => {
     }));
 
     await expect(createRun({ cwd: dir, goal: 'Dirty repo', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
+  });
+
+  it.each([
+    '.pi-herd/config.yaml',
+    '.pi-herd/prompts/implementer.md'
+  ])('refuses uncommitted %s changes before creating worktrees', async (changedPath) => {
+    const runner = new RecordingRunner(baseResponses({
+      'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees': {
+        exitCode: 0,
+        stdout: `?? ${changedPath}\n`,
+        stderr: ''
+      }
+    }));
+
+    await expect(createRun({ cwd: dir, goal: 'Dirty pi herd file', withWorktrees: true, runner })).rejects.toThrow(/uncommitted changes/);
   });
 
   it('creates a real git fallback worktree in a temporary repository', async () => {
@@ -144,7 +159,7 @@ describe('worktree orchestration', () => {
     await mkdir(join(dir, '.pi-herd'), { recursive: true });
     await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRunsDir('custom-runs'), 'utf8');
     const runner = new RecordingRunner(baseResponses({
-      'git status --porcelain --untracked-files=all -- . :!.pi-herd :!.worktrees :!custom-runs': { exitCode: 0, stdout: '', stderr: '' },
+      'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!custom-runs': { exitCode: 0, stdout: '', stderr: '' },
       'herdr worktree create --cwd DIR --branch pi-herd/custom-runs/impl --base main --path DIR/.worktrees/pi-herd/custom-runs/implementer --label pi-herd custom-runs implementer --no-focus --json': herdrSuccess('impl-ws', join(dir, '.worktrees/pi-herd/custom-runs/implementer'))
     }));
 
@@ -200,6 +215,30 @@ describe('worktree orchestration', () => {
     expect(result.worktrees[0]).toMatchObject({
       role: 'implementer',
       path: join(dir, '.worktrees/pi-herd/wrong-path/implementer'),
+      provider: 'git',
+      herdr_workspace_id: null
+    });
+  });
+
+  it('falls back to git when Herdr reports the wrong branch', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/wrong-branch/impl --base main --path DIR/.worktrees/pi-herd/wrong-branch/implementer --label pi-herd wrong-branch implementer --no-focus --json': {
+        exitCode: 0,
+        stdout: JSON.stringify({ workspace_id: 'workspace-123', checkout_path: join(dir, '.worktrees/pi-herd/wrong-branch/implementer'), branch: 'pi-herd/other/impl' }),
+        stderr: ''
+      },
+      'git worktree add -b pi-herd/wrong-branch/impl DIR/.worktrees/pi-herd/wrong-branch/implementer main': {
+        exitCode: 0,
+        stdout: '',
+        stderr: ''
+      }
+    }));
+
+    const result = await createRun({ cwd: dir, goal: 'Wrong branch', withWorktrees: true, runner });
+
+    expect(result.worktrees[0]).toMatchObject({
+      role: 'implementer',
+      branch: 'pi-herd/wrong-branch/impl',
       provider: 'git',
       herdr_workspace_id: null
     });
@@ -309,7 +348,7 @@ function baseResponses(overrides: Record<string, CommandResult>): Record<string,
   const responses = {
     'git rev-parse --show-toplevel': { exitCode: 0, stdout: `${dir}\n`, stderr: '' },
     'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' },
-    'git status --porcelain --untracked-files=all -- . :!.pi-herd :!.worktrees :!.pi-herd/runs': { exitCode: 0, stdout: '', stderr: '' },
+    'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees': { exitCode: 0, stdout: '', stderr: '' },
     ...overrides
   };
   for (const [key, value] of Object.entries(responses)) {
