@@ -136,6 +136,7 @@ The state schema should start with this shape:
       "branch": "pi-herd/auth-refresh/planner",
       "worktree_path": null,
       "worktree_status": "pending",
+      "worktree_provider": null,
       "herdr_workspace_id": null,
       "herdr_tab_id": null,
       "herdr_pane_id": null,
@@ -151,6 +152,7 @@ The state schema should start with this shape:
       "source_ref": "pi-herd/auth-refresh/impl",
       "worktree_path": null,
       "worktree_status": "pending",
+      "worktree_provider": null,
       "herdr_workspace_id": null,
       "herdr_tab_id": null,
       "herdr_pane_id": null,
@@ -310,7 +312,8 @@ pi-herd/{run_slug}/impl
 ```
 
 The implementer owns the implementation branch and implementation worktree.
-The implementer worktree and implementation branch should be created eagerly when the implementation role is selected.
+`pi-herd run create --with-worktrees` creates the implementer worktree and implementation branch when the implementer role is selected.
+`--planner-worktree` also creates the planner worktree and branch when the planner role is selected.
 Reviewer and tester role worktree views should be materialized lazily when those roles are activated or refreshed.
 Reviewer and tester worktrees are refreshed from the implementation branch.
 Reviewer and tester branches are not default merge targets.
