@@ -7,3 +7,5 @@ coverage/
 !.env.example
 /.pi-herd/runs/
 /.worktrees/
+.memory-lane/
+.memory-lane-scope
