@@ -270,6 +270,22 @@ describe('messaging commands', () => {
     expect(saved.roles.planner?.session_ref).toBe(`${state.run_id}-planner`);
   });
 
+  it('does not relaunch for pane get capability errors', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    state.roles.planner!.session_ref = `${state.run_id}-planner`;
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get planner-pane': { exitCode: 1, stdout: '', stderr: 'unknown command: pane get\n' }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'No relaunch', runner })).rejects.toThrow(/unknown command: pane get/);
+
+    expect(runner.calls.some((call) => call.includes('agent start'))).toBe(false);
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('planner-pane');
+    expect(saved.roles.planner?.session_ref).toBe(`${state.run_id}-planner`);
+  });
+
   it('keeps stale pane refs if replacement launch fails', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'old-pane' });
     state.roles.planner!.session_ref = `${state.run_id}-planner`;

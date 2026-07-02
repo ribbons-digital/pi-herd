@@ -181,7 +181,14 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
 
 function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): boolean {
   const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  return /\b(missing|not found|no such|unknown)\b/.test(output) && /\bpane\b/.test(output);
+  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
+    return false;
+  }
+  return [
+    /\bmissing\s+pane\b/,
+    /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/,
+    /\b(no such|not found)\s+[^\n]*\bpane\b/
+  ].some((pattern) => pattern.test(output));
 }
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
