@@ -2,9 +2,9 @@ import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_WORKTREES_DIR, OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
+import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
 import { firstLine } from './herdr.js';
-import { assertNoSymlinkPathComponents, materializeRoleWorktree } from './worktree.js';
+import { assertNoSymlinkPathComponents, materializeRoleWorktree, roleWorktreePath } from './worktree.js';
 import { resolveRunContext, updateRunState, type RunState } from './run-state.js';
 
 export interface RefreshOptions {
@@ -46,28 +46,34 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     throw new Error(`Refusing to refresh ${options.role} while it is working. Re-run with --force to override.`);
   }
 
-  const pathExists = record.worktree_path ? await exists(record.worktree_path) : false;
-  if (record.worktree_status !== 'materialized' || !record.worktree_path || !pathExists) {
-    if (record.worktree_status === 'materialized' && record.worktree_path && !pathExists) {
+  const expectedPath = roleWorktreePath(resolved.state.repo_root, resolved.state.run_id, options.role);
+  const storedPathExists = record.worktree_path ? await exists(record.worktree_path) : false;
+  const expectedPathExists = await exists(expectedPath);
+  if (record.worktree_status !== 'materialized' || !record.worktree_path || !storedPathExists) {
+    if (record.worktree_status === 'materialized' && record.worktree_path && !storedPathExists) {
       notes.push(`Stored ${options.role} worktree path is missing; recreating it.`);
     }
-    const path = record.worktree_path ?? roleWorktreePath(resolved.state, options.role);
-    if (!pathExists && await localBranchExists(runner, resolved.state.repo_root, record.branch ?? '')) {
-      await assertNoSymlinkPathComponents(resolved.state.repo_root, path);
-      await gitWorktreePruneStale(runner, resolved.state.repo_root);
-      await gitWorktreeAddExistingBranch(runner, resolved.state.repo_root, path, record.branch!);
-      record.worktree_path = path;
+    if (expectedPathExists) {
+      await assertNoSymlinkPathComponents(resolved.state.repo_root, expectedPath);
+      record.worktree_path = expectedPath;
       record.worktree_status = 'materialized';
       record.worktree_provider = record.worktree_provider ?? 'git';
       await updateRoleWorktreeState(resolved.statePath, resolved.state, options.role);
-      notes.push(`Recreated ${options.role} worktree at ${path}.`);
+      notes.push(`Reused existing ${options.role} worktree at ${expectedPath}.`);
+    } else if (await localBranchExists(runner, resolved.state.repo_root, record.branch ?? '')) {
+      await assertNoSymlinkPathComponents(resolved.state.repo_root, expectedPath);
+      await gitWorktreePruneStale(runner, resolved.state.repo_root);
+      await gitWorktreeAddExistingBranch(runner, resolved.state.repo_root, expectedPath, record.branch!);
+      record.worktree_path = expectedPath;
+      record.worktree_status = 'materialized';
+      record.worktree_provider = record.worktree_provider ?? 'git';
+      await updateRoleWorktreeState(resolved.statePath, resolved.state, options.role);
+      notes.push(`Recreated ${options.role} worktree at ${expectedPath}.`);
     } else {
-      if (!pathExists) {
-        record.worktree_path = null;
-        record.worktree_status = 'pending';
-        record.worktree_provider = null;
-        record.worktree_herdr_workspace_id = null;
-      }
+      record.worktree_path = null;
+      record.worktree_status = 'pending';
+      record.worktree_provider = null;
+      record.worktree_herdr_workspace_id = null;
       await materializeRoleWorktree({
         state: resolved.state,
         runner,
@@ -87,7 +93,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
   }
 
   await assertNoSymlinkPathComponents(resolved.state.repo_root, record.worktree_path);
-  await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, roleWorktreePath(resolved.state, options.role), options.role, resolved.state.repo_root);
+  await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, expectedPath, options.role, resolved.state.repo_root);
 
   const commits = await commitsAheadOfImplementation(runner, record.worktree_path, implementationBranch);
   if (commits.count > 0 && !options.force) {
@@ -105,6 +111,11 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     notes.push(`Force refreshing dirty ${options.role} worktree. Dirty paths:\n${formatBoundedLines(dirty)}`);
   }
 
+  if (options.force) {
+    const backupRef = backupRefFor(options.role, resolved.state.run_id);
+    await git(runner, 'save reviewer/tester worktree backup ref', ['update-ref', backupRef, 'HEAD'], record.worktree_path);
+    notes.push(`Saved ${options.role} backup ref ${backupRef}.`);
+  }
   await git(runner, 'reset reviewer/tester worktree', ['reset', '--hard', implementationBranch], record.worktree_path);
   if (options.force) {
     await git(runner, 'clean reviewer/tester worktree', ['clean', '-fd'], record.worktree_path);
@@ -270,8 +281,8 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-function roleWorktreePath(state: RunState, role: BuiltInRole): string {
-  return resolve(state.repo_root, DEFAULT_WORKTREES_DIR, 'pi-herd', state.run_id, role);
+function backupRefFor(role: BuiltInRole, runId: string): string {
+  return `refs/pi-herd/backup/${role}/${runId}`;
 }
 
 function formatBoundedLines(lines: string[]): string {

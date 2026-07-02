@@ -236,6 +236,24 @@ describe('status, wait, and collect commands', () => {
     expect(result.text).toContain('reviewer: artifact-only worktree has source changes:  M src/file.ts');
   });
 
+  it('bounds dirty artifact-only role warnings by the shared terminal line budget', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = join(dir, 'reviewer-worktree');
+    await mkdir(state.roles.reviewer!.worktree_path, { recursive: true });
+    const statePath = join(state.canonical_run_dir, 'state.json');
+    await writeJsonAtomic(statePath, state);
+    const dirty = Array.from({ length: 81 }, (_, index) => ` M src/file-${index}.ts`).join('\n');
+    const runner = new RecordingRunner(baseResponses({
+      'git status --porcelain --untracked-files=all': okText(`${dirty}\n`)
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('... truncated 1 item(s) ...');
+    expect(result.text).not.toContain('src/file-80.ts');
+  });
+
   it('writes FINAL_SUMMARY.md and pane logs without changing run status', async () => {
     const { state, statePath } = await createWorkingRun('planner-pane');
     await writeFile(join(state.canonical_run_dir, 'PLAN.md'), 'approved plan\n', 'utf8');

@@ -30,6 +30,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'worktree' && args[1] === 'prune') return ok();
     if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') return ok();
+    if (command === 'git' && args[0] === 'update-ref') return ok();
     if (command === 'git' && args[0] === 'reset') return okText('HEAD is now at abc impl\n');
     if (command === 'git' && args[0] === 'clean') return ok();
     if (command === 'git' && args[0] === 'diff' && args[1] === '--stat') return okText(' src/file.ts | 2 ++\n');
@@ -92,6 +93,23 @@ describe('refresh and diff commands', () => {
     expect(runner.calls).not.toContain(`git reset --hard ${branch}`);
   });
 
+  it('reuses an existing canonical role worktree when state has not recorded it', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Reuse canonical worktree', now: NOW, runner });
+    const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
+    await mkdir(worktreePath, { recursive: true });
+    state.roles.reviewer!.worktree_status = 'pending';
+    state.roles.reviewer!.worktree_path = null;
+    await writeJsonAtomic(statePath, state);
+
+    const result = await refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner });
+
+    expect(result.text).toContain(`Reused existing reviewer worktree at ${worktreePath}.`);
+    expect(runner.calls.some((call) => call.startsWith('git worktree add'))).toBe(false);
+    expect(runner.calls.some((call) => call.startsWith('herdr worktree create'))).toBe(false);
+    expect(runner.calls).toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
   it('force refresh resets and cleans a reviewer worktree with committed changes', async () => {
     const { runner, state, statePath } = await createMaterializedRun('Force committed review');
     const branch = state.roles.implementer!.branch;
@@ -103,6 +121,8 @@ describe('refresh and diff commands', () => {
 
     expect(result.text).toContain('Force refreshing reviewer worktree with 1 committed change(s)');
     expect(result.text).toContain('abc1234 review fix');
+    expect(result.text).toContain(`Saved reviewer backup ref refs/pi-herd/backup/reviewer/${state.run_id}.`);
+    expect(runner.calls).toContain(`git update-ref refs/pi-herd/backup/reviewer/${state.run_id} HEAD`);
     expect(runner.calls).toContain(`git reset --hard ${branch}`);
     expect(runner.calls).toContain('git clean -fd');
   });

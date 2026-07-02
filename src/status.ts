@@ -358,10 +358,16 @@ async function artifactOnlyWorktreeWarnings(runner: CommandRunner, record: RoleR
   try {
     const dirty = await dirtyPaths(runner, record.worktree_path);
     if (!dirty.length) return [];
-    return [`artifact-only worktree has source changes: ${dirty.slice(0, 5).join(', ')}${dirty.length > 5 ? `, ... ${dirty.length - 5} more` : ''}`];
+    return [`artifact-only worktree has source changes: ${formatBoundedItems(dirty)}`];
   } catch (error) {
     return [`could not check artifact-only worktree cleanliness: ${error instanceof Error ? error.message : String(error)}`];
   }
+}
+
+function formatBoundedItems(items: string[]): string {
+  const budget = OUTPUT_BUDGETS.terminalSummaryLines;
+  if (items.length <= budget) return items.join(', ');
+  return `${items.slice(0, budget).join(', ')}, ... truncated ${items.length - budget} item(s) ...`;
 }
 
 function isArtifactStale(mtimeMs: number, lastActivityAt: string | null): boolean {

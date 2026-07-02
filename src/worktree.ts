@@ -97,7 +97,7 @@ function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltIn
   return roles;
 }
 
-function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
+export function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
   return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runId, role);
 }
 
