@@ -160,18 +160,27 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
 }
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
-  const paneMatch = options.run ? null : await resolveByCurrentPane(options, runner);
-  const summary = paneMatch ?? await listRunsForInvocation(options, runner).then((runs) => selectRun(runs, options.run));
-  if (!summary) {
-    throw new Error('No active runs found.');
+  let summary: ActiveRunSummary;
+  if (!options.run && hasCurrentPaneEnv(options.env ?? process.env)) {
+    const paneMatch = await resolveByCurrentPane(options, runner);
+    if (!paneMatch) {
+      throw new Error('Current pane is not bound to an active run. Pass --run <run_id|slug>.');
+    }
+    summary = paneMatch;
+  } else {
+    summary = await listRunsForInvocation(options, runner).then((runs) => selectRun(runs, options.run));
   }
   const statePath = join(summary.canonical_run_dir, 'state.json');
   return { state: await readRunState(statePath), statePath };
 }
 
+function hasCurrentPaneEnv(env: NodeJS.ProcessEnv): env is NodeJS.ProcessEnv & { HERDR_PANE_ID: string } {
+  return env.HERDR_ENV === '1' && Boolean(env.HERDR_PANE_ID) && env.PI_CODING_AGENT === 'true';
+}
+
 async function resolveByCurrentPane(options: RunCommandOptions, runner: CommandRunner) {
   const env = options.env ?? process.env;
-  if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
+  if (!hasCurrentPaneEnv(env)) {
     return null;
   }
   const runs = await listRunsForInvocation(options, runner);
@@ -213,7 +222,7 @@ function selectRun(runs: Awaited<ReturnType<typeof listActiveRuns>>, selector?: 
 }
 
 async function assertCurrentLead(state: RunState, runner: CommandRunner, env: NodeJS.ProcessEnv): Promise<void> {
-  if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
+  if (!hasCurrentPaneEnv(env)) {
     throw new Error('Lead command must run from the bound Pi lead pane.');
   }
   const verified = await verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);

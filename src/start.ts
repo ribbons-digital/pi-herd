@@ -247,20 +247,14 @@ export function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): 
 /** Verify that the current Herdr pane matches an expected pane id. */
 export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
   const current = await runner.run('herdr', ['pane', 'current', '--current'], { cwd, timeoutMs: LAUNCH_TIMEOUT_MS });
-  if (current.exitCode === 0) {
-    const metadata = parsePaneMetadata(current.stdout);
-    if (metadata.paneId === paneId) {
-      return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
-    }
+  if (current.exitCode !== 0) {
+    return null;
   }
-  const pane = await runner.run('herdr', ['pane', 'get', paneId], { cwd, timeoutMs: LAUNCH_TIMEOUT_MS });
-  if (pane.exitCode === 0) {
-    const metadata = parsePaneMetadata(pane.stdout);
-    if (metadata.paneId === paneId) {
-      return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
-    }
+  const metadata = parsePaneMetadata(current.stdout);
+  if (metadata.paneId !== paneId) {
+    return null;
   }
-  return null;
+  return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
 }
 
 async function createLeadWorkspace(runner: CommandRunner, state: RunState): Promise<{ workspaceId: string }> {

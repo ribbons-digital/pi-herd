@@ -77,6 +77,24 @@ describe('messaging commands', () => {
     expect(result.text).toContain('Sent message to planner');
   });
 
+  it('rejects lead send when the environment pane is not current', async () => {
+    const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson({ pane_id: 'other-pane', workspace_id: 'lead-ws', tab_id: 'other-tab' })
+    }));
+
+    await expect(sendMessage({
+      cwd: dir,
+      run: state.run_id,
+      role: 'planner',
+      message: 'Lead approved',
+      requireLead: true,
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', PI_CODING_AGENT: 'true' }
+    })).rejects.toThrow(/bound Pi lead pane/);
+    expect(runner.calls).not.toContain('herdr pane get lead-pane');
+  });
+
   it('resolves the active run from a role worktree when --run is omitted', async () => {
     const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
     const worktreeCwd = join(dir, '.worktrees/pi-herd', state.run_id, 'planner');
@@ -115,6 +133,22 @@ describe('messaging commands', () => {
     });
 
     expect(result.text).toContain('Sent message to planner');
+  });
+
+  it('does not resolve an omitted run from a non-current environment pane', async () => {
+    await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson({ pane_id: 'other-pane', workspace_id: 'lead-ws', tab_id: 'other-tab' })
+    }));
+
+    await expect(sendMessage({
+      cwd: dir,
+      role: 'planner',
+      message: 'Pane resolved',
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'planner-pane', PI_CODING_AGENT: 'true' }
+    })).rejects.toThrow(/Current pane is not bound to an active run/);
+    expect(runner.calls).not.toContain('herdr pane get planner-pane');
   });
 
   it('prints state-only lead status and read-only collect inventory', async () => {
