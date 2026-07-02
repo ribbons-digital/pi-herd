@@ -230,7 +230,7 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
   }
 }
 
-interface ParsedSendArgs {
+export interface ParsedSendArgs {
   role: ReturnType<typeof parseRole>;
   message: string;
   run?: string;
@@ -238,16 +238,23 @@ interface ParsedSendArgs {
   help: boolean;
 }
 
-function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
+export function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
   let run: string | undefined;
   let config: string | undefined;
-  let index = 0;
-  while (index < args.length) {
+  let role: ReturnType<typeof parseRole> | undefined;
+  const messageParts: string[] = [];
+  let parsingOptions = true;
+
+  for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--help' || arg === '-h') {
+    if (parsingOptions && arg === '--') {
+      parsingOptions = false;
+      continue;
+    }
+    if (parsingOptions && (arg === '--help' || arg === '-h')) {
       return { role: 'planner', message: '', help: true };
     }
-    if (arg === '--run' || arg === '--config') {
+    if (parsingOptions && (arg === '--run' || arg === '--config')) {
       const value = args[index + 1];
       if (!value) {
         throw new Error(`${arg} requires a value.\nUsage: ${usage}`);
@@ -257,20 +264,23 @@ function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
       } else {
         config = value;
       }
-      index += 2;
+      index += 1;
       continue;
     }
-    if (arg === '--') {
-      index += 1;
-      break;
+    if (!role) {
+      if (arg?.startsWith('-')) {
+        throw new Error(`Unknown option before role: ${arg}. Use -- before dash-prefixed message text.\nUsage: ${usage}`);
+      }
+      role = parseRole(arg ?? '');
+      continue;
     }
-    if (arg?.startsWith('-')) {
-      throw new Error(`Unknown option before role: ${arg}. Use -- before dash-prefixed message text.\nUsage: ${usage}`);
-    }
-    break;
+    messageParts.push(arg ?? '');
   }
-  const role = parseRole(args[index] ?? '');
-  const message = args.slice(index + 1).join(' ').trim();
+
+  if (!role) {
+    role = parseRole('');
+  }
+  const message = messageParts.join(' ').trim();
   if (!message) {
     throw new Error('Message must be a non-empty string.');
   }
