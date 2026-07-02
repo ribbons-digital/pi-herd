@@ -23,6 +23,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return okText(`${options?.cwd ?? dir}\n`);
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--path-format=absolute' && args[2] === '--git-common-dir') return okText(`${join(dir, '.git')}\n`);
     if (command === 'git' && args[0] === 'symbolic-ref') return okText(branchForCwd(options?.cwd));
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'refs/stash') return okText('stash123\n');
     if (command === 'git' && args[0] === 'rev-parse' && args.includes('--verify')) return ok();
     if (command === 'git' && args[0] === 'rev-list' && args[1] === '--count') return okText('0\n');
     if (command === 'git' && args[0] === 'log' && args[1] === '--oneline') return ok();
@@ -31,6 +32,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'worktree' && args[1] === 'prune') return ok();
     if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') return ok();
     if (command === 'git' && args[0] === 'update-ref') return ok();
+    if (command === 'git' && args[0] === 'stash') return okText('Saved working directory and index state\n');
     if (command === 'git' && args[0] === 'reset') return okText('HEAD is now at abc impl\n');
     if (command === 'git' && args[0] === 'clean') return ok();
     if (command === 'git' && args[0] === 'diff' && args[1] === '--stat') return okText(' src/file.ts | 2 ++\n');
@@ -110,6 +112,27 @@ describe('refresh and diff commands', () => {
     expect(runner.calls).toContain(`git reset --hard ${state.roles.implementer!.branch}`);
   });
 
+  it('does not persist an unvalidated canonical worktree path', async () => {
+    const runner = new RecordingRunner({
+      'git symbolic-ref --short HEAD': okText('main\n')
+    });
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Invalid canonical worktree', now: NOW, runner });
+    const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
+    await mkdir(worktreePath, { recursive: true });
+    state.roles.reviewer!.worktree_status = 'pending';
+    state.roles.reviewer!.worktree_path = null;
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(
+      `Refusing to refresh reviewer worktree because it is on main instead of ${state.roles.reviewer!.branch}`
+    );
+
+    const saved = JSON.parse(await readFile(join(state.canonical_run_dir, 'state.json'), 'utf8')) as RunState;
+    expect(saved.roles.reviewer?.worktree_status).toBe('pending');
+    expect(saved.roles.reviewer?.worktree_path).toBeNull();
+    expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
   it('force refresh resets and cleans a reviewer worktree with committed changes', async () => {
     const { runner, state, statePath } = await createMaterializedRun('Force committed review');
     const branch = state.roles.implementer!.branch;
@@ -136,7 +159,7 @@ describe('refresh and diff commands', () => {
     await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow('Refusing to refresh reviewer while it is working');
   });
 
-  it('force refresh resets and cleans a dirty tester worktree', async () => {
+  it('force refresh stashes dirty tester work before resetting and cleaning', async () => {
     const runner = new RecordingRunner({
       'git status --porcelain --untracked-files=all': okText('?? scratch.md\n')
     });
@@ -150,7 +173,12 @@ describe('refresh and diff commands', () => {
     const result = await refreshRole({ cwd: dir, run: state.run_id, role: 'tester', force: true, runner });
 
     expect(result.text).toContain('Force refreshing dirty tester worktree');
-    expect(runner.calls).toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+    expect(result.text).toContain('Saved tester dirty work stash stash123 (refs/stash).');
+    const stashIndex = runner.calls.indexOf(`git stash push --include-untracked --message pi-herd tester refresh backup ${state.run_id}`);
+    const resetIndex = runner.calls.indexOf(`git reset --hard ${state.roles.implementer!.branch}`);
+    expect(stashIndex).toBeGreaterThanOrEqual(0);
+    expect(runner.calls).toContain('git rev-parse --verify refs/stash');
+    expect(resetIndex).toBeGreaterThan(stashIndex);
     expect(runner.calls).toContain('git clean -fd');
   });
 

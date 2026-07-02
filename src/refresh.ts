@@ -58,7 +58,6 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
       record.worktree_path = expectedPath;
       record.worktree_status = 'materialized';
       record.worktree_provider = record.worktree_provider ?? 'git';
-      await updateRoleWorktreeState(resolved.statePath, resolved.state, options.role);
       notes.push(`Reused existing ${options.role} worktree at ${expectedPath}.`);
     } else if (await localBranchExists(runner, resolved.state.repo_root, record.branch ?? '')) {
       await assertNoSymlinkPathComponents(resolved.state.repo_root, expectedPath);
@@ -67,7 +66,6 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
       record.worktree_path = expectedPath;
       record.worktree_status = 'materialized';
       record.worktree_provider = record.worktree_provider ?? 'git';
-      await updateRoleWorktreeState(resolved.statePath, resolved.state, options.role);
       notes.push(`Recreated ${options.role} worktree at ${expectedPath}.`);
     } else {
       record.worktree_path = null;
@@ -115,6 +113,10 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     const backupRef = backupRefFor(options.role, resolved.state.run_id);
     await git(runner, 'save reviewer/tester worktree backup ref', ['update-ref', backupRef, 'HEAD'], record.worktree_path);
     notes.push(`Saved ${options.role} backup ref ${backupRef}.`);
+    if (dirty.length) {
+      const stashRef = await stashDirtyWorktree(runner, record.worktree_path, options.role, resolved.state.run_id);
+      notes.push(`Saved ${options.role} dirty work stash ${stashRef} (refs/stash).`);
+    }
   }
   await git(runner, 'reset reviewer/tester worktree', ['reset', '--hard', implementationBranch], record.worktree_path);
   if (options.force) {
@@ -262,6 +264,12 @@ async function assertExpectedRoleWorktree(
 async function gitCommonDir(runner: CommandRunner, cwd: string): Promise<string> {
   const result = await git(runner, 'validate repository identity', ['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
   return resolve(result.stdout.trim());
+}
+
+async function stashDirtyWorktree(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
+  await git(runner, 'stash dirty reviewer/tester worktree changes', ['stash', 'push', '--include-untracked', '--message', `pi-herd ${role} refresh backup ${runId}`], worktreePath);
+  const result = await git(runner, 'resolve reviewer/tester dirty work stash', ['rev-parse', '--verify', 'refs/stash'], worktreePath);
+  return result.stdout.trim();
 }
 
 async function git(runner: CommandRunner, label: string, args: string[], cwd: string) {
