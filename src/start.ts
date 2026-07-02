@@ -10,7 +10,7 @@ export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Result for `pi-herd start`, including persisted run state and launched session refs. */
+/** Result for `pi-herd start`, including persisted run state, launched session refs, and warning-only readiness notes. */
 export interface StartResult extends RunCreateResult {
   launched: LaunchRef[];
   warnings: string[];
@@ -284,7 +284,7 @@ async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: 
   }
 }
 
-/** Submit text to a Herdr pane using send-text followed by Enter; Enter failure may leave unsubmitted text in the pane. */
+/** Submit text to a Herdr pane as one send-text payload followed by Enter; Enter failure may leave unsubmitted text in the pane. */
 export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<void> {
   const text = await paneSendText(runner, cwd, paneId, message);
   if (text.exitCode !== 0) {

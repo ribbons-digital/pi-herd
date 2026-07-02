@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 5 messaging and lead commands complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 5 messaging and H1 Herdr client reliability hardening complete on the current branch.
 
 ## Review provenance
 
@@ -14,6 +14,7 @@ Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state,
 Slice 3 added `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
 Slice 4 added `pi-herd start`, verified or created lead binding, planner launch with kickoff prompt, staged implementer launch, reviewer and tester staged slots, launch metadata persistence, and recoverable failed-run persistence after partial launch failures.
 Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, current-pane active-run resolution, first-send reviewer and tester activation, dash-prefixed literal send parsing, explicit partial-send errors, read-only collection inventory, and non-completion message semantics.
+H1 added a shared Herdr client layer, broader metadata parsing, idle readiness waits before first prompt delivery, warning-only readiness fallback, stale pane validation with safe relaunch, and a pinned multi-line prompt delivery shape.
 
 ## Files to approve
 
@@ -44,7 +45,7 @@ Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-he
 - [ ] Materialize the implementer worktree on `--with-worktrees` and the planner worktree only when explicitly requested.
 - [ ] Use isolated worktree views for reviewer and tester, materialized lazily when needed.
 - [ ] Treat harness idle as a signal, not completion by itself.
-- [ ] Use the Slice 0 Herdr and Pi capability contract for launch, prompt sending, lead binding, and completion signals.
+- [ ] Use the Slice 0 Herdr and Pi capability contract for launch, prompt sending, lead binding, pane validation, readiness waits, and completion signals.
 - [ ] Keep capability checks lightweight and avoid a heavy permission policy engine.
 - [ ] Use token-aware bounded output defaults from day one.
 - [ ] Use Memory Lane for continuity and do not create `HANDOFF.md`.
@@ -57,17 +58,19 @@ Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-he
 - [x] Slice 3: Worktree orchestration.
 - [x] Slice 4: Herdr pane and session launch.
 - [x] Slice 5: Messaging and lead commands.
+- [x] H1: Herdr client and prompt-delivery reliability.
 - [ ] Slice 6: Status, wait, and collect.
 - [ ] Slice 7: Refresh, diff, and review/test flow.
 - [ ] Slice 8: Cleanup and merge planning.
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 5
+## After H1
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Implement Slice 6 status, wait, and collect without treating Herdr idle as completion by itself.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
+- [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
 
 ## Slice 6 implementation guardrails
 

@@ -108,8 +108,11 @@ Live probe result:
 Implementation contract:
 
 - Prefer `pane send-text` plus `pane send-keys enter` when the message should be submitted to an interactive prompt.
+- Send multi-line prompts as one `pane send-text` payload plus `pane send-keys enter` until a later live probe justifies changing the shape.
 - Do not rely on `agent send` alone to submit prompts, because it writes literal text without an Enter key.
-- Store pane ids in state but revalidate them before use.
+- Store pane ids in state but revalidate them before use with `pane get` or equivalent Herdr metadata.
+- Treat a clear missing-pane response as stale saved state that can be relaunched before sending.
+- Treat timeouts, capability errors, and ambiguous pane validation failures as stop conditions that leave saved pane state intact.
 
 ### Agent
 
@@ -161,6 +164,8 @@ Live probe result:
 Implementation contract:
 
 - Use Herdr wait commands for bounded waits.
+- Wait briefly for `idle` before the first prompt sent to a freshly launched worker pane.
+- Treat readiness wait failure as warning-only for prompt delivery, not as worker completion or launch failure.
 - Treat Herdr status values as activity signals.
 - Do not depend on Herdr `done` until Slice 6 verifies when it is emitted.
 - Map Herdr `idle` or a stopped or missing pane/process signal plus valid artifact to pi-herd `done`.
@@ -262,6 +267,11 @@ Herdr has two different text-sending behaviors:
 Implementation contract:
 
 - Use pane-level send-text plus Enter for worker prompts.
+- Submit multi-line prompt text as a single send-text payload followed by Enter unless a future live probe shows Herdr needs line-by-line insertion.
+- Before sending to a saved pane ref, validate that the pane still exists.
+- If validation clearly reports a missing pane, relaunch the role session before sending.
+- If validation times out, reports an unsupported command, or fails ambiguously, stop without clearing saved pane state.
+- After fresh launch, wait briefly for the target pane to report idle readiness and warn rather than fail if readiness cannot be confirmed.
 - If send-text succeeds but Enter submission fails, treat the target pane as potentially containing unsubmitted text because retrying may duplicate the prompt.
 - Keep agent-level send as a lower-level primitive only when literal text insertion is desired.
 - Log the sending method in verbose or debug output because prompt delivery is critical.
@@ -317,4 +327,5 @@ If Herdr Pi integration is missing:
 - Slice 4 uses `herdr agent start` where possible, falls back to `pane split` plus `pane run` for worker sessions when a lead pane exists, and stores pane/session refs plus launch metadata after each successful step.
 - Slice 4 submits the planner kickoff with pane send-text plus Enter.
 - Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter, and reports partial failure clearly if Enter submission fails after text insertion.
+- H1 centralizes Herdr command wrappers, validates saved panes before send, relaunches clearly missing panes, waits briefly for idle readiness before first prompt delivery after fresh launch, and keeps readiness failures warning-only.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

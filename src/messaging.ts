@@ -31,7 +31,7 @@ export interface CommandResultText {
   text: string;
 }
 
-/** Send a prompt to a role, activating reviewer or tester first when needed. */
+/** Send a prompt to a role, validating saved panes and activating or relaunching roles when needed. */
 export async function sendMessage(options: SendOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunState(options, runner);
