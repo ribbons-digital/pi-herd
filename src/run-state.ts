@@ -552,34 +552,41 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
  */
 export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>, now: Date = new Date()): Promise<RunState> {
   const lockDir = join(dirname(path), '.state.lock');
-  await acquireStateLock(lockDir);
+  const lock = await acquireStateLock(lockDir);
   try {
     const state = await readRunState(path);
     await mutate(state);
+    await assertStateLockOwned(lock);
     state.updated_at = now.toISOString();
     state.state_revision = (state.state_revision ?? 0) + 1;
     await writeJsonAtomic(path, state);
+    await assertStateLockOwned(lock);
     return state;
   } finally {
-    await rm(lockDir, { recursive: true, force: true });
+    await releaseStateLock(lock);
   }
 }
 
-async function acquireStateLock(lockDir: string): Promise<void> {
+interface StateLock {
+  lockDir: string;
+  owner: Required<StateLockOwner>;
+}
+
+async function acquireStateLock(lockDir: string): Promise<StateLock> {
   const started = Date.now();
   const timeoutMs = 5_000;
   const staleMs = 30_000;
   while (Date.now() - started < timeoutMs) {
-    const token = randomUUID();
+    const owner = { pid: process.pid, token: randomUUID(), created_at: new Date().toISOString() };
     try {
       await mkdir(lockDir);
       try {
-        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, token, created_at: new Date().toISOString() }), 'utf8');
+        await writeFile(join(lockDir, 'owner.json'), JSON.stringify(owner), 'utf8');
       } catch (error) {
         await rm(lockDir, { recursive: true, force: true });
         throw error;
       }
-      return;
+      return { lockDir, owner };
     } catch (error) {
       if (!isNodeErrorWithCode(error, 'EEXIST')) {
         throw error;
@@ -597,6 +604,31 @@ interface StateLockOwner {
   pid?: unknown;
   token?: unknown;
   created_at?: unknown;
+}
+
+async function assertStateLockOwned(lock: StateLock): Promise<void> {
+  if (!(await isStateLockOwned(lock))) {
+    throw new Error(`Run state lock ownership was lost: ${lock.lockDir}`);
+  }
+}
+
+async function isStateLockOwned(lock: StateLock): Promise<boolean> {
+  const owner = await readStateLockOwner(lock.lockDir);
+  return sameStateLockOwner(lock.owner, owner);
+}
+
+async function releaseStateLock(lock: StateLock): Promise<void> {
+  const releaseDir = `${lock.lockDir}.release-${process.pid}-${randomUUID()}`;
+  try {
+    await rename(lock.lockDir, releaseDir);
+  } catch {
+    return;
+  }
+  if (sameStateLockOwner(lock.owner, await readStateLockOwner(releaseDir))) {
+    await rm(releaseDir, { recursive: true, force: true });
+    return;
+  }
+  await rename(releaseDir, lock.lockDir).catch(() => undefined);
 }
 
 async function removeStaleStateLock(lockDir: string, staleMs: number): Promise<boolean> {

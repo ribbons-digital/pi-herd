@@ -149,6 +149,25 @@ describe('run state', () => {
     await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).resolves.toContain('fresh-token');
   }, 7_000);
 
+  it('aborts state writes and preserves a fresh lock after ownership is stolen', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Stolen state lock' });
+    const lockDir = join(result.state.canonical_run_dir, '.state.lock');
+
+    await expect(
+      updateRunState(result.statePath, async (state) => {
+        state.roles.planner!.status = 'working';
+        await rm(lockDir, { recursive: true, force: true });
+        await mkdir(lockDir);
+        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: 12345, token: 'fresh-token', created_at: new Date().toISOString() }), 'utf8');
+      })
+    ).rejects.toThrow(/lock ownership was lost/);
+
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('pending');
+    expect(saved.state_revision).toBeUndefined();
+    await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).resolves.toContain('fresh-token');
+  });
+
   it('fails implicit active-run resolution when multiple active runs exist', async () => {
     await createRun({ cwd: dir, goal: 'First run', now: new Date('2026-07-01T12:00:00.000Z') });
     await createRun({ cwd: dir, goal: 'Second run', now: new Date('2026-07-01T12:01:00.000Z') });
