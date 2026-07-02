@@ -84,7 +84,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     throw new Error(`Role ${options.role} has no worktree path after materialization.`);
   }
 
-  await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, roleWorktreePath(resolved.state, options.role), options.role);
+  await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, roleWorktreePath(resolved.state, options.role), options.role, resolved.state.repo_root);
 
   const commits = await commitsAheadOfImplementation(runner, record.worktree_path, implementationBranch);
   if (commits.count > 0 && !options.force) {
@@ -217,7 +217,8 @@ async function assertExpectedRoleWorktree(
   worktreePath: string,
   branch: string | undefined,
   expectedPath: string,
-  role: BuiltInRole
+  role: BuiltInRole,
+  repoRoot: string
 ): Promise<void> {
   if (resolve(worktreePath) !== resolve(expectedPath)) {
     throw new Error(`Refusing to refresh ${role} worktree at unexpected path ${worktreePath}. Expected ${expectedPath}.`);
@@ -229,10 +230,20 @@ async function assertExpectedRoleWorktree(
   if (resolve(root.stdout.trim()) !== resolve(worktreePath)) {
     throw new Error(`Refusing to refresh ${role} worktree because ${worktreePath} is not its git worktree root.`);
   }
+  const repoCommonDir = await gitCommonDir(runner, repoRoot);
+  const worktreeCommonDir = await gitCommonDir(runner, worktreePath);
+  if (repoCommonDir !== worktreeCommonDir) {
+    throw new Error(`Refusing to refresh ${role} worktree because it does not belong to the run repository.`);
+  }
   const currentBranch = await git(runner, 'validate reviewer/tester worktree branch', ['symbolic-ref', '--short', 'HEAD'], worktreePath);
   if (currentBranch.stdout.trim() !== branch) {
     throw new Error(`Refusing to refresh ${role} worktree because it is on ${currentBranch.stdout.trim() || 'detached HEAD'} instead of ${branch}.`);
   }
+}
+
+async function gitCommonDir(runner: CommandRunner, cwd: string): Promise<string> {
+  const result = await git(runner, 'validate repository identity', ['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
+  return resolve(result.stdout.trim());
 }
 
 async function git(runner: CommandRunner, label: string, args: string[], cwd: string) {

@@ -9,7 +9,7 @@ import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
 let dir: string;
 const NOW = new Date('2026-07-01T12:00:00.000Z');
 
-type TestResponse = CommandResult | (() => CommandResult | Promise<CommandResult>);
+type TestResponse = CommandResult | ((command: string, args: string[], options?: { cwd?: string }) => CommandResult | Promise<CommandResult>);
 
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
@@ -18,9 +18,10 @@ class RecordingRunner implements CommandRunner {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
     const response = this.responses[key.replaceAll(dir, 'DIR')];
-    if (typeof response === 'function') return response();
+    if (typeof response === 'function') return response(command, args, options);
     if (response) return response;
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return okText(`${options?.cwd ?? dir}\n`);
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--path-format=absolute' && args[2] === '--git-common-dir') return okText(`${join(dir, '.git')}\n`);
     if (command === 'git' && args[0] === 'symbolic-ref') return okText(branchForCwd(options?.cwd));
     if (command === 'git' && args[0] === 'rev-parse' && args.includes('--verify')) return ok();
     if (command === 'git' && args[0] === 'rev-list' && args[1] === '--count') return okText('0\n');
@@ -142,6 +143,19 @@ describe('refresh and diff commands', () => {
 
     await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner })).rejects.toThrow(
       'Refusing to refresh reviewer worktree at unexpected path'
+    );
+    expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
+  it('refuses to refresh a worktree from a different repository', async () => {
+    const { runner, state, statePath } = await createMaterializedRun('Wrong repository');
+    runner.responses['git rev-parse --path-format=absolute --git-common-dir'] = (_command, _args, options) => {
+      return okText(options?.cwd === state.repo_root ? `${join(dir, '.git')}\n` : `${join(dir, 'other-repo', '.git')}\n`);
+    };
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(
+      'Refusing to refresh reviewer worktree because it does not belong to the run repository'
     );
     expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
   });
