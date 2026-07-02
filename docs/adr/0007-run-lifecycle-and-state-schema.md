@@ -1,7 +1,8 @@
 # Run lifecycle and state schema
 
 Each run has a lifecycle status and a canonical `state.json` under its run directory.
-Active-run resolution only considers active runs unless the user explicitly selects another run.
+Implicit active-run resolution only considers active runs.
+State and messaging command selectors currently resolve among active runs, while `pi-herd run list --all` can inspect non-active runs.
 A run can be marked `failed` when creation or orchestration fails after the run directory exists.
 We chose this because pi-herd must support multiple parallel runs without guessing the target when commands omit `--run`.
 
@@ -22,6 +23,11 @@ Freshly launched planner, reviewer, and tester prompts wait briefly for Herdr id
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text so callers know a retry may duplicate it.
 When first-send activation materializes reviewer or tester worktrees, pi-herd persists state after materialization, after launch, and after sending so partial activation remains recoverable.
 Slice 5 lead status, brief, and collect helpers read state and artifact inventory without changing run completion state or writing `FINAL_SUMMARY.md`.
+H2 adds shared run resolution for messaging and lead helpers, verified current-pane targeting before the single-active-run fallback, run discovery from role worktrees through git common-directory metadata, and `pi-herd run list [--all] [--json]`.
+H2 also adds additive `state_revision` provenance and locked read-modify-write updates for messaging state changes.
+Future status, wait, and collect writers should use the same locked update path.
 
-Run state writes are atomic: pi-herd writes a temporary JSON file in the run directory and renames it into place.
+Run state writes use atomic JSON replacement.
+Read-modify-write commands lock, re-read, mutate only owned fields, increment `state_revision`, and then atomically replace the JSON file.
+Creation and start-time single-writer paths still write atomically without the lock helper.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and avoid symlink path components before state is written.

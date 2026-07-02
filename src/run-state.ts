@@ -90,6 +90,7 @@ export interface RunState {
   status: RunStatus;
   created_at: string;
   updated_at: string;
+  /** Additive revision provenance incremented by locked read-modify-write updates. */
   state_revision?: number;
   repo_root: string;
   base_ref: string;
@@ -245,6 +246,7 @@ export async function resolveRunContext(options: ResolveRunContextOptions): Prom
   return { state: await readRunState(statePath), statePath, summary };
 }
 
+/** List runs visible from a main checkout or role worktree invocation directory. */
 export async function listRunsForInvocation(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner, includeAll = false): Promise<ActiveRunSummary[]> {
   const primaryCwd = resolve(cwd);
   const seen = new Set<string>();
@@ -266,6 +268,7 @@ export async function listRunsForInvocation(cwd: string, configPath?: string, ru
   return runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
+/** Select an explicit run, latest run, or the single visible active run from summaries. */
 export function selectRunFromSummaries(runs: ActiveRunSummary[], selector?: string): ActiveRunSummary {
   if (selector) {
     if (selector === 'latest') {

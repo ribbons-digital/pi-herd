@@ -55,6 +55,7 @@ Warnings do not make the command fail, but hard failures such as invalid config 
 
 `pi-herd run create` creates a canonical run directory with `REQUEST.md`, `state.json`, `logs/`, and `inbox/`.
 By default it creates pending role records for `planner`, `implementer`, `reviewer`, and `tester`.
+It must run inside a git repository and fails if base ref inference cannot resolve a branch or commit.
 Pass `--role` one or more times to limit the selected roles, `--base-ref` to override the detected branch or commit, `--json` for the saved state, or `--config` for a custom config path.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and not traverse symlinks.
 Pass `--with-worktrees` to materialize the implementation worktree while leaving reviewer and tester worktrees pending.
