@@ -28,6 +28,8 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'log' && args[1] === '--oneline') return ok();
     if (command === 'git' && args[0] === 'status') return ok();
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
+    if (command === 'git' && args[0] === 'worktree' && args[1] === 'prune') return ok();
+    if (command === 'git' && args[0] === 'worktree' && args[1] === 'add') return ok();
     if (command === 'git' && args[0] === 'reset') return okText('HEAD is now at abc impl\n');
     if (command === 'git' && args[0] === 'clean') return ok();
     if (command === 'git' && args[0] === 'diff' && args[1] === '--stat') return okText(' src/file.ts | 2 ++\n');
@@ -145,6 +147,27 @@ describe('refresh and diff commands', () => {
       'Refusing to refresh reviewer worktree at unexpected path'
     );
     expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
+  it('prunes stale worktree registrations before recreating a missing role worktree', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Stale worktree registration', now: NOW, runner });
+    const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = worktreePath;
+    runner.responses[`git show-ref --verify --quiet refs/heads/${state.roles.reviewer!.branch}`] = ok();
+    await writeJsonAtomic(statePath, state);
+
+    const result = await refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner });
+
+    expect(result.text).toContain('Stored reviewer worktree path is missing; recreating it.');
+    expect(result.text).toContain(`Recreated reviewer worktree at ${worktreePath}.`);
+    const pruneIndex = runner.calls.indexOf('git worktree prune --expire now');
+    const addIndex = runner.calls.indexOf(`git worktree add ${worktreePath} ${state.roles.reviewer!.branch}`);
+    const resetIndex = runner.calls.indexOf(`git reset --hard ${state.roles.implementer!.branch}`);
+    expect(pruneIndex).toBeGreaterThanOrEqual(0);
+    expect(addIndex).toBeGreaterThan(pruneIndex);
+    expect(resetIndex).toBeGreaterThan(addIndex);
   });
 
   it('refuses to recreate a missing worktree through a symlinked path component', async () => {

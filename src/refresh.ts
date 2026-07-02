@@ -54,6 +54,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     const path = record.worktree_path ?? roleWorktreePath(resolved.state, options.role);
     if (!pathExists && await localBranchExists(runner, resolved.state.repo_root, record.branch ?? '')) {
       await assertNoSymlinkPathComponents(resolved.state.repo_root, path);
+      await gitWorktreePruneStale(runner, resolved.state.repo_root);
       await gitWorktreeAddExistingBranch(runner, resolved.state.repo_root, path, record.branch!);
       record.worktree_path = path;
       record.worktree_status = 'materialized';
@@ -207,6 +208,10 @@ async function localBranchExists(runner: CommandRunner, repoRoot: string, branch
   if (!branch) return false;
   const result = await runner.run('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repoRoot });
   return result.exitCode === 0;
+}
+
+async function gitWorktreePruneStale(runner: CommandRunner, repoRoot: string): Promise<void> {
+  await git(runner, 'prune stale worktree registrations', ['worktree', 'prune', '--expire', 'now'], repoRoot);
 }
 
 async function gitWorktreeAddExistingBranch(runner: CommandRunner, repoRoot: string, path: string, branch: string): Promise<void> {
