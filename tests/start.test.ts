@@ -86,10 +86,15 @@ describe('start orchestration', () => {
     expect(result.state.lead_binding.herdr_pane_id).toBe('lead-pane');
     expect(result.state.lead_binding.session_ref).toBeNull();
     expect(result.launched.find((launch) => launch.role === 'lead')?.sessionRef).toBeNull();
+    expect(result.launched.find((launch) => launch.role === 'planner')?.sessionRef).toBe('2026-07-01T12-00-00-launch-sessions-planner');
+    expect(result.launched.find((launch) => launch.role === 'implementer')?.sessionRef).toBe('2026-07-01T12-00-00-launch-sessions-implementer');
     expect(result.state.roles.planner?.status).toBe('working');
     expect(result.state.roles.planner?.herdr_pane_id).toBe('planner-pane');
+    expect(result.state.roles.planner?.session_ref).toBe('2026-07-01T12-00-00-launch-sessions-planner');
+    expect(result.state.roles.planner?.launch_metadata?.agent_name).toBe('pi-herd-2026-07-01T12-00-00-launch-sessions-planner');
     expect(result.state.roles.implementer?.status).toBe('staged');
     expect(result.state.roles.implementer?.herdr_pane_id).toBe('impl-pane');
+    expect(result.state.roles.implementer?.session_ref).toBe('2026-07-01T12-00-00-launch-sessions-implementer');
     expect(result.state.roles.implementer?.worktree_herdr_workspace_id).toBe('impl-wt-ws');
     expect(result.state.roles.implementer?.herdr_workspace_id).toBe('lead-ws');
     expect(result.state.roles.reviewer?.status).toBe('staged');
@@ -148,6 +153,7 @@ describe('start orchestration', () => {
 
     expect(result.state.lead_binding.herdr_workspace_id).toBe('new-lead-ws');
     expect(result.state.lead_binding.herdr_pane_id).toBe('new-lead-pane');
+    expect(result.state.lead_binding.session_ref).toBe('2026-07-01T12-00-00-shell-start-lead');
     expect(result.state.roles.planner?.status).toBe('working');
   });
 
@@ -171,6 +177,7 @@ describe('start orchestration', () => {
     });
 
     expect(result.state.roles.planner?.herdr_pane_id).toBe('fallback-pane');
+    expect(result.state.roles.planner?.session_ref).toBe('2026-07-01T12-00-00-worker-fallback-planner');
     expect(result.state.roles.planner?.launch_metadata?.launch_method).toBe('herdr-pane-run');
   });
 

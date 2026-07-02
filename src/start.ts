@@ -28,6 +28,7 @@ export interface LaunchRef {
 interface PiCommandSpec {
   command: string;
   args: string[];
+  sessionId: string;
   metadata: LaunchMetadata;
 }
 
@@ -145,6 +146,7 @@ export function buildPiCommand(config: PiHerdConfig, role: 'lead' | BuiltInRole,
   return {
     command: profile.command,
     args,
+    sessionId,
     metadata: {
       agent_name: name,
       command: profile.command,
@@ -200,7 +202,7 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   if (agent.exitCode === 0) {
     const parsed = parsePaneMetadata(agent.stdout);
     if (parsed.paneId) {
-      return { workspaceId: parsed.workspaceId ?? options.workspaceId, tabId: parsed.tabId, paneId: parsed.paneId, sessionRef: spec.metadata.agent_name ?? parsed.paneId, launchMethod: 'herdr-agent-start', metadata: { ...spec.metadata, launch_method: 'herdr-agent-start' } };
+      return { workspaceId: parsed.workspaceId ?? options.workspaceId, tabId: parsed.tabId, paneId: parsed.paneId, sessionRef: spec.sessionId, launchMethod: 'herdr-agent-start', metadata: { ...spec.metadata, launch_method: 'herdr-agent-start' } };
     }
     throw new Error(`Could not launch ${options.role}. Herdr agent start returned unusable metadata.`);
   }
@@ -224,7 +226,7 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   if (paneRun.exitCode !== 0) {
     throw new Error(`Could not launch ${options.role}. Pane run: ${describeFailure(paneRun, 'pane run failed')}`);
   }
-  return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.metadata.agent_name ?? pane, launchMethod: 'herdr-pane-run', metadata: { ...spec.metadata, launch_method: 'herdr-pane-run' } };
+  return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.sessionId, launchMethod: 'herdr-pane-run', metadata: { ...spec.metadata, launch_method: 'herdr-pane-run' } };
 }
 
 function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): void {
