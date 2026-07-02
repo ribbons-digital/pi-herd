@@ -17,13 +17,16 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+type TestResponse = CommandResult | (() => CommandResult | Promise<CommandResult>);
+
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
-  constructor(private readonly responses: Record<string, CommandResult>) {}
+  constructor(private readonly responses: Record<string, TestResponse>) {}
   async run(command: string, args: string[]): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
     const response = this.responses[key.replaceAll(dir, 'DIR')];
+    if (typeof response === 'function') return response();
     if (response) return response;
     if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return okJson({ pane_id: args[2] });
     if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 1, stdout: '', stderr: 'timeout\n' };
@@ -143,6 +146,30 @@ describe('status, wait, and collect commands', () => {
     expect(saved.roles.planner?.status).toBe('blocked');
   });
 
+  it('does not overwrite a fresher status with a stale role verdict', async () => {
+    const { state, statePath } = await createWorkingRun('planner-pane');
+    await writeFile(join(state.canonical_run_dir, 'PLAN.md'), 'approved plan\n', 'utf8');
+    let rewroteFreshStatus = false;
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': async () => {
+        if (!rewroteFreshStatus) {
+          const fresh = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+          fresh.roles.planner!.status = 'blocked';
+          await writeJsonAtomic(statePath, fresh);
+          rewroteFreshStatus = true;
+        }
+        return ok();
+      }
+    }));
+
+    const result = await waitRun({ cwd: dir, run: state.run_id, timeoutMs: 10, pollIntervalMs: 1, runner, now: NOW });
+
+    expect(result.exitCode).toBe(3);
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('blocked');
+    expect(saved.state_revision).toBeUndefined();
+  });
+
   it('writes FINAL_SUMMARY.md and pane logs without changing run status', async () => {
     const { state, statePath } = await createWorkingRun('planner-pane');
     await writeFile(join(state.canonical_run_dir, 'PLAN.md'), 'approved plan\n', 'utf8');
@@ -160,6 +187,22 @@ describe('status, wait, and collect commands', () => {
     expect(saved.status).toBe('active');
     expect(saved.roles.planner?.status).toBe('done');
   });
+
+  it('truncates artifact previews by utf8 byte budget without splitting code points', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    await writeFile(join(state.canonical_run_dir, 'PLAN.md'), `${'あ'.repeat(9000)}🙂tail`, 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok(),
+      'herdr pane read planner-pane --source recent --lines 200 --format text': okText('planner log\n')
+    }));
+
+    const result = await collectRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    const preview = result.snapshot.roles.find((role) => role.role === 'planner')?.artifacts[0]?.preview;
+    expect(preview).toContain('... truncated to 24000 bytes ...');
+    expect(Buffer.byteLength(preview ?? '', 'utf8')).toBeLessThanOrEqual(24000);
+    expect(Buffer.from(preview ?? '', 'utf8').toString('utf8')).toBe(preview);
+  });
 });
 
 async function createWorkingRun(plannerPane: string) {
@@ -176,7 +219,7 @@ async function createWorkingRun(plannerPane: string) {
   return result;
 }
 
-function baseResponses(overrides: Record<string, CommandResult>): Record<string, CommandResult> {
+function baseResponses(overrides: Record<string, TestResponse>): Record<string, TestResponse> {
   return {
     'git rev-parse --show-toplevel': { exitCode: 0, stdout: `${dir}\n`, stderr: '' },
     'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' },
@@ -184,8 +227,8 @@ function baseResponses(overrides: Record<string, CommandResult>): Record<string,
   };
 }
 
-function normalize(responses: Record<string, CommandResult>): Record<string, CommandResult> {
-  const normalized: Record<string, CommandResult> = {};
+function normalize(responses: Record<string, TestResponse>): Record<string, TestResponse> {
+  const normalized: Record<string, TestResponse> = {};
   for (const [key, value] of Object.entries(responses)) normalized[key.replaceAll(dir, 'DIR')] = value;
   return normalized;
 }

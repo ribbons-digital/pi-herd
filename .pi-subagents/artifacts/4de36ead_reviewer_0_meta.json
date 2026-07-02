@@ -1,0 +1,36 @@
+{
+  "runId": "4de36ead",
+  "agent": "reviewer",
+  "task": "Review the diff from 7b4ad3a97a7b01c4acb31da2836a0712e5273077 to 67d17045bd00511454f8829a709b1b61bf5a31f8 in this worktree. Do not run tests. Focus on real bugs/risks in changed code. Return concise findings with file/line. Especially inspect src/status.ts state persistence and status/wait/collect behavior.",
+  "exitCode": 0,
+  "usage": {
+    "input": 34808,
+    "output": 12389,
+    "cacheRead": 138624,
+    "cacheWrite": 0,
+    "cost": 0.105689688,
+    "turns": 7
+  },
+  "model": "opencode-go/deepseek-v4-pro:high",
+  "attemptedModels": [
+    "opencode-go/deepseek-v4-pro:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "opencode-go/deepseek-v4-pro:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 34808,
+        "output": 12389,
+        "cacheRead": 138624,
+        "cacheWrite": 0,
+        "cost": 0.105689688,
+        "turns": 7
+      }
+    }
+  ],
+  "durationMs": 203386,
+  "toolCount": 10,
+  "timestamp": 1782993569125
+}

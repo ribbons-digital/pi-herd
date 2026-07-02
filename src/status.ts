@@ -65,6 +65,7 @@ type RoleSignal = 'idle' | 'working' | 'blocked' | 'done' | 'stopped' | 'unknown
 interface RoleDecision {
   role: BuiltInRole;
   nextStatus: RoleStatus;
+  observedStatus: RoleStatus | null;
   observedLastActivityAt: string | null;
   shouldPersist: boolean;
 }
@@ -250,6 +251,7 @@ async function persistRoleDecisions(statePath: string, observedState: RunState, 
   const decisions = snapshot.roles.map((role): RoleDecision => ({
     role: role.role,
     nextStatus: role.evaluated_status,
+    observedStatus: observedState.roles[role.role]?.status ?? null,
     observedLastActivityAt: observedState.roles[role.role]?.last_activity_at ?? null,
     shouldPersist: role.evaluated_status === 'done' || role.evaluated_status === 'incomplete' || role.evaluated_status === 'blocked'
   }));
@@ -263,6 +265,7 @@ async function persistRoleDecisions(statePath: string, observedState: RunState, 
       const record = fresh.roles[decision.role];
       if (!record) continue;
       if (!isMutableStatus(record.status)) continue;
+      if (record.status !== decision.observedStatus) continue;
       if (record.last_activity_at !== decision.observedLastActivityAt) continue;
       if (record.status === decision.nextStatus) continue;
       record.status = decision.nextStatus;
@@ -353,6 +356,7 @@ function canApplyDecision(state: RunState, decision: RoleDecision): boolean {
     decision.shouldPersist &&
     record &&
     isMutableStatus(record.status) &&
+    record.status === decision.observedStatus &&
     record.last_activity_at === decision.observedLastActivityAt &&
     record.status !== decision.nextStatus
   );
@@ -400,7 +404,17 @@ function positiveInteger(value: number, name: string): number {
 function truncateBytes(value: string, maxBytes: number): string {
   const bytes = Buffer.byteLength(value, 'utf8');
   if (bytes <= maxBytes) return value;
-  return `${value.slice(0, maxBytes)}\n... truncated to ${maxBytes} bytes ...`;
+  const marker = `\n... truncated to ${maxBytes} bytes ...`;
+  const prefixBudget = Math.max(0, maxBytes - Buffer.byteLength(marker, 'utf8'));
+  let used = 0;
+  let prefix = '';
+  for (const codePoint of value) {
+    const codePointBytes = Buffer.byteLength(codePoint, 'utf8');
+    if (used + codePointBytes > prefixBudget) break;
+    prefix += codePoint;
+    used += codePointBytes;
+  }
+  return `${prefix}${marker}`;
 }
 
 async function writeTextAtomic(path: string, value: string): Promise<void> {
