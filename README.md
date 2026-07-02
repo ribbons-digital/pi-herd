@@ -13,7 +13,7 @@ Slice 1 CLI foundation is complete.
 Slice 2 run state and artifact model is complete.
 Slice 3 worktree orchestration is complete.
 Slice 4 Herdr pane and session launch is complete.
-Slice 5 messaging and lead commands is implemented on the current branch.
+Slice 5 messaging and lead commands are implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -37,6 +37,7 @@ pi-herd run create "implement auth refresh" --with-worktrees
 pi-herd start "replace legacy auth refresh flow"
 pi-herd send implementer "Implement the approved plan."
 pi-herd lead status
+pi-herd lead collect
 pi-herd lead brief
 ```
 
@@ -62,13 +63,15 @@ It does not create panes or worker sessions.
 It accepts repeated `--role` flags, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 It launches and activates the planner with an initial kickoff prompt.
 It launches the implementer as a staged session in the implementation worktree when the implementer role is selected.
-Reviewer and tester remain staged slots with pending worktrees until later activation slices.
+Reviewer and tester remain staged slots with pending worktrees until first activation.
 Launch metadata and pane/session refs are persisted after each successful step so partial launch failures leave recoverable state.
 
 `pi-herd send` sends a prompt to a selected role pane using Herdr pane text submission.
 When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, then sends the prompt.
+Sending marks the role `working` and records `last_activity_at`, but does not infer completion.
 `pi-herd lead send` performs the same send with a lead-pane guard.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
+`lead collect` prints a read-only artifact and inbox inventory.
 They do not infer worker completion or write `FINAL_SUMMARY.md`; full collection remains a later slice.
 
 ## Local development

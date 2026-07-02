@@ -315,5 +315,5 @@ If Herdr Pi integration is missing:
 - If Herdr times out or exits successfully without usable matching metadata, Slice 3 should fail clearly rather than attempt git fallback against the same target.
 - Slice 4 uses `herdr agent start` where possible, falls back to `pane split` plus `pane run` for worker sessions when a lead pane exists, and stores pane/session refs plus launch metadata after each successful step.
 - Slice 4 submits the planner kickoff with pane send-text plus Enter.
-- Slice 5 should extend prompt sending beyond planner kickoff to lead commands and role messaging.
+- Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

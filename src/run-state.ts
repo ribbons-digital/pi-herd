@@ -274,6 +274,7 @@ export function parseRole(value: string): BuiltInRole {
   throw new Error(`Unknown role '${value}'. Expected planner, implementer, reviewer, or tester.`);
 }
 
+/** Load config when present, otherwise return defaults for the provided cwd. */
 export async function loadConfigIfPresent(cwd: string, configPath?: string) {
   const path = resolveConfigPath(cwd, configPath);
   try {
@@ -295,6 +296,7 @@ async function resolveRepoRoot(cwd: string, runner: CommandRunner): Promise<stri
   return resolve(cwd);
 }
 
+/** Resolve the configured repository-relative runs directory under the repo root. */
 export function resolveRunsRoot(repoRoot: string, runsDir: string): string {
   if (isAbsolute(runsDir)) {
     throw new Error('Config paths.runs_dir must be a repository-relative path.');
@@ -426,6 +428,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
   await rename(tempPath, path);
 }
 
+/** Read a persisted run state JSON file. */
 export async function readRunState(path: string): Promise<RunState> {
   return JSON.parse(await readFile(path, 'utf8')) as RunState;
 }

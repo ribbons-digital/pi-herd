@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0, Slice 1, Slice 2, and Slice 3 complete, and Slice 4 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 5 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.

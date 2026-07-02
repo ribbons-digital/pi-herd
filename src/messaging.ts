@@ -8,6 +8,7 @@ import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane } fro
 import { materializeRoleWorktree } from './worktree.js';
 import { listActiveRuns, loadConfigIfPresent, readRunState, resolveRunsRoot, writeJsonAtomic, type ActiveRunSummary, type RoleRecord, type RunState } from './run-state.js';
 
+/** Shared options for commands that resolve and read a pi-herd run. */
 export interface RunCommandOptions {
   cwd: string;
   configPath?: string;
@@ -16,17 +17,20 @@ export interface RunCommandOptions {
   runner?: CommandRunner;
 }
 
+/** Options for sending a prompt to a selected role pane. */
 export interface SendOptions extends RunCommandOptions {
   role: BuiltInRole;
   message: string;
   requireLead?: boolean;
 }
 
+/** Human-readable command output paired with the run state used to produce it. */
 export interface CommandResultText {
   state: RunState;
   text: string;
 }
 
+/** Send a prompt to a role, activating reviewer or tester first when needed. */
 export async function sendMessage(options: SendOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunState(options, runner);
@@ -56,6 +60,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
   };
 }
 
+/** Print bounded state for the active or selected run without changing worker completion. */
 export async function leadStatus(options: RunCommandOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const { state } = await resolveRunState(options, runner);
@@ -72,6 +77,7 @@ export async function leadStatus(options: RunCommandOptions): Promise<CommandRes
   return { state, text: `${lines.join('\n')}\n` };
 }
 
+/** Print a bounded lead-session brief from state, expected artifacts, and inbox inventory. */
 export async function leadBrief(options: RunCommandOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const { state } = await resolveRunState(options, runner);
@@ -99,6 +105,7 @@ export async function leadBrief(options: RunCommandOptions): Promise<CommandResu
   return { state, text: `${truncate(lines.join('\n'), 8000)}\n` };
 }
 
+/** Print a read-only artifact and inbox inventory for the active or selected run. */
 export async function leadCollect(options: RunCommandOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const { state } = await resolveRunState(options, runner);

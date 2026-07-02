@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 4 Herdr pane and session launch implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging and lead commands implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -175,6 +175,9 @@ If worktree materialization fails after state creation, pi-herd persists any suc
 `pi-herd start` reuses run creation, binds or launches the lead, launches planner and implementer sessions when those roles are selected, submits the planner kickoff prompt, and records pane ids, session refs, launch metadata, and prompt metadata as each step succeeds.
 When a Herdr-created worktree workspace id is later replaced by the session workspace id, pi-herd preserves the worktree workspace id in `worktree_herdr_workspace_id`.
 If launch or kickoff fails after state creation, pi-herd persists any successful launch refs, marks the run `failed`, and excludes it from active-run resolution.
+`pi-herd send` sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` without inferring completion.
+The first send to a reviewer or tester can materialize that role worktree from the implementation branch, launch the role session, persist state after each successful step, and then send the prompt.
+`pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` read state and artifact inventory without changing completion state or writing `FINAL_SUMMARY.md`.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -182,17 +185,16 @@ The current implementation supports selecting `planner`, `implementer`, `reviewe
 Commands accept explicit run selection:
 
 ```bash
-pi-herd status --run <run_id|slug|latest>
-pi-herd send --run <run_id|slug> reviewer "Review current diff."
-pi-herd collect --run <run_id|slug>
+pi-herd lead status --run <run_id|slug|latest>
+pi-herd send reviewer "Review current diff." --run <run_id|slug|latest>
+pi-herd lead collect --run <run_id|slug|latest>
 ```
 
 When `--run` is omitted, resolution order is:
 
-1. Use a run id from an explicit lead or pane binding.
-2. Use a run id from harness or Herdr context when available.
-3. Use the only active run if exactly one active run exists.
-4. Otherwise fail with a clear list of active runs and ask the user to pass `--run`.
+1. Use a verified current Herdr/Pi pane binding when available.
+2. Use the only active run if exactly one active run exists.
+3. Otherwise fail and ask the user to pass `--run`.
 
 `latest` is available only when the user explicitly passes it.
 
@@ -320,7 +322,7 @@ The implementer owns the implementation branch and implementation worktree.
 `pi-herd run create --with-worktrees` creates the implementer worktree and implementation branch when the implementer role is selected.
 `--planner-worktree` also creates the planner worktree and branch when the planner role is selected.
 Reviewer and tester role worktree views should be materialized lazily when those roles are activated or refreshed.
-Reviewer and tester worktrees are refreshed from the implementation branch.
+Reviewer and tester worktrees are created from the implementation branch on first activation or refresh.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
@@ -416,6 +418,7 @@ Herdr `done` was listed in wait help but not observed in the live probe, so pi-h
 Only the planner is activated by default.
 The implementer session is launched as staged in the implementation worktree when the implementer role is selected.
 Reviewer and tester remain staged slots without launched sessions, and their worktrees may remain `worktree: pending` until first activation or refresh.
+The first send to reviewer or tester is an activation: pi-herd materializes the role worktree from the implementation branch, launches the role session, persists state, and submits the prompt.
 
 Future options may allow eager activation, but staged activation is the default.
 
@@ -430,7 +433,11 @@ pi-herd lead collect
 pi-herd lead brief
 ```
 
-`lead brief` should print a bounded orchestration brief suitable for pasting into or reading from the lead session.
+`lead status` prints current run and role state from `state.json`.
+`lead send` requires the command to run from the verified bound Pi lead pane, then sends the role prompt.
+`lead collect` prints a read-only artifact and inbox inventory.
+`lead brief` prints a bounded orchestration brief suitable for pasting into or reading from the lead session.
+These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md` in Slice 5.
 
 ## Core CLI commands
 
@@ -458,12 +465,17 @@ It accepts repeated `--role` flags for selected roles, `--base-ref` for the reco
 `start` is the user-facing launch command.
 It accepts repeated `--role` flags for selected roles, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 When selected roles require worktrees, it applies the same clean-repository and materialization rules as `run create --with-worktrees`.
+`send` is implemented for selected roles and can activate reviewer or tester on first send.
+`lead status`, `lead send`, `lead collect`, and `lead brief` are implemented as bounded lead helpers.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.
 
 ## collect and brief
 
-`collect` should:
+`lead collect` currently reads current run state, lists expected worker artifacts from the canonical run directory, and lists up to 20 inbox entries.
+It is read-only and does not save logs, validate completion, or generate `FINAL_SUMMARY.md`.
+
+The future full `collect` should:
 
 1. Read current run state.
 2. Read worker artifacts from the canonical run directory.
