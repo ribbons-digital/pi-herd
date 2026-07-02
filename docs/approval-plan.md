@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery, Slice 1 CLI foundation, Slice 2 run state, and Slice 3 worktree orchestration complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery, Slice 1 CLI foundation, Slice 2 run state, Slice 3 worktree orchestration, and Slice 4 Herdr pane and session launch complete on the current branch.
 
 ## Review provenance
 
@@ -11,7 +11,8 @@ The current docs incorporate the consensus.
 Slice 0 verified the Herdr and Pi capability contract and recorded it in the capability report and ADR 0008.
 Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation, tests, and README updates in PR #13.
 Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
-Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
+Slice 3 added `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
+Slice 4 added `pi-herd start`, verified or created lead binding, planner launch with kickoff prompt, staged implementer launch, reviewer and tester staged slots, launch metadata persistence, and recoverable failed-run persistence after partial launch failures.
 
 ## Files to approve
 
@@ -53,7 +54,7 @@ Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git 
 - [x] Slice 1: CLI foundation, doctor, and init.
 - [x] Slice 2: Run state and artifact model.
 - [x] Slice 3: Worktree orchestration.
-- [ ] Slice 4: Herdr pane and session launch.
+- [x] Slice 4: Herdr pane and session launch.
 - [ ] Slice 5: Messaging and lead commands.
 - [ ] Slice 6: Status, wait, and collect.
 - [ ] Slice 7: Refresh, diff, and review/test flow.
@@ -61,14 +62,15 @@ Slice 3 adds `--with-worktrees`, Herdr-first implementer worktree creation, git 
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 3
+## After Slice 4
 
 - [ ] Continue with one branch and one PR per issue.
-- [ ] Implement Slice 4 Herdr pane and session launch without changing Slice 3 worktree safety guarantees.
+- [ ] Implement Slice 5 messaging and lead commands without changing Slice 4 launch recovery guarantees.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 
-## Slice 4 implementation guardrails
+## Slice 5 implementation guardrails
 
 - [ ] Keep reviewer and tester worktrees pending until activation or refresh.
 - [ ] Preserve Herdr-first worktree creation with raw git fallback only after Herdr creation exits nonzero or fails to spawn.
+- [ ] Reuse pane send-text plus Enter for role prompts unless Herdr adds direct submit semantics.
 - [ ] Let no-mistakes handle final validation, PR updates, and CI.

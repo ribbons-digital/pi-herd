@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 3 worktree orchestration implemented on the current branch.
+Status: Reviewed draft with Slice 4 Herdr pane and session launch implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -164,12 +164,17 @@ The state schema should start with this shape:
 }
 ```
 
+Role records may also include `worktree_herdr_workspace_id` after Herdr worktree materialization, preserving the worktree workspace when `herdr_workspace_id` is later updated to the launched session workspace.
+Role `launch_metadata` records the harness command, args, cwd, provider, model, thinking preference, expected writes, launch method, and prompt method when available.
 State writes should be atomic.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
 `pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree provider, worktree status, and Herdr workspace id when available in `state.json`.
 `--planner-worktree` implies `--with-worktrees` and also materializes the planner worktree.
 If worktree materialization fails after state creation, pi-herd persists any successful materializations, marks the run `failed`, and excludes it from active-run resolution.
+`pi-herd start` reuses run creation, binds or launches the lead, launches planner and implementer sessions when those roles are selected, submits the planner kickoff prompt, and records pane ids, session refs, launch metadata, and prompt metadata as each step succeeds.
+When a Herdr-created worktree workspace id is later replaced by the session workspace id, pi-herd preserves the worktree workspace id in `worktree_herdr_workspace_id`.
+If launch or kickoff fails after state creation, pi-herd persists any successful launch refs, marks the run `failed`, and excludes it from active-run resolution.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -263,14 +268,14 @@ harness:
         reviewer: high
 ```
 
-CLI overrides should support role-specific model settings:
+Future CLI overrides should support role-specific model settings:
 
 ```bash
 pi-herd start "goal" --model reviewer=claude-opus-4-8 --model tester=claude-haiku-4
 ```
 
-For Pi, the adapter can use `pi --model`, `pi --provider`, and `pi --thinking` when configured.
-`doctor` and `start --dry-run` should warn when a configured preference cannot be mapped confidently.
+For Pi, the adapter uses `pi --model`, `pi --provider`, and `pi --thinking` when configured in the harness profile.
+Future `doctor` and `start --dry-run` checks should warn when a configured preference cannot be mapped confidently.
 
 ## Capability checks
 
@@ -407,10 +412,10 @@ Herdr `done` was listed in wait help but not observed in the live probe, so pi-h
 
 ## Staged activation
 
-`pi-herd start` should create the run, lead binding, selected worker slots, and the implementation worktree if implementation is selected.
-Only the planner should be activated by default.
-Implementer, reviewer, and tester should be staged until the lead explicitly sends them work.
-Reviewer and tester worktrees may remain `worktree: pending` until first activation or refresh.
+`pi-herd start` creates the run, lead binding, selected worker slots, and the implementation worktree if implementation is selected.
+Only the planner is activated by default.
+The implementer session is launched as staged in the implementation worktree when the implementer role is selected.
+Reviewer and tester remain staged slots without launched sessions, and their worktrees may remain `worktree: pending` until first activation or refresh.
 
 Future options may allow eager activation, but staged activation is the default.
 
@@ -448,9 +453,11 @@ pi-herd merge-plan
 pi-herd cleanup
 ```
 
-`run create` supports early state and worktree creation before launch behavior is implemented.
+`run create` supports early state and worktree creation without panes or worker sessions.
 It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
-`start` is the user-facing command once orchestration launch exists.
+`start` is the user-facing launch command.
+It accepts repeated `--role` flags for selected roles, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
+When selected roles require worktrees, it applies the same clean-repository and materialization rules as `run create --with-worktrees`.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.
 

@@ -286,7 +286,7 @@ Implementation contract:
 
 ## Fallback paths
 
-If `herdr agent start` is unavailable or fails:
+If `herdr agent start` is unavailable or fails for a worker session after a lead pane exists:
 
 - Create a pane with `herdr pane split` or a tab with `herdr tab create`.
 - Launch the harness with `herdr pane run <pane_id> <command>`.
@@ -313,6 +313,7 @@ If Herdr Pi integration is missing:
 - Slice 2 state stores Herdr workspace, tab, and pane ids plus a nullable `session_ref` placeholder for harness session identity.
 - Slice 3 worktree creation should call Herdr first, trust the result only when JSON metadata matches the requested branch and absolute path, and fall back to raw `git worktree add` without creating panes or sessions only when Herdr exits nonzero or cannot be spawned.
 - If Herdr times out or exits successfully without usable matching metadata, Slice 3 should fail clearly rather than attempt git fallback against the same target.
-- Slice 4 should use `herdr agent start` where possible.
-- Slice 5 prompt sending should use pane send-text plus Enter.
+- Slice 4 uses `herdr agent start` where possible, falls back to `pane split` plus `pane run` for worker sessions when a lead pane exists, and stores pane/session refs plus launch metadata after each successful step.
+- Slice 4 submits the planner kickoff with pane send-text plus Enter.
+- Slice 5 should extend prompt sending beyond planner kickoff to lead commands and role messaging.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

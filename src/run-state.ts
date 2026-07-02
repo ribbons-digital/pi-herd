@@ -2,7 +2,7 @@ import { access, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } 
 import { constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { defaultConfig, loadConfig, resolveConfigPath } from './config.js';
+import { defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
@@ -35,6 +35,7 @@ export interface RunCreateResult {
   logsDir: string;
   created: string[];
   worktrees: MaterializedWorktree[];
+  config: PiHerdConfig;
 }
 
 export interface LeadBinding {
@@ -55,12 +56,28 @@ export interface RoleRecord {
   worktree_path: string | null;
   worktree_status: WorktreeStatus;
   worktree_provider?: 'herdr' | 'git' | null;
+  worktree_herdr_workspace_id?: string | null;
   herdr_workspace_id: string | null;
   herdr_tab_id: string | null;
   herdr_pane_id: string | null;
   session_ref: string | null;
+  launch_metadata?: LaunchMetadata;
   required_artifacts: string[];
   last_activity_at: string | null;
+}
+
+/** Additive session launch details persisted after Herdr/Pi launch steps succeed. */
+export interface LaunchMetadata {
+  agent_name?: string;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  model?: string | null;
+  provider?: string | null;
+  thinking?: string | null;
+  expected_writes?: string;
+  launch_method?: 'herdr-agent-start' | 'herdr-pane-run' | 'bound-current-pane';
+  prompt_method?: 'pane-send-text-enter';
 }
 
 /** Persisted schema_version 1 state for a pi-herd orchestration run. */
@@ -175,7 +192,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
     }
   }
 
-  return { state, requestPath, statePath, inboxDir, logsDir, created, worktrees };
+  return { state, requestPath, statePath, inboxDir, logsDir, created, worktrees, config };
 }
 
 /** Return active runs sorted by creation time, ignoring non-active runs. */
@@ -403,7 +420,7 @@ function formatRequest(state: RunState): string {
   return `# Request\n\nGoal: ${state.goal}\n\nRun ID: ${state.run_id}\nCreated: ${state.created_at}\nBase ref: ${state.base_ref}\n\n## Instructions\n\nThis file captures the original user goal for the run.\nWorker artifacts should be written to this canonical run directory.\nWorker requests should be written to inbox files named {timestamp}-{from_role}-{kind}.md.\n`;
 }
 
-async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const tempPath = join(dirname(path), `.tmp-${process.pid}-${Date.now()}-${randomUUID()}.json`);
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   await rename(tempPath, path);

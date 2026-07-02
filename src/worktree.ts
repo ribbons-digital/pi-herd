@@ -55,6 +55,7 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
     record.worktree_path = result.path;
     record.worktree_status = 'materialized';
     record.worktree_provider = result.provider;
+    record.worktree_herdr_workspace_id = result.herdr_workspace_id;
     record.herdr_workspace_id = result.herdr_workspace_id;
     materialized.push(result);
     await options.onMaterialized?.(result);
