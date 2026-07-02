@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -145,6 +145,23 @@ describe('refresh and diff commands', () => {
       'Refusing to refresh reviewer worktree at unexpected path'
     );
     expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
+  it('refuses to recreate a missing worktree through a symlinked path component', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Symlinked worktrees', now: NOW, runner });
+    const outside = join(dir, 'outside-worktrees');
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(dir, '.worktrees'), 'dir');
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = expectedRoleWorktreePath(state, 'reviewer');
+    runner.responses[`git show-ref --verify --quiet refs/heads/${state.roles.reviewer!.branch}`] = ok();
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(
+      'Worktree path must not include symbolic links'
+    );
+    expect(runner.calls.some((call) => call.startsWith('git worktree add'))).toBe(false);
   });
 
   it('refuses to refresh a worktree from a different repository', async () => {

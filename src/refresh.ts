@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_WORKTREES_DIR, OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
 import { firstLine } from './herdr.js';
-import { materializeRoleWorktree } from './worktree.js';
+import { assertNoSymlinkPathComponents, materializeRoleWorktree } from './worktree.js';
 import { resolveRunContext, updateRunState, type RunState } from './run-state.js';
 
 export interface RefreshOptions {
@@ -53,6 +53,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     }
     const path = record.worktree_path ?? roleWorktreePath(resolved.state, options.role);
     if (!pathExists && await localBranchExists(runner, resolved.state.repo_root, record.branch ?? '')) {
+      await assertNoSymlinkPathComponents(resolved.state.repo_root, path);
       await gitWorktreeAddExistingBranch(runner, resolved.state.repo_root, path, record.branch!);
       record.worktree_path = path;
       record.worktree_status = 'materialized';
