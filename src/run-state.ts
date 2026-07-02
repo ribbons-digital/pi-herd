@@ -605,12 +605,9 @@ async function removeStaleStateLock(lockDir: string, staleMs: number): Promise<b
     return false;
   }
 
-  const takeoverPath = join(lockDir, `.takeover-${process.pid}-${randomUUID()}.json`);
   try {
-    await writeFile(takeoverPath, JSON.stringify({ observed: observed.owner, claimant_pid: process.pid, created_at: new Date().toISOString() }), { encoding: 'utf8', flag: 'wx' });
     const confirmed = await readStateLockSnapshot(lockDir);
     if (!confirmed || !sameStateLockSnapshot(observed, confirmed) || !isStateLockStale(confirmed, staleMs)) {
-      await rm(takeoverPath, { force: true });
       return false;
     }
 
@@ -625,7 +622,6 @@ async function removeStaleStateLock(lockDir: string, staleMs: number): Promise<b
     await rm(quarantineDir, { recursive: true, force: true });
     return true;
   } catch {
-    await rm(takeoverPath, { force: true });
     return false;
   }
 }
@@ -666,7 +662,7 @@ function isStateLockStale(snapshot: StateLockSnapshot, staleMs: number): boolean
 }
 
 function sameStateLockSnapshot(left: StateLockSnapshot, right: StateLockSnapshot): boolean {
-  return left.dev === right.dev && left.ino === right.ino && sameStateLockOwner(left.owner, right.owner);
+  return left.dev === right.dev && left.ino === right.ino && sameStateLockOwner(left.owner, right.owner) && (left.owner !== null || left.mtimeMs === right.mtimeMs);
 }
 
 function sameStateLockOwner(left: StateLockOwner | null, right: StateLockOwner | null): boolean {

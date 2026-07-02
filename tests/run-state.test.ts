@@ -116,6 +116,22 @@ describe('run state', () => {
     await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).rejects.toThrow();
   });
 
+  it('recovers stale state locks with missing owner metadata', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Ownerless stale state lock' });
+    const lockDir = join(result.state.canonical_run_dir, '.state.lock');
+    await mkdir(lockDir);
+    const oldDate = new Date('2026-07-01T00:00:00.000Z');
+    await utimes(lockDir, oldDate, oldDate);
+
+    await updateRunState(result.statePath, (state) => {
+      state.roles.planner!.status = 'working';
+    });
+
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('working');
+    await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).rejects.toThrow();
+  });
+
   it('does not treat a fresh owner as stale because the lock directory mtime is old', async () => {
     const result = await createRun({ cwd: dir, goal: 'Fresh lock owner' });
     const lockDir = join(result.state.canonical_run_dir, '.state.lock');
