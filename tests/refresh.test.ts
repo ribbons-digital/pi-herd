@@ -13,7 +13,7 @@ type TestResponse = CommandResult | (() => CommandResult | Promise<CommandResult
 
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
-  constructor(private readonly responses: Record<string, TestResponse> = {}) {}
+  constructor(readonly responses: Record<string, TestResponse> = {}) {}
   async run(command: string, args: string[]): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
@@ -23,6 +23,8 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return okText(`${dir}\n`);
     if (command === 'git' && args[0] === 'symbolic-ref') return okText('main\n');
     if (command === 'git' && args[0] === 'rev-parse' && args.includes('--verify')) return ok();
+    if (command === 'git' && args[0] === 'rev-list' && args[1] === '--count') return okText('0\n');
+    if (command === 'git' && args[0] === 'log' && args[1] === '--oneline') return ok();
     if (command === 'git' && args[0] === 'status') return ok();
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
     if (command === 'git' && args[0] === 'reset') return okText('HEAD is now at abc impl\n');
@@ -74,6 +76,34 @@ describe('refresh and diff commands', () => {
     await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow('Refusing to refresh dirty reviewer worktree');
   });
 
+  it('refuses to refresh a reviewer worktree with committed changes without force', async () => {
+    const { runner, state, statePath } = await createMaterializedRun('Committed review');
+    const branch = state.roles.implementer!.branch;
+    runner.responses[`git rev-list --count ${branch}..HEAD`] = okText('2\n');
+    runner.responses[`git log --oneline --max-count=80 ${branch}..HEAD`] = okText('abc1234 review fix\ndef5678 test evidence\n');
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(
+      `Refusing to refresh reviewer worktree with 2 committed change(s) not in ${branch}`
+    );
+    expect(runner.calls).not.toContain(`git reset --hard ${branch}`);
+  });
+
+  it('force refresh resets and cleans a reviewer worktree with committed changes', async () => {
+    const { runner, state, statePath } = await createMaterializedRun('Force committed review');
+    const branch = state.roles.implementer!.branch;
+    runner.responses[`git rev-list --count ${branch}..HEAD`] = okText('1\n');
+    runner.responses[`git log --oneline --max-count=80 ${branch}..HEAD`] = okText('abc1234 review fix\n');
+    await writeJsonAtomic(statePath, state);
+
+    const result = await refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner });
+
+    expect(result.text).toContain('Force refreshing reviewer worktree with 1 committed change(s)');
+    expect(result.text).toContain('abc1234 review fix');
+    expect(runner.calls).toContain(`git reset --hard ${branch}`);
+    expect(runner.calls).toContain('git clean -fd');
+  });
+
   it('refuses to refresh a working role without force', async () => {
     const runner = new RecordingRunner();
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Working review', now: NOW, runner });
@@ -119,6 +149,16 @@ describe('refresh and diff commands', () => {
     expect(result.text).toContain('M\tsrc/file.ts');
   });
 });
+
+async function createMaterializedRun(goal: string) {
+  const runner = new RecordingRunner();
+  const { state, statePath } = await createRun({ cwd: dir, goal, now: NOW, runner });
+  const worktreePath = join(dir, 'reviewer-worktree');
+  await mkdir(worktreePath, { recursive: true });
+  state.roles.reviewer!.worktree_status = 'materialized';
+  state.roles.reviewer!.worktree_path = worktreePath;
+  return { runner, state, statePath };
+}
 
 function ok(): CommandResult {
   return { exitCode: 0, stdout: '', stderr: '' };

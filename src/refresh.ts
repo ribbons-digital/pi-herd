@@ -84,6 +84,14 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     throw new Error(`Role ${options.role} has no worktree path after materialization.`);
   }
 
+  const commits = await commitsAheadOfImplementation(runner, record.worktree_path, implementationBranch);
+  if (commits.count > 0 && !options.force) {
+    throw new Error(`Refusing to refresh ${options.role} worktree with ${commits.count} committed change(s) not in ${implementationBranch}. Commits:\n${formatBoundedLines(commits.lines)}\nRe-run with --force to reset and clean it.`);
+  }
+  if (commits.count > 0 && options.force) {
+    notes.push(`Force refreshing ${options.role} worktree with ${commits.count} committed change(s) not in ${implementationBranch}. Commits:\n${formatBoundedLines(commits.lines)}`);
+  }
+
   const dirty = await dirtyPaths(runner, record.worktree_path);
   if (dirty.length && !options.force) {
     throw new Error(`Refusing to refresh dirty ${options.role} worktree. Dirty paths:\n${formatBoundedLines(dirty)}\nRe-run with --force to reset and clean it.`);
@@ -141,6 +149,28 @@ export async function dirtyPaths(runner: CommandRunner, worktreePath: string): P
     throw new Error(`Could not check worktree status: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git status failed'}`);
   }
   return result.stdout.trim() ? result.stdout.trimEnd().split(/\r?\n/) : [];
+}
+
+async function commitsAheadOfImplementation(
+  runner: CommandRunner,
+  worktreePath: string,
+  implementationBranch: string
+): Promise<{ count: number; lines: string[] }> {
+  const range = `${implementationBranch}..HEAD`;
+  const countResult = await runner.run('git', ['rev-list', '--count', range], { cwd: worktreePath });
+  if (countResult.exitCode !== 0) {
+    throw new Error(`Could not check committed worktree changes: ${firstLine(countResult.stderr) || firstLine(countResult.stdout) || 'git rev-list failed'}`);
+  }
+  const count = Number.parseInt(countResult.stdout.trim(), 10);
+  if (!Number.isFinite(count) || count < 0) {
+    throw new Error(`Could not parse committed worktree change count: ${firstLine(countResult.stdout) || 'empty output'}`);
+  }
+  if (count === 0) return { count, lines: [] };
+  const logResult = await runner.run('git', ['log', '--oneline', `--max-count=${OUTPUT_BUDGETS.terminalSummaryLines}`, range], { cwd: worktreePath });
+  if (logResult.exitCode !== 0) {
+    throw new Error(`Could not list committed worktree changes: ${firstLine(logResult.stderr) || firstLine(logResult.stdout) || 'git log failed'}`);
+  }
+  return { count, lines: logResult.stdout.trim() ? logResult.stdout.trimEnd().split(/\r?\n/) : [`${count} commit(s)`] };
 }
 
 function implementationBranchFor(state: RunState): string {
