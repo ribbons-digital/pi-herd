@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,11 +20,14 @@ afterEach(async () => {
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
   constructor(private readonly responses: Record<string, CommandResult>) {}
-  async run(command: string, args: string[]): Promise<CommandResult> {
+  async run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
     const response = this.responses[key.replaceAll(dir, 'DIR')];
     if (response) return response;
+    if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel' && options?.cwd?.includes(`${dir}/.worktrees/`)) {
+      return { exitCode: 0, stdout: `${options.cwd}\n`, stderr: '' };
+    }
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
     throw new Error(`Unexpected command: ${key}`);
   }
@@ -74,6 +77,27 @@ describe('messaging commands', () => {
     expect(result.text).toContain('Sent message to planner');
   });
 
+  it('resolves the active run from a role worktree when --run is omitted', async () => {
+    const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const worktreeCwd = join(dir, '.worktrees/pi-herd', state.run_id, 'planner');
+    await mkdir(worktreeCwd, { recursive: true });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson({ pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' }),
+      'herdr pane send-text planner-pane Worktree resolved': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    const result = await sendMessage({
+      cwd: worktreeCwd,
+      role: 'planner',
+      message: 'Worktree resolved',
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'planner-pane', PI_CODING_AGENT: 'true' }
+    });
+
+    expect(result.text).toContain('Sent message to planner');
+  });
+
   it('resolves the active run from the verified current pane when --run is omitted', async () => {
     await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({
@@ -107,6 +131,42 @@ describe('messaging commands', () => {
     expect(collect.text).toContain('missing planner/PLAN.md');
     expect(brief.text).toContain('# pi-herd brief');
     expect(brief.text).not.toContain('done');
+  });
+
+  it('uses custom runs_dir and relative config paths during activation', async () => {
+    const subdir = join(dir, 'subdir');
+    await mkdir(subdir, { recursive: true });
+    await writeFile(join(subdir, 'herd.yaml'), [
+      'schema_version: 1',
+      'harness:',
+      '  default: custom',
+      '  profiles:',
+      '    custom:',
+      '      command: custom-pi',
+      'paths:',
+      '  runs_dir: custom-runs',
+      '  prompts_dir: .pi-herd/prompts',
+      ''
+    ].join('\n'), 'utf8');
+    const runner = new RecordingRunner(baseResponses({}));
+    const result = await createRun({ cwd: subdir, configPath: 'herd.yaml', goal: 'Custom config', now: NOW, runner });
+    result.state.lead_binding.herdr_workspace_id = 'lead-ws';
+    result.state.roles.reviewer!.source_ref = `pi-herd/${result.state.run_id}/impl`;
+    await writeJsonAtomic(result.statePath, result.state);
+    const reviewerPath = join(dir, '.worktrees/pi-herd', result.state.run_id, 'reviewer');
+    const sendRunner = new RecordingRunner(baseResponses({
+      'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!custom-runs': ok(),
+      [`git rev-parse --verify --quiet pi-herd/${result.state.run_id}/impl`]: ok(),
+      [`herdr worktree create --cwd DIR --branch pi-herd/${result.state.run_id}/reviewer --base pi-herd/${result.state.run_id}/impl --path DIR/.worktrees/pi-herd/${result.state.run_id}/reviewer --label pi-herd custom-config reviewer --no-focus --json`]: okJson({ workspace_id: 'review-wt-ws', checkout_path: reviewerPath, branch: `pi-herd/${result.state.run_id}/reviewer` }),
+      [`herdr agent start pi-herd-${result.state.run_id}-reviewer --cwd DIR/.worktrees/pi-herd/${result.state.run_id}/reviewer --workspace lead-ws --split down --no-focus -- custom-pi --name pi-herd-${result.state.run_id}-reviewer --session-id ${result.state.run_id}-reviewer`]: okJson({ pane_id: 'review-pane', workspace_id: 'lead-ws', tab_id: 'review-tab' }),
+      'herdr pane send-text review-pane Review with custom config': ok(),
+      'herdr pane send-keys review-pane enter': ok()
+    }));
+
+    const send = await sendMessage({ cwd: subdir, configPath: 'herd.yaml', run: result.state.run_id, role: 'reviewer', message: 'Review with custom config', runner: sendRunner });
+
+    expect(send.text).toContain('Activating reviewer: materializing worktree');
+    expect(sendRunner.calls).toContain('git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!custom-runs');
   });
 
   it('activates reviewer from the implementation branch before first send', async () => {

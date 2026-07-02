@@ -274,7 +274,7 @@ export function parseRole(value: string): BuiltInRole {
   throw new Error(`Unknown role '${value}'. Expected planner, implementer, reviewer, or tester.`);
 }
 
-async function loadConfigIfPresent(cwd: string, configPath?: string) {
+export async function loadConfigIfPresent(cwd: string, configPath?: string) {
   const path = resolveConfigPath(cwd, configPath);
   try {
     await access(path, constants.F_OK);
@@ -295,7 +295,7 @@ async function resolveRepoRoot(cwd: string, runner: CommandRunner): Promise<stri
   return resolve(cwd);
 }
 
-function resolveRunsRoot(repoRoot: string, runsDir: string): string {
+export function resolveRunsRoot(repoRoot: string, runsDir: string): string {
   if (isAbsolute(runsDir)) {
     throw new Error('Config paths.runs_dir must be a repository-relative path.');
   }

@@ -1,12 +1,12 @@
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join } from 'node:path';
-import { defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane } from './start.js';
 import { materializeRoleWorktree } from './worktree.js';
-import { listActiveRuns, readRunState, writeJsonAtomic, type RoleRecord, type RunState } from './run-state.js';
+import { listActiveRuns, loadConfigIfPresent, readRunState, resolveRunsRoot, writeJsonAtomic, type ActiveRunSummary, type RoleRecord, type RunState } from './run-state.js';
 
 export interface RunCommandOptions {
   cwd: string;
@@ -38,7 +38,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
   if (options.requireLead) {
     await assertCurrentLead(state, runner, options.env ?? process.env);
   }
-  const config = await loadConfigForRepo(state.repo_root, options.configPath);
+  const config = await loadConfigIfPresent(options.configPath ? options.cwd : state.repo_root, options.configPath);
   const activation = await ensureRolePane({ state, statePath: resolved.statePath, config, runner, role: options.role });
   const paneId = record.herdr_pane_id;
   if (!paneId) {
@@ -126,7 +126,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       runner: options.runner,
       role: options.role,
       baseRef: record.source_ref,
-      cleanCheckIgnorePaths: ['.pi-herd/runs', '.worktrees'],
+      cleanCheckIgnorePaths: [relative(options.state.repo_root, resolveRunsRoot(options.state.repo_root, options.config.paths.runs_dir || DEFAULT_RUNS_DIR)), '.worktrees'],
       onMaterialized: async () => {
         options.state.updated_at = new Date().toISOString();
         await writeJsonAtomic(options.statePath, options.state);
@@ -154,7 +154,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
   const paneMatch = options.run ? null : await resolveByCurrentPane(options, runner);
-  const summary = paneMatch ?? await listActiveRuns(options.cwd, options.configPath, runner).then((runs) => selectRun(runs, options.run));
+  const summary = paneMatch ?? await listRunsForInvocation(options, runner).then((runs) => selectRun(runs, options.run));
   if (!summary) {
     throw new Error('No active runs found.');
   }
@@ -167,7 +167,7 @@ async function resolveByCurrentPane(options: RunCommandOptions, runner: CommandR
   if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
     return null;
   }
-  const runs = await listActiveRuns(options.cwd, options.configPath, runner);
+  const runs = await listRunsForInvocation(options, runner);
   const matches = [];
   for (const run of runs) {
     const state = await readRunState(join(run.canonical_run_dir, 'state.json'));
@@ -215,14 +215,50 @@ async function assertCurrentLead(state: RunState, runner: CommandRunner, env: No
   }
 }
 
-async function loadConfigForRepo(repoRoot: string, configPath?: string): Promise<PiHerdConfig> {
-  const path = resolveConfigPath(repoRoot, configPath);
-  try {
-    await access(path, constants.F_OK);
-  } catch {
-    return defaultConfig();
+async function listRunsForInvocation(options: RunCommandOptions, runner: CommandRunner) {
+  const seen = new Set<string>();
+  const runs: ActiveRunSummary[] = [];
+  for (const cwd of invocationRunSearchCwds(options.cwd)) {
+    let active;
+    try {
+      active = await listActiveRuns(cwd, options.configPath, runner);
+    } catch (error) {
+      if (cwd === options.cwd && options.configPath) {
+        throw error;
+      }
+      continue;
+    }
+    for (const run of active) {
+      if (!seen.has(run.canonical_run_dir)) {
+        seen.add(run.canonical_run_dir);
+        runs.push(run);
+      }
+    }
   }
-  return loadConfig(path);
+  return runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+function invocationRunSearchCwds(cwd: string): string[] {
+  const candidates = [cwd];
+  const canonicalRoot = inferCanonicalRootFromWorktree(cwd);
+  if (canonicalRoot) {
+    candidates.push(canonicalRoot);
+  }
+  return candidates;
+}
+
+function inferCanonicalRootFromWorktree(cwd: string): string | null {
+  const absolute = resolve(cwd);
+  const parts = absolute.split(sep);
+  const markerIndex = parts.lastIndexOf(DEFAULT_WORKTREES_DIR);
+  if (markerIndex <= 0) {
+    return null;
+  }
+  const root = parts.slice(0, markerIndex).join(sep) || sep;
+  if (!root || root === absolute || !isAbsolute(root)) {
+    return null;
+  }
+  return root;
 }
 
 function roleEntries(state: RunState): RoleRecord[] {
