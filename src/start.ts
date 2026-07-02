@@ -1,20 +1,19 @@
 import { join } from 'node:path';
 import { createRun, writeJsonAtomic, type LaunchMetadata, type RoleRecord, type RunCreateOptions, type RunCreateResult, type RunState } from './run-state.js';
-import { nodeCommandRunner, type CommandResult, type CommandRunner } from './command-runner.js';
+import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
-
-const LAUNCH_TIMEOUT_MS = 30_000;
-const PROMPT_TIMEOUT_MS = 10_000;
+import { agentStart, describeFailure, firstLine, paneCurrent, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parsePaneMetadata, waitAgentStatus, workspaceCreate } from './herdr.js';
 
 /** Options for creating a run and launching its initial visible Herdr/Pi sessions. */
 export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Result for `pi-herd start`, including persisted run state and launched session refs. */
+/** Result for `pi-herd start`, including persisted run state, launched session refs, and warning-only readiness notes. */
 export interface StartResult extends RunCreateResult {
   launched: LaunchRef[];
+  warnings: string[];
 }
 
 /** A visible launch reference persisted or reported after a successful launch step. */
@@ -49,6 +48,7 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
   const statePath = result.statePath;
   const state = result.state;
   const launched: LaunchRef[] = [];
+  const warnings: string[] = [];
 
   try {
     const lead = await bindOrLaunchLead(state, result.config, runner, options.env ?? process.env);
@@ -67,6 +67,10 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
       await writeJsonAtomic(statePath, state);
       launched.push({ role: 'planner', paneId: planner.paneId, sessionRef: planner.sessionRef, launchMethod: planner.launchMethod });
 
+      const plannerReady = await waitForRoleReady(runner, state.repo_root, planner.paneId, 'planner');
+      if (plannerReady) {
+        warnings.push(plannerReady);
+      }
       await sendPlannerKickoff(runner, planner.paneId, state);
       state.roles.planner.status = 'working';
       state.roles.planner.launch_metadata = { ...state.roles.planner.launch_metadata, prompt_method: 'pane-send-text-enter' };
@@ -95,7 +99,7 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
     }
     state.updated_at = new Date().toISOString();
     await writeJsonAtomic(statePath, state);
-    return { ...result, launched };
+    return { ...result, launched, warnings };
   } catch (error) {
     state.status = 'failed';
     state.updated_at = new Date().toISOString();
@@ -119,6 +123,9 @@ export function formatStartText(result: StartResult): string {
   ];
   for (const launch of result.launched) {
     lines.push(`${launch.role}: ${launch.paneId ?? 'no pane'} (${launch.launchMethod ?? 'unknown'})`);
+  }
+  for (const warning of result.warnings) {
+    lines.push(`Warning: ${warning}`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -192,15 +199,13 @@ export async function launchRoleSession(options: { state: RunState; config: PiHe
 async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: 'lead' | BuiltInRole; cwd: string; workspaceId: string }): Promise<HerdrLaunchResult> {
   const spec = buildPiCommand(options.config, options.role, options.state);
   spec.metadata.cwd = options.cwd;
-  const agent = await options.runner.run('herdr', [
-    'agent', 'start', spec.metadata.agent_name ?? `pi-herd-${options.state.run_id}-${options.role}`,
-    '--cwd', options.cwd,
-    '--workspace', options.workspaceId,
-    '--split', 'down',
-    '--no-focus',
-    '--', spec.command,
-    ...spec.args
-  ], { cwd: options.state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
+  const agent = await agentStart(options.runner, options.state.repo_root, {
+    name: spec.metadata.agent_name ?? `pi-herd-${options.state.run_id}-${options.role}`,
+    sessionCwd: options.cwd,
+    workspaceId: options.workspaceId,
+    command: spec.command,
+    args: spec.args
+  });
   if (agent.exitCode === 0) {
     const parsed = parsePaneMetadata(agent.stdout);
     if (parsed.paneId) {
@@ -216,7 +221,7 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   if (!parentPaneId) {
     throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, 'agent start failed')}. Pane fallback requires a lead pane.`);
   }
-  const split = await options.runner.run('herdr', ['pane', 'split', parentPaneId, '--direction', 'down', '--cwd', options.cwd, '--no-focus'], { cwd: options.state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
+  const split = await paneSplit(options.runner, options.state.repo_root, { parentPaneId, sessionCwd: options.cwd });
   if (split.exitCode !== 0) {
     throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, 'agent start failed')}. Pane split: ${describeFailure(split, 'pane split failed')}`);
   }
@@ -224,7 +229,7 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   if (!pane) {
     throw new Error(`Could not launch ${options.role}. Herdr pane split returned unusable metadata.`);
   }
-  const paneRun = await options.runner.run('herdr', ['pane', 'run', pane, spec.command, ...spec.args], { cwd: options.state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
+  const paneRun = await runInPane(options.runner, options.state.repo_root, pane, spec.command, spec.args);
   if (paneRun.exitCode !== 0) {
     throw new Error(`Could not launch ${options.role}. Pane run: ${describeFailure(paneRun, 'pane run failed')}`);
   }
@@ -246,7 +251,7 @@ export function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): 
 
 /** Verify that the current Herdr pane matches an expected pane id. */
 export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
-  const current = await runner.run('herdr', ['pane', 'current', '--current'], { cwd, timeoutMs: LAUNCH_TIMEOUT_MS });
+  const current = await paneCurrent(runner, cwd);
   if (current.exitCode !== 0) {
     return null;
   }
@@ -258,11 +263,11 @@ export async function verifyCurrentPane(runner: CommandRunner, cwd: string, pane
 }
 
 async function createLeadWorkspace(runner: CommandRunner, state: RunState): Promise<{ workspaceId: string }> {
-  const result = await runner.run('herdr', ['workspace', 'create', '--cwd', state.repo_root, '--label', `pi-herd ${state.run_slug} lead`, '--no-focus'], { cwd: state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
+  const result = await workspaceCreate(runner, state.repo_root, { repoRoot: state.repo_root, label: `pi-herd ${state.run_slug} lead` });
   if (result.exitCode !== 0) {
     throw new Error(`Could not create lead workspace: ${describeFailure(result, 'herdr workspace create failed')}`);
   }
-  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? stringFromJson(result.stdout, ['workspace_id', 'workspaceId', 'id']) ?? firstToken(result.stdout);
+  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? workspaceIdFromJson(result.stdout) ?? firstToken(result.stdout);
   if (!workspaceId) {
     throw new Error('Could not create lead workspace. Herdr returned unusable metadata.');
   }
@@ -279,16 +284,24 @@ async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: 
   }
 }
 
-/** Submit text to a Herdr pane using send-text followed by Enter; Enter failure may leave unsubmitted text in the pane. */
+/** Submit text to a Herdr pane as one send-text payload followed by Enter; Enter failure may leave unsubmitted text in the pane. */
 export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<void> {
-  const text = await runner.run('herdr', ['pane', 'send-text', paneId, message], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
+  const text = await paneSendText(runner, cwd, paneId, message);
   if (text.exitCode !== 0) {
     throw new Error(`Could not send pane text: ${describeFailure(text, 'pane send-text failed')}`);
   }
-  const enter = await runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
+  const enter = await paneSendEnter(runner, cwd, paneId);
   if (enter.exitCode !== 0) {
     throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, 'pane send-keys failed')}`);
   }
+}
+
+export async function waitForRoleReady(runner: CommandRunner, cwd: string, paneId: string, role: string): Promise<string | null> {
+  const result = await waitAgentStatus(runner, cwd, paneId, 'idle');
+  if (result.exitCode === 0) {
+    return null;
+  }
+  return `${role} pane did not report idle before first prompt; sent anyway (${describeFailure(result, 'wait agent-status idle failed')}).`;
 }
 
 function plannerCwd(state: RunState): string {
@@ -313,92 +326,38 @@ function isRoleMap(value: HarnessProfile['thinking']): value is RoleStringMap {
   return Boolean(value && typeof value === 'object');
 }
 
-function parsePaneMetadata(stdout: string): { paneId: string | null; workspaceId: string | null; tabId: string | null } {
-  const parsed = parseJsonRecord(stdout);
-  const records = metadataContainers(parsed);
-  return {
-    paneId: explicitPaneIdFromRecords(records),
-    workspaceId: stringFromRecords(records, ['workspace_id', 'workspaceId', 'herdr_workspace_id']),
-    tabId: stringFromRecords(records, ['tab_id', 'tabId', 'herdr_tab_id'])
-  };
-}
-
-function stringFromJson(stdout: string, keys: string[]): string | null {
-  return stringFromRecords(metadataContainers(parseJsonRecord(stdout)), keys);
-}
-
-function parseJsonRecord(stdout: string): Record<string, unknown> {
+function workspaceIdFromJson(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
     }
+    return workspaceIdFromWorkspaceContainers(parsed as Record<string, unknown>);
   } catch {
-    return Object.create(null) as Record<string, unknown>;
+    return null;
   }
-  return Object.create(null) as Record<string, unknown>;
 }
 
-function metadataContainers(value: Record<string, unknown>): Record<string, unknown>[] {
-  const containers: Record<string, unknown>[] = [];
-  const queue = [value];
-  while (queue.length) {
-    const container = queue.shift();
-    if (!container) continue;
-    containers.push(container);
-    for (const key of ['result', 'data', 'pane', 'agent', 'workspace', 'terminal']) {
-      const child = container[key];
-      if (child && typeof child === 'object' && !Array.isArray(child)) {
-        queue.push(child as Record<string, unknown>);
+function workspaceIdFromWorkspaceContainers(record: Record<string, unknown>): string | null {
+  for (const key of ['workspace']) {
+    const child = record[key];
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      const id = (child as Record<string, unknown>).id;
+      if (typeof id === 'string' && id.length > 0) {
+        return id;
       }
     }
   }
-  return containers;
-}
-
-function explicitPaneIdFromRecords(records: Record<string, unknown>[]): string | null {
-  return stringFromRecords(records, ['pane_id', 'paneId', 'herdr_pane_id']) ?? stringFromPaneContainers(records);
-}
-
-function stringFromPaneContainers(records: Record<string, unknown>[]): string | null {
-  for (const record of records) {
-    for (const key of ['pane', 'terminal']) {
-      const child = record[key];
-      if (child && typeof child === 'object' && !Array.isArray(child)) {
-        const id = (child as Record<string, unknown>).id;
-        if (typeof id === 'string' && id.length > 0) {
-          return id;
-        }
+  for (const key of ['result', 'data']) {
+    const child = record[key];
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      const id = workspaceIdFromWorkspaceContainers(child as Record<string, unknown>);
+      if (id) {
+        return id;
       }
     }
   }
   return null;
-}
-
-function stringFromRecords(records: Record<string, unknown>[], keys: string[]): string | null {
-  for (const record of records) {
-    for (const key of keys) {
-      const value = record[key];
-      if (typeof value === 'string' && value.length > 0) {
-        return value;
-      }
-    }
-  }
-  return null;
-}
-
-function describeFailure(result: CommandResult, fallback: string): string {
-  if (result.error) {
-    return result.error.code ? `${result.error.code}: ${result.error.message}` : result.error.message;
-  }
-  if (result.timedOut) {
-    return `${fallback} timed out`;
-  }
-  return firstLine(result.stderr) || firstLine(result.stdout) || fallback;
-}
-
-function firstLine(value: string): string | undefined {
-  return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
 }
 
 function firstToken(value: string): string | null {

@@ -16,6 +16,9 @@ Slice 4 updates the lead binding with verified or newly launched lead pane/sessi
 When a Herdr-created worktree workspace id is replaced by the role session workspace id, the original value is preserved as `worktree_herdr_workspace_id`.
 If materialization, launch, or kickoff fails, pi-herd persists the latest state, keeps any successful role materializations or launch refs, marks the run `failed`, and excludes it from active-run resolution.
 Slice 5 sends prompts through role pane refs, marks the role `working`, updates `last_activity_at`, and writes state atomically after message delivery.
+H1 validates saved pane refs with Herdr before prompt delivery.
+If Herdr clearly reports that a saved pane is missing, pi-herd relaunches the role before sending; ambiguous validation failures stop without clearing saved pane or session refs.
+Freshly launched planner, reviewer, and tester prompts wait briefly for Herdr idle readiness, but readiness failures are warning-only and do not change persisted role state.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text so callers know a retry may duplicate it.
 When first-send activation materializes reviewer or tester worktrees, pi-herd persists state after materialization, after launch, and after sending so partial activation remains recoverable.
 Slice 5 lead status, brief, and collect helpers read state and artifact inventory without changing run completion state or writing `FINAL_SUMMARY.md`.

@@ -109,6 +109,12 @@ A request from a worker to the lead for clarification, follow-up work, or anothe
 Worker requests should be captured in artifacts or the lead inbox, not sent directly to another worker by default.
 _Avoid_: worker-initiated orchestration commands as the normal workflow
 
+**Prompt delivery**:
+The Herdr pane submission path pi-herd uses to steer a worker.
+Prompts are inserted with one `pane send-text` payload, including multi-line content, and then submitted with Enter.
+After a fresh launch, pi-herd waits briefly for idle readiness and warns rather than blocks when readiness cannot be confirmed.
+_Avoid_: assuming prompt delivery proves worker completion
+
 **Implementation branch**:
 The role-owned branch where source changes for a run are made and reviewed.
 By default this is the only branch intended to become mergeable.
@@ -119,7 +125,7 @@ An isolated worktree assigned to a role for inspecting, editing, or testing the 
 `pi-herd run create --with-worktrees` materializes the implementer worktree and can also materialize the planner worktree with `--planner-worktree`.
 `pi-herd start` materializes the implementer worktree when the implementer role is selected, and it can also materialize the planner worktree with `--planner-worktree`.
 Reviewer and tester worktrees should be materialized or refreshed from the implementation branch rather than sharing the implementer's worktree.
-The first send to reviewer or tester can activate that role by creating the role worktree, launching the session, and sending the prompt.
+The first send to reviewer or tester can activate that role by creating the role worktree, launching the session, waiting briefly for readiness, and sending the prompt.
 _Avoid_: multiple workers operating in the same source worktree by default
 
 ## Example dialogue
@@ -171,6 +177,9 @@ Domain expert: It creates the implementer worktree, optionally creates the plann
 Developer: What does `pi-herd start` launch now?
 Domain expert: It binds the current verified Pi/Herdr pane as lead or creates a lead workspace and session, launches the planner with a kickoff prompt, launches the implementer as staged when selected, and leaves reviewer and tester as staged slots without sessions.
 Developer: What does first send to reviewer or tester do now?
-Domain expert: It materializes that role worktree from the implementation branch, launches the role session, persists state, submits the prompt, and marks the role working without deciding whether it is done.
+Domain expert: It materializes that role worktree from the implementation branch, launches the role session, waits briefly for readiness, persists state, submits the prompt, and marks the role working without deciding whether it is done.
+Developer: What if a saved worker pane has disappeared?
+Domain expert: pi-herd validates the pane before sending and relaunches only when Herdr clearly reports the pane is missing.
+Ambiguous validation errors stop without clearing saved state.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.

@@ -4,7 +4,8 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
-import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane } from './start.js';
+import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane, waitForRoleReady } from './start.js';
+import { describeFailure, paneGet } from './herdr.js';
 import { materializeRoleWorktree } from './worktree.js';
 import { listActiveRuns, loadConfigIfPresent, readRunState, resolveRunsRoot, writeJsonAtomic, type ActiveRunSummary, type RoleRecord, type RunState } from './run-state.js';
 
@@ -30,7 +31,7 @@ export interface CommandResultText {
   text: string;
 }
 
-/** Send a prompt to a role, activating reviewer or tester first when needed. */
+/** Send a prompt to a role, validating saved panes and activating or relaunching roles when needed. */
 export async function sendMessage(options: SendOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunState(options, runner);
@@ -48,6 +49,12 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
   if (!paneId) {
     throw new Error(`Role ${options.role} has no pane after activation.`);
   }
+  if (activation.launchedNow) {
+    const readyWarning = await waitForRoleReady(runner, state.repo_root, paneId, options.role);
+    if (readyWarning) {
+      activation.notes.push(readyWarning);
+    }
+  }
   await sendToPane(runner, state.repo_root, paneId, options.message);
   record.status = 'working';
   record.last_activity_at = new Date().toISOString();
@@ -56,7 +63,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
   const warnings = capabilityWarnings(record);
   return {
     state,
-    text: [`Sent message to ${options.role} (${paneId}).`, ...activation, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
+    text: [`Sent message to ${options.role} (${paneId}).`, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
   };
 }
 
@@ -120,12 +127,24 @@ export async function leadCollect(options: RunCommandOptions): Promise<CommandRe
   return { state, text: `${lines.join('\n')}\n` };
 }
 
-async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole }): Promise<string[]> {
+async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole }): Promise<{ notes: string[]; launchedNow: boolean }> {
   const record = options.state.roles[options.role];
   if (!record) {
     throw new Error(`Role ${options.role} is not selected for this run.`);
   }
   const notes: string[] = [];
+  let launchedNow = false;
+  let stalePane = false;
+  if (record.herdr_pane_id) {
+    const pane = await paneGet(options.runner, options.state.repo_root, record.herdr_pane_id);
+    if (pane.exitCode !== 0) {
+      if (pane.timedOut || pane.error || !isMissingPaneFailure(pane)) {
+        throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane, 'pane get failed')}`);
+      }
+      notes.push(`Detected stale pane for ${options.role}; relaunching.`);
+      stalePane = true;
+    }
+  }
   if ((options.role === 'reviewer' || options.role === 'tester') && record.worktree_status !== 'materialized') {
     notes.push(`Activating ${options.role}: materializing worktree from ${record.source_ref ?? options.state.base_ref}.`);
     await materializeRoleWorktree({
@@ -140,7 +159,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       }
     });
   }
-  if (!record.herdr_pane_id) {
+  if (!record.herdr_pane_id || stalePane) {
     if (!record.worktree_path && ROLE_DEFAULTS[options.role].expectedWrites === 'worktree') {
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
@@ -153,10 +172,23 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       cwd: record.worktree_path ?? options.state.repo_root
     });
     applyRoleLaunch(record, launch);
+    launchedNow = true;
     options.state.updated_at = new Date().toISOString();
     await writeJsonAtomic(options.statePath, options.state);
   }
-  return notes;
+  return { notes, launchedNow };
+}
+
+function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
+    return false;
+  }
+  return [
+    /\bmissing\s+pane\b/,
+    /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/,
+    /\b(no such|not found)\s+[^\n]*\bpane\b/
+  ].some((pattern) => pattern.test(output));
 }
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {

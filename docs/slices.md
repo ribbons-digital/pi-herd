@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 5 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 5 and H1 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -195,6 +195,30 @@ Out of scope:
 
 - Full artifact collection.
 - Merge planning.
+
+## H1: Herdr client and prompt-delivery reliability
+
+Goal: Harden Herdr command integration before status and collection build on it.
+
+Status: Implemented on the current branch.
+
+Scope:
+
+- Shared Herdr command wrappers and metadata parsing.
+- Readiness wait before first prompt delivery after fresh launch.
+- Warning-only fallback when readiness cannot be confirmed.
+- Stale worker pane validation and safe relaunch before send.
+- Multi-line prompt behavior pinned as one `send-text` payload plus Enter.
+
+Out of scope:
+
+- Completion semantics.
+- Status or wait commands.
+- Run-resolution and state-lock hardening.
+
+TODO:
+
+- Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload approach.
 
 ## Slice 6: Status, wait, and collect
 

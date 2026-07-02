@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging and lead commands implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, and H1 Herdr client reliability hardening implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -172,13 +172,17 @@ Concurrent runs write separate state files.
 `pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree provider, worktree status, and Herdr workspace id when available in `state.json`.
 `--planner-worktree` implies `--with-worktrees` and also materializes the planner worktree.
 If worktree materialization fails after state creation, pi-herd persists any successful materializations, marks the run `failed`, and excludes it from active-run resolution.
-`pi-herd start` reuses run creation, binds or launches the lead, launches planner and implementer sessions when those roles are selected, submits the planner kickoff prompt, and records pane ids, session refs, launch metadata, and prompt metadata as each step succeeds.
+`pi-herd start` reuses run creation, binds or launches the lead, launches planner and implementer sessions when those roles are selected, waits briefly for planner idle readiness before the kickoff prompt, submits the planner kickoff prompt, and records pane ids, session refs, launch metadata, and prompt metadata as each step succeeds.
+When planner readiness cannot be confirmed, pi-herd records a warning and sends the kickoff anyway.
 When a Herdr-created worktree workspace id is later replaced by the session workspace id, pi-herd preserves the worktree workspace id in `worktree_herdr_workspace_id`.
 If launch or kickoff fails after state creation, pi-herd persists any successful launch refs, marks the run `failed`, and excludes it from active-run resolution.
-`pi-herd send` sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` without inferring completion.
+`pi-herd send` validates saved pane ids before prompt delivery, sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` without inferring completion.
 Send commands accept `--run` and `--config` before or after message text while option parsing is active, and `--` marks the rest of the arguments as literal message text for dash-prefixed prompts.
+Prompt text, including multi-line text, is delivered as one `pane send-text` payload followed by Enter.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
-The first send to a reviewer or tester can materialize that role worktree from the implementation branch, launch the role session, persist state after each successful step, and then send the prompt.
+When Herdr clearly reports that a saved role pane is missing, pi-herd relaunches the role session before sending; ambiguous pane validation failures stop without clearing saved state.
+The first send to a reviewer or tester can materialize that role worktree from the implementation branch, launch the role session, wait briefly for idle readiness, persist state after each successful step, and then send the prompt.
+When readiness cannot be confirmed after first-send activation, pi-herd records a warning and sends anyway.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` read state and artifact inventory without changing completion state or writing `FINAL_SUMMARY.md`.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
@@ -419,9 +423,10 @@ Herdr `done` was listed in wait help but not observed in the live probe, so pi-h
 
 `pi-herd start` creates the run, lead binding, selected worker slots, and the implementation worktree if implementation is selected.
 Only the planner is activated by default.
+Planner kickoff waits briefly for Herdr to report the pane idle, but readiness failure is warning-only so a slow integration does not block the run.
 The implementer session is launched as staged in the implementation worktree when the implementer role is selected.
 Reviewer and tester remain staged slots without launched sessions, and their worktrees may remain `worktree: pending` until first activation or refresh.
-The first send to reviewer or tester is an activation: pi-herd materializes the role worktree from the implementation branch, launches the role session, persists state, and submits the prompt.
+The first send to reviewer or tester is an activation: pi-herd materializes the role worktree from the implementation branch, launches the role session, waits briefly for idle readiness, persists state, and submits the prompt.
 
 Future options may allow eager activation, but staged activation is the default.
 
@@ -440,7 +445,7 @@ pi-herd lead brief
 `lead send` requires the command to run from the verified bound Pi lead pane, then sends the role prompt with the same parsing and delivery semantics as `send`.
 `lead collect` prints a read-only artifact and inbox inventory.
 `lead brief` prints a bounded orchestration brief suitable for pasting into or reading from the lead session.
-These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md` in Slice 5.
+These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md` in the current implementation.
 
 ## Core CLI commands
 
@@ -473,6 +478,7 @@ It accepts repeated `--role` flags for selected roles, `--base-ref` for the reco
 It accepts repeated `--role` flags for selected roles, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 When selected roles require worktrees, it applies the same clean-repository and materialization rules as `run create --with-worktrees`.
 `send` is implemented for selected roles and can activate reviewer or tester on first send.
+It validates saved pane ids before delivery, relaunches only when Herdr clearly reports a missing pane, and treats readiness waits after fresh launch as warning-only.
 `lead status`, `lead send`, `lead collect`, and `lead brief` are implemented as bounded lead helpers.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.
