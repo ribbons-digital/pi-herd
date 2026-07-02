@@ -552,7 +552,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
  */
 export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>, now: Date = new Date()): Promise<RunState> {
   const lockDir = join(dirname(path), '.state.lock');
-  await acquireStateLock(lockDir, now);
+  await acquireStateLock(lockDir);
   try {
     const state = await readRunState(path);
     await mutate(state);
@@ -565,15 +565,16 @@ export async function updateRunState(path: string, mutate: (state: RunState) => 
   }
 }
 
-async function acquireStateLock(lockDir: string, now: Date): Promise<void> {
+async function acquireStateLock(lockDir: string): Promise<void> {
   const started = Date.now();
   const timeoutMs = 5_000;
   const staleMs = 30_000;
   while (Date.now() - started < timeoutMs) {
+    const token = randomUUID();
     try {
       await mkdir(lockDir);
       try {
-        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, created_at: now.toISOString() }), 'utf8');
+        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, token, created_at: new Date().toISOString() }), 'utf8');
       } catch (error) {
         await rm(lockDir, { recursive: true, force: true });
         throw error;
@@ -583,20 +584,93 @@ async function acquireStateLock(lockDir: string, now: Date): Promise<void> {
       if (!isNodeErrorWithCode(error, 'EEXIST')) {
         throw error;
       }
-      try {
-        const existing = await stat(lockDir);
-        if (Date.now() - existing.mtimeMs > staleMs) {
-          await rm(lockDir, { recursive: true, force: true });
-          continue;
-        }
-      } catch {
-        await sleep(50);
+      if (await removeStaleStateLock(lockDir, staleMs)) {
         continue;
       }
       await sleep(50);
     }
   }
   throw new Error(`Timed out waiting for run state lock: ${lockDir}`);
+}
+
+interface StateLockOwner {
+  pid?: unknown;
+  token?: unknown;
+  created_at?: unknown;
+}
+
+async function removeStaleStateLock(lockDir: string, staleMs: number): Promise<boolean> {
+  const observed = await readStateLockSnapshot(lockDir);
+  if (!observed || !isStateLockStale(observed, staleMs)) {
+    return false;
+  }
+
+  const takeoverPath = join(lockDir, `.takeover-${process.pid}-${randomUUID()}.json`);
+  try {
+    await writeFile(takeoverPath, JSON.stringify({ observed: observed.owner, claimant_pid: process.pid, created_at: new Date().toISOString() }), { encoding: 'utf8', flag: 'wx' });
+    const confirmed = await readStateLockSnapshot(lockDir);
+    if (!confirmed || !sameStateLockSnapshot(observed, confirmed) || !isStateLockStale(confirmed, staleMs)) {
+      await rm(takeoverPath, { force: true });
+      return false;
+    }
+
+    const quarantineDir = `${lockDir}.stale-${process.pid}-${randomUUID()}`;
+    await rename(lockDir, quarantineDir);
+    const quarantined = await readStateLockSnapshot(quarantineDir);
+    if (!quarantined || !sameStateLockSnapshot(observed, quarantined) || !isStateLockStale(quarantined, staleMs)) {
+      await rename(quarantineDir, lockDir).catch(() => undefined);
+      return false;
+    }
+
+    await rm(quarantineDir, { recursive: true, force: true });
+    return true;
+  } catch {
+    await rm(takeoverPath, { force: true });
+    return false;
+  }
+}
+
+interface StateLockSnapshot {
+  owner: StateLockOwner | null;
+  mtimeMs: number;
+  ino: number;
+  dev: number;
+}
+
+async function readStateLockSnapshot(lockDir: string): Promise<StateLockSnapshot | null> {
+  try {
+    const lockStat = await stat(lockDir);
+    return {
+      owner: await readStateLockOwner(lockDir),
+      mtimeMs: lockStat.mtimeMs,
+      ino: lockStat.ino,
+      dev: lockStat.dev
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readStateLockOwner(lockDir: string): Promise<StateLockOwner | null> {
+  try {
+    return JSON.parse(await readFile(join(lockDir, 'owner.json'), 'utf8')) as StateLockOwner;
+  } catch {
+    return null;
+  }
+}
+
+function isStateLockStale(snapshot: StateLockSnapshot, staleMs: number): boolean {
+  const ownerCreatedAt = typeof snapshot.owner?.created_at === 'string' ? Date.parse(snapshot.owner.created_at) : NaN;
+  const createdAtMs = Number.isFinite(ownerCreatedAt) ? ownerCreatedAt : snapshot.mtimeMs;
+  return Date.now() - createdAtMs > staleMs;
+}
+
+function sameStateLockSnapshot(left: StateLockSnapshot, right: StateLockSnapshot): boolean {
+  return left.dev === right.dev && left.ino === right.ino && sameStateLockOwner(left.owner, right.owner);
+}
+
+function sameStateLockOwner(left: StateLockOwner | null, right: StateLockOwner | null): boolean {
+  return left?.pid === right?.pid && left?.token === right?.token && left?.created_at === right?.created_at;
 }
 
 function sleep(ms: number): Promise<void> {

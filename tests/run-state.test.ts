@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -100,6 +100,38 @@ describe('run state', () => {
     expect(saved.roles.implementer?.status).toBe('working');
     expect(saved.state_revision).toBe(2);
   });
+
+  it('recovers stale state locks by matching owner metadata', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Stale state lock' });
+    const lockDir = join(result.state.canonical_run_dir, '.state.lock');
+    await mkdir(lockDir);
+    await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: 12345, token: 'stale-token', created_at: '2026-07-01T00:00:00.000Z' }), 'utf8');
+
+    await updateRunState(result.statePath, (state) => {
+      state.roles.planner!.status = 'working';
+    });
+
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('working');
+    await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('does not treat a fresh owner as stale because the lock directory mtime is old', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Fresh lock owner' });
+    const lockDir = join(result.state.canonical_run_dir, '.state.lock');
+    await mkdir(lockDir);
+    await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: 12345, token: 'fresh-token', created_at: new Date().toISOString() }), 'utf8');
+    const oldDate = new Date('2026-07-01T00:00:00.000Z');
+    await utimes(lockDir, oldDate, oldDate);
+
+    await expect(
+      updateRunState(result.statePath, (state) => {
+        state.roles.planner!.status = 'working';
+      })
+    ).rejects.toThrow(/Timed out waiting for run state lock/);
+
+    await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).resolves.toContain('fresh-token');
+  }, 7_000);
 
   it('fails implicit active-run resolution when multiple active runs exist', async () => {
     await createRun({ cwd: dir, goal: 'First run', now: new Date('2026-07-01T12:00:00.000Z') });
