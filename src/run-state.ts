@@ -618,6 +618,10 @@ async function isStateLockOwned(lock: StateLock): Promise<boolean> {
 }
 
 async function releaseStateLock(lock: StateLock): Promise<void> {
+  if (!(await isStateLockOwned(lock))) {
+    return;
+  }
+
   const releaseDir = `${lock.lockDir}.release-${process.pid}-${randomUUID()}`;
   try {
     await rename(lock.lockDir, releaseDir);
