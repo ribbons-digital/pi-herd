@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
@@ -110,7 +111,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
   }
 
   if (options.force) {
-    const backupRef = backupRefFor(options.role, resolved.state.run_id);
+    const backupRef = await backupRefFor(runner, record.worktree_path, options.role, resolved.state.run_id);
     await git(runner, 'save reviewer/tester worktree backup ref', ['update-ref', backupRef, 'HEAD'], record.worktree_path);
     notes.push(`Saved ${options.role} backup ref ${backupRef}.`);
     if (dirty.length) {
@@ -289,8 +290,9 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-function backupRefFor(role: BuiltInRole, runId: string): string {
-  return `refs/pi-herd/backup/${role}/${runId}`;
+async function backupRefFor(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
+  const head = await git(runner, 'resolve reviewer/tester worktree HEAD for backup ref', ['rev-parse', '--short=12', 'HEAD'], worktreePath);
+  return `refs/pi-herd/backup/${role}/${runId}/${head.stdout.trim()}-${randomUUID()}`;
 }
 
 function formatBoundedLines(lines: string[]): string {

@@ -24,6 +24,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--path-format=absolute' && args[2] === '--git-common-dir') return okText(`${join(dir, '.git')}\n`);
     if (command === 'git' && args[0] === 'symbolic-ref') return okText(branchForCwd(options?.cwd));
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'refs/stash') return okText('stash123\n');
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--short=12' && args[2] === 'HEAD') return okText('abc1234def56\n');
     if (command === 'git' && args[0] === 'rev-parse' && args.includes('--verify')) return ok();
     if (command === 'git' && args[0] === 'rev-list' && args[1] === '--count') return okText('0\n');
     if (command === 'git' && args[0] === 'log' && args[1] === '--oneline') return ok();
@@ -144,10 +145,24 @@ describe('refresh and diff commands', () => {
 
     expect(result.text).toContain('Force refreshing reviewer worktree with 1 committed change(s)');
     expect(result.text).toContain('abc1234 review fix');
-    expect(result.text).toContain(`Saved reviewer backup ref refs/pi-herd/backup/reviewer/${state.run_id}.`);
-    expect(runner.calls).toContain(`git update-ref refs/pi-herd/backup/reviewer/${state.run_id} HEAD`);
+    expect(result.text).toContain(`Saved reviewer backup ref refs/pi-herd/backup/reviewer/${state.run_id}/abc1234def56-`);
+    const backupCalls = runner.calls.filter((call) => call.startsWith(`git update-ref refs/pi-herd/backup/reviewer/${state.run_id}/abc1234def56-`));
+    expect(backupCalls).toHaveLength(1);
+    expect(backupCalls[0]).toMatch(/^git update-ref refs\/pi-herd\/backup\/reviewer\/[^/]+\/abc1234def56-[0-9a-f-]+ HEAD$/);
     expect(runner.calls).toContain(`git reset --hard ${branch}`);
     expect(runner.calls).toContain('git clean -fd');
+  });
+
+  it('uses a fresh backup ref for each forced refresh', async () => {
+    const { runner, state, statePath } = await createMaterializedRun('Repeated force refresh');
+    await writeJsonAtomic(statePath, state);
+
+    await refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner });
+    await refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner });
+
+    const backupCalls = runner.calls.filter((call) => call.startsWith(`git update-ref refs/pi-herd/backup/reviewer/${state.run_id}/abc1234def56-`));
+    expect(backupCalls).toHaveLength(2);
+    expect(new Set(backupCalls).size).toBe(2);
   });
 
   it('refuses to refresh a working role without force', async () => {
