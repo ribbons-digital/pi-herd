@@ -255,6 +255,38 @@ describe('messaging commands', () => {
     expect(saved.roles.planner?.herdr_pane_id).toBe('planner-pane');
   });
 
+  it('does not clear state when pane validation fails ambiguously', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    state.roles.planner!.session_ref = `${state.run_id}-planner`;
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get planner-pane': { exitCode: 1, stdout: '', stderr: 'daemon unavailable\n' }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'No mutate', runner })).rejects.toThrow(/daemon unavailable/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('planner-pane');
+    expect(saved.roles.planner?.session_ref).toBe(`${state.run_id}-planner`);
+  });
+
+  it('keeps stale pane refs if replacement launch fails', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'old-pane' });
+    state.roles.planner!.session_ref = `${state.run_id}-planner`;
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get old-pane': { exitCode: 1, stdout: '', stderr: 'missing pane\n' },
+      [`herdr agent start pi-herd-${state.run_id}-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${state.run_id}-planner --session-id ${state.run_id}-planner`]: { exitCode: 1, stdout: '', stderr: 'launch failed\n' },
+      'herdr pane split lead-pane --direction down --cwd DIR --no-focus': { exitCode: 1, stdout: '', stderr: 'split failed\n' }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Retry after stale', runner })).rejects.toThrow(/launch failed/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('old-pane');
+    expect(saved.roles.planner?.session_ref).toBe(`${state.run_id}-planner`);
+  });
+
   it('activates reviewer from the implementation branch before first send', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
     const reviewerPath = join(dir, '.worktrees/pi-herd', state.run_id, 'reviewer');

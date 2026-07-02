@@ -134,21 +134,15 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
   }
   const notes: string[] = [];
   let launchedNow = false;
+  let stalePane = false;
   if (record.herdr_pane_id) {
     const pane = await paneGet(options.runner, options.state.repo_root, record.herdr_pane_id);
     if (pane.exitCode !== 0) {
-      if (pane.timedOut || pane.error) {
+      if (pane.timedOut || pane.error || !isMissingPaneFailure(pane)) {
         throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane, 'pane get failed')}`);
       }
       notes.push(`Detected stale pane for ${options.role}; relaunching.`);
-      record.herdr_pane_id = null;
-      record.herdr_tab_id = null;
-      record.session_ref = null;
-      if (record.status !== 'pending') {
-        record.status = 'staged';
-      }
-      options.state.updated_at = new Date().toISOString();
-      await writeJsonAtomic(options.statePath, options.state);
+      stalePane = true;
     }
   }
   if ((options.role === 'reviewer' || options.role === 'tester') && record.worktree_status !== 'materialized') {
@@ -165,7 +159,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       }
     });
   }
-  if (!record.herdr_pane_id) {
+  if (!record.herdr_pane_id || stalePane) {
     if (!record.worktree_path && ROLE_DEFAULTS[options.role].expectedWrites === 'worktree') {
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
@@ -183,6 +177,11 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
     await writeJsonAtomic(options.statePath, options.state);
   }
   return { notes, launchedNow };
+}
+
+function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return /\b(missing|not found|no such|unknown)\b/.test(output) && /\bpane\b/.test(output);
 }
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
