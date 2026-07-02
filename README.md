@@ -15,7 +15,8 @@ Slice 3 worktree orchestration is complete.
 Slice 4 Herdr pane and session launch is complete.
 Slice 5 messaging and lead commands are complete.
 H1 Herdr client reliability hardening is complete.
-H2 run-resolution and state-write safety hardening is implemented on the current branch.
+H2 run-resolution and state-write safety hardening is complete.
+Slice 6 status, wait, and collect is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -41,6 +42,10 @@ pi-herd run list --all --json
 pi-herd start "replace legacy auth refresh flow"
 pi-herd send implementer "Implement the approved plan."
 pi-herd send reviewer -- "--check the implementation branch"
+pi-herd status
+pi-herd status --json
+pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
+pi-herd collect
 pi-herd lead status
 pi-herd lead send tester "Run the approved smoke test."
 pi-herd lead collect
@@ -92,9 +97,16 @@ Sending marks the role `working` and records `last_activity_at` through a locked
 Prompt text, including multi-line text, is delivered as one `pane send-text` payload followed by Enter.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
 `pi-herd lead send` performs the same send with a lead-pane guard.
+`pi-herd status` evaluates role activity and required artifacts without writing run state.
+`pi-herd wait` polls working or blocked roles until they resolve to `done`, `incomplete`, or `blocked`, then persists role verdicts through locked state updates.
+If a stored blocked role reports working again, `wait` keeps polling rather than treating the stale blocked state as resolved.
+Use `--timeout-ms`, `--poll-interval-ms`, and `--json` to tune wait behavior and output.
+`wait` and `collect` return exit code 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
+`pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
+It never marks the run itself completed or abandoned.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
 `lead collect` prints a read-only artifact and inbox inventory.
-They do not infer worker completion or write `FINAL_SUMMARY.md`; full collection remains a later slice.
+They do not infer worker completion or write `FINAL_SUMMARY.md`; use top-level `pi-herd collect` for final collection.
 
 ## Local development
 

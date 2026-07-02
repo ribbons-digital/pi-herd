@@ -7,6 +7,7 @@ import { runInit, formatInitText } from './init.js';
 import { createRun, formatRunCreateText, listRunsForInvocation, parseRole, type ActiveRunSummary } from './run-state.js';
 import { formatStartText, startRun } from './start.js';
 import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
+import { collectRun, statusRun, waitRun } from './status.js';
 
 const HELP = `pi-herd
 
@@ -17,6 +18,9 @@ Usage:
   pi-herd run list [--all] [--json] [--config PATH]
   pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd send <role> <message> [--run RUN] [--config PATH]
+  pi-herd status [--json] [--run RUN] [--config PATH]
+  pi-herd wait [--timeout-ms MS] [--poll-interval-ms MS] [--json] [--run RUN] [--config PATH]
+  pi-herd collect [--json] [--run RUN] [--config PATH]
   pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]
   pi-herd --help
 
@@ -26,6 +30,9 @@ Commands:
   run     Create and manage orchestration run state.
   start   Create or bind lead, launch visible sessions, and activate planner.
   send    Send a prompt to a selected role pane, activating reviewer/tester if needed.
+  status  Evaluate role activity and required artifacts without writing state.
+  wait    Wait for working roles to resolve and persist role verdicts.
+  collect Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
   lead    Lead-session shortcuts for status, brief, collect, and send.
 `;
 
@@ -127,6 +134,76 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       const result = await sendMessage({ cwd, configPath: parsed.config, run: parsed.run, role: parsed.role, message: parsed.message, runner: nodeCommandRunner });
       process.stdout.write(result.text);
       return 0;
+    }
+
+    if (command === 'status') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          json: { type: 'boolean', default: false },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd status [--json] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await statusRun({ cwd, configPath: values.config, run: values.run, json: values.json, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return result.exitCode;
+    }
+
+    if (command === 'wait') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          json: { type: 'boolean', default: false },
+          'timeout-ms': { type: 'string' },
+          'poll-interval-ms': { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd wait [--timeout-ms MS] [--poll-interval-ms MS] [--json] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await waitRun({
+        cwd,
+        configPath: values.config,
+        run: values.run,
+        json: values.json,
+        timeoutMs: values['timeout-ms'] ? Number(values['timeout-ms']) : undefined,
+        pollIntervalMs: values['poll-interval-ms'] ? Number(values['poll-interval-ms']) : undefined,
+        runner: nodeCommandRunner
+      });
+      process.stdout.write(result.text);
+      return result.exitCode;
+    }
+
+    if (command === 'collect') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          json: { type: 'boolean', default: false },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd collect [--json] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await collectRun({ cwd, configPath: values.config, run: values.run, json: values.json, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return result.exitCode;
     }
 
     if (command === 'lead') {
