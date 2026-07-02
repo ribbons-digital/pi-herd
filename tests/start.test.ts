@@ -181,6 +181,21 @@ describe('start orchestration', () => {
     expect(result.state.roles.planner?.status).toBe('working');
   });
 
+  it('uses nested workspace ids from enveloped workspace create output', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr workspace create --cwd DIR --label pi-herd nested-workspace lead --no-focus': okJson({ id: 'cli:workspace:create', result: { workspace: { id: 'nested-lead-ws' } } }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-nested-workspace-lead --cwd DIR --workspace nested-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-nested-workspace-lead --session-id 2026-07-01T12-00-00-nested-workspace-lead': okJson({ pane_id: 'new-lead-pane', workspace_id: 'nested-lead-ws', tab_id: 'new-lead-tab' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-nested-workspace-planner --cwd DIR --workspace nested-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-nested-workspace-planner --session-id 2026-07-01T12-00-00-nested-workspace-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'nested-lead-ws', tab_id: 'planner-tab' }),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-nested-workspace.\nGoal: Nested workspace\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-nested-workspace/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+    }));
+
+    const result = await startRun({ cwd: dir, goal: 'Nested workspace', now: NOW, roles: ['planner'], runner, env: {} });
+
+    expect(result.state.lead_binding.herdr_workspace_id).toBe('nested-lead-ws');
+    expect(runner.calls.some((call) => call.includes('--workspace cli:workspace:create'))).toBe(false);
+  });
+
   it('falls back to pane split and pane run when worker agent start fails', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr pane current --current': okJson({ pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' }),

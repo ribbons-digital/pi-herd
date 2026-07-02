@@ -267,7 +267,7 @@ async function createLeadWorkspace(runner: CommandRunner, state: RunState): Prom
   if (result.exitCode !== 0) {
     throw new Error(`Could not create lead workspace: ${describeFailure(result, 'herdr workspace create failed')}`);
   }
-  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? stringFromJson(result.stdout, ['workspace_id', 'workspaceId', 'id']) ?? firstToken(result.stdout);
+  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? workspaceIdFromJson(result.stdout) ?? firstToken(result.stdout);
   if (!workspaceId) {
     throw new Error('Could not create lead workspace. Herdr returned unusable metadata.');
   }
@@ -326,20 +326,36 @@ function isRoleMap(value: HarnessProfile['thinking']): value is RoleStringMap {
   return Boolean(value && typeof value === 'object');
 }
 
-function stringFromJson(stdout: string, keys: string[]): string | null {
+function workspaceIdFromJson(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null;
     }
-    for (const key of keys) {
-      const value = (parsed as Record<string, unknown>)[key];
-      if (typeof value === 'string' && value.length > 0) {
-        return value;
-      }
-    }
+    return workspaceIdFromWorkspaceContainers(parsed as Record<string, unknown>);
   } catch {
     return null;
+  }
+}
+
+function workspaceIdFromWorkspaceContainers(record: Record<string, unknown>): string | null {
+  for (const key of ['workspace']) {
+    const child = record[key];
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      const id = (child as Record<string, unknown>).id;
+      if (typeof id === 'string' && id.length > 0) {
+        return id;
+      }
+    }
+  }
+  for (const key of ['result', 'data']) {
+    const child = record[key];
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      const id = workspaceIdFromWorkspaceContainers(child as Record<string, unknown>);
+      if (id) {
+        return id;
+      }
+    }
   }
   return null;
 }
