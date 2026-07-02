@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 5 plus H1, H2, and Slice 6 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 7 plus H1 and H2 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -294,14 +294,28 @@ Goal: Support repeated implementation passes and isolated reviewer/tester worktr
 
 Deliverable: `pi-herd refresh reviewer/tester`, `pi-herd diff`, and role prompts support review and test passes against the implementation branch.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Materialize reviewer and tester worktrees from implementation branch when needed.
 - Refresh reviewer and tester worktrees from implementation branch between passes.
 - Refuse destructive refresh when reviewer or tester worktrees contain unexpected local changes unless forced.
-- Show implementation diffs.
+- Refuse refresh while reviewer or tester is working unless forced.
+- Show implementation diffs with a bounded merge-base diff range.
 - Update role prompts for repeated passes.
 - Detect unexpected source edits by artifact-only roles where practical.
+- Require repeated-pass artifacts to be fresh relative to role activity timestamps.
+
+Implemented notes:
+
+- `pi-herd refresh <reviewer|tester>` materializes pending role worktrees or refreshes existing worktrees from the implementation branch.
+- Dirty worktrees are refused with bounded dirty-path output unless `--force` is passed.
+- Forced refresh resets to the implementation branch and cleans untracked files.
+- `pi-herd diff` prints bounded `git diff --stat` and `git diff --name-status` output for `base_ref...implementation_branch`.
+- `status`, `wait`, and `collect` treat stale required artifacts as invalid for active passes and warn when artifact-only role worktrees are dirty.
+- Generated reviewer and tester prompt templates explain repeated-pass refresh expectations.
+- Existing prompt files are not overwritten by `init` unless `--force` is passed.
 
 Out of scope:
 

@@ -24,6 +24,8 @@ describe('cli main', () => {
 
     await expect(main(['--', '--help'])).resolves.toBe(0);
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd run create');
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd refresh <reviewer|tester>');
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd diff');
   });
 
   it('creates a run from the CLI', async () => {

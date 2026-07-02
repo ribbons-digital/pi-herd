@@ -117,14 +117,18 @@ async function exists(path: string): Promise<boolean> {
 }
 
 function promptTemplate(displayName: string, expectedWrites: string, requiredArtifacts: string[]): string {
+  const role = displayName.toLowerCase();
+  const repeatedPass = role === 'reviewer' || role === 'tester'
+    ? '\nFor repeated passes, wait for the lead to refresh your role worktree before reviewing or testing again.\nTreat your role worktree as read-only source context and write durable findings only to the required artifact in the canonical run directory.\n'
+    : '';
   return `# ${displayName} prompt template
 
-You are the ${displayName.toLowerCase()} worker for a pi-herd run.
+You are the ${role} worker for a pi-herd run.
 Write durable results to the canonical run directory.
 
 Expected writes: ${expectedWrites}.
 Required artifact(s): ${requiredArtifacts.join(', ')}.
-
+${repeatedPass}
 Follow the lead session's instructions and leave questions in the lead inbox instead of coordinating directly with other workers.
 `;
 }

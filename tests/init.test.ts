@@ -25,6 +25,9 @@ describe('init', () => {
 
     const plannerPrompt = await readFile(join(dir, '.pi-herd/prompts/planner.md'), 'utf8');
     expect(plannerPrompt).toContain('Required artifact(s): PLAN.md');
+    const reviewerPrompt = await readFile(join(dir, '.pi-herd/prompts/reviewer.md'), 'utf8');
+    expect(reviewerPrompt).toContain('For repeated passes, wait for the lead to refresh your role worktree');
+    expect(reviewerPrompt).toContain('Treat your role worktree as read-only source context');
 
     const gitignore = await readFile(join(dir, '.gitignore'), 'utf8');
     expect(gitignore).toContain('/.pi-herd/runs/');
