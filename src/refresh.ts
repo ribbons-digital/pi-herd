@@ -86,6 +86,7 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     throw new Error(`Role ${options.role} has no worktree path after materialization.`);
   }
 
+  await assertNoSymlinkPathComponents(resolved.state.repo_root, record.worktree_path);
   await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, roleWorktreePath(resolved.state, options.role), options.role, resolved.state.repo_root);
 
   const commits = await commitsAheadOfImplementation(runner, record.worktree_path, implementationBranch);

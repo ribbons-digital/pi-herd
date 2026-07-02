@@ -187,6 +187,24 @@ describe('refresh and diff commands', () => {
     expect(runner.calls.some((call) => call.startsWith('git worktree add'))).toBe(false);
   });
 
+  it('refuses to refresh an existing worktree through a symlinked path component', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Existing symlinked worktree', now: NOW, runner });
+    const outside = join(dir, 'outside-worktrees');
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(dir, '.worktrees'), 'dir');
+    const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
+    await mkdir(worktreePath, { recursive: true });
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = worktreePath;
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner })).rejects.toThrow(
+      'Worktree path must not include symbolic links'
+    );
+    expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
   it('refuses to refresh a worktree from a different repository', async () => {
     const { runner, state, statePath } = await createMaterializedRun('Wrong repository');
     runner.responses['git rev-parse --path-format=absolute --git-common-dir'] = (_command, _args, options) => {
