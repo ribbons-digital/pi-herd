@@ -84,6 +84,8 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
     throw new Error(`Role ${options.role} has no worktree path after materialization.`);
   }
 
+  await assertExpectedRoleWorktree(runner, record.worktree_path, record.branch, roleWorktreePath(resolved.state, options.role), options.role);
+
   const commits = await commitsAheadOfImplementation(runner, record.worktree_path, implementationBranch);
   if (commits.count > 0 && !options.force) {
     throw new Error(`Refusing to refresh ${options.role} worktree with ${commits.count} committed change(s) not in ${implementationBranch}. Commits:\n${formatBoundedLines(commits.lines)}\nRe-run with --force to reset and clean it.`);
@@ -208,6 +210,29 @@ async function localBranchExists(runner: CommandRunner, repoRoot: string, branch
 
 async function gitWorktreeAddExistingBranch(runner: CommandRunner, repoRoot: string, path: string, branch: string): Promise<void> {
   await git(runner, `recreate ${branch} worktree`, ['worktree', 'add', path, branch], repoRoot);
+}
+
+async function assertExpectedRoleWorktree(
+  runner: CommandRunner,
+  worktreePath: string,
+  branch: string | undefined,
+  expectedPath: string,
+  role: BuiltInRole
+): Promise<void> {
+  if (resolve(worktreePath) !== resolve(expectedPath)) {
+    throw new Error(`Refusing to refresh ${role} worktree at unexpected path ${worktreePath}. Expected ${expectedPath}.`);
+  }
+  if (!branch) {
+    throw new Error(`Refusing to refresh ${role} worktree because its role branch is unavailable.`);
+  }
+  const root = await git(runner, 'validate reviewer/tester worktree root', ['rev-parse', '--show-toplevel'], worktreePath);
+  if (resolve(root.stdout.trim()) !== resolve(worktreePath)) {
+    throw new Error(`Refusing to refresh ${role} worktree because ${worktreePath} is not its git worktree root.`);
+  }
+  const currentBranch = await git(runner, 'validate reviewer/tester worktree branch', ['symbolic-ref', '--short', 'HEAD'], worktreePath);
+  if (currentBranch.stdout.trim() !== branch) {
+    throw new Error(`Refusing to refresh ${role} worktree because it is on ${currentBranch.stdout.trim() || 'detached HEAD'} instead of ${branch}.`);
+  }
 }
 
 async function git(runner: CommandRunner, label: string, args: string[], cwd: string) {

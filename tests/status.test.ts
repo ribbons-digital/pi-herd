@@ -94,6 +94,21 @@ describe('status, wait, and collect commands', () => {
     expect(saved.roles.planner?.status).toBe('incomplete');
   });
 
+  it('treats artifacts written within the previous freshness grace as stale', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
+    await writeFile(artifactPath, 'almost current plan\n', 'utf8');
+    await utimes(artifactPath, new Date('2026-07-01T11:59:59.000Z'), new Date('2026-07-01T11:59:59.000Z'));
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('stale PLAN.md');
+    expect(result.text).toContain('PLAN.md is stale for the current pass');
+  });
+
   it('does not retroactively flip stored done roles when artifacts are stale', async () => {
     const { state, statePath } = await createWorkingRun('planner-pane');
     state.roles.planner!.status = 'done';

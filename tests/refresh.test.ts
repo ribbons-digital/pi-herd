@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
@@ -14,14 +14,14 @@ type TestResponse = CommandResult | (() => CommandResult | Promise<CommandResult
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
   constructor(readonly responses: Record<string, TestResponse> = {}) {}
-  async run(command: string, args: string[]): Promise<CommandResult> {
+  async run(command: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
     const response = this.responses[key.replaceAll(dir, 'DIR')];
     if (typeof response === 'function') return response();
     if (response) return response;
-    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return okText(`${dir}\n`);
-    if (command === 'git' && args[0] === 'symbolic-ref') return okText('main\n');
+    if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return okText(`${options?.cwd ?? dir}\n`);
+    if (command === 'git' && args[0] === 'symbolic-ref') return okText(branchForCwd(options?.cwd));
     if (command === 'git' && args[0] === 'rev-parse' && args.includes('--verify')) return ok();
     if (command === 'git' && args[0] === 'rev-list' && args[1] === '--count') return okText('0\n');
     if (command === 'git' && args[0] === 'log' && args[1] === '--oneline') return ok();
@@ -67,7 +67,7 @@ describe('refresh and diff commands', () => {
       'git status --porcelain --untracked-files=all': okText(' M src/file.ts\n?? scratch.md\n')
     });
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Dirty review', now: NOW, runner });
-    const worktreePath = join(dir, 'reviewer-worktree');
+    const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
     await mkdir(worktreePath, { recursive: true });
     state.roles.reviewer!.worktree_status = 'materialized';
     state.roles.reviewer!.worktree_path = worktreePath;
@@ -118,7 +118,7 @@ describe('refresh and diff commands', () => {
       'git status --porcelain --untracked-files=all': okText('?? scratch.md\n')
     });
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Force test refresh', now: NOW, runner });
-    const worktreePath = join(dir, 'tester-worktree');
+    const worktreePath = expectedRoleWorktreePath(state, 'tester');
     await mkdir(worktreePath, { recursive: true });
     state.roles.tester!.worktree_status = 'materialized';
     state.roles.tester!.worktree_path = worktreePath;
@@ -129,6 +129,32 @@ describe('refresh and diff commands', () => {
     expect(result.text).toContain('Force refreshing dirty tester worktree');
     expect(runner.calls).toContain(`git reset --hard ${state.roles.implementer!.branch}`);
     expect(runner.calls).toContain('git clean -fd');
+  });
+
+  it('refuses to refresh a worktree stored at an unexpected path', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Unexpected path', now: NOW, runner });
+    const worktreePath = join(dir, 'other-checkout');
+    await mkdir(worktreePath, { recursive: true });
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = worktreePath;
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', force: true, runner })).rejects.toThrow(
+      'Refusing to refresh reviewer worktree at unexpected path'
+    );
+    expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
+  });
+
+  it('refuses to refresh a worktree checked out on the wrong branch', async () => {
+    const { runner, state, statePath } = await createMaterializedRun('Wrong branch');
+    runner.responses['git symbolic-ref --short HEAD'] = okText('main\n');
+    await writeJsonAtomic(statePath, state);
+
+    await expect(refreshRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(
+      `Refusing to refresh reviewer worktree because it is on main instead of ${state.roles.reviewer!.branch}`
+    );
+    expect(runner.calls).not.toContain(`git reset --hard ${state.roles.implementer!.branch}`);
   });
 
   it('refuses refresh for non-review roles', async () => {
@@ -153,11 +179,23 @@ describe('refresh and diff commands', () => {
 async function createMaterializedRun(goal: string) {
   const runner = new RecordingRunner();
   const { state, statePath } = await createRun({ cwd: dir, goal, now: NOW, runner });
-  const worktreePath = join(dir, 'reviewer-worktree');
+  const worktreePath = expectedRoleWorktreePath(state, 'reviewer');
   await mkdir(worktreePath, { recursive: true });
   state.roles.reviewer!.worktree_status = 'materialized';
   state.roles.reviewer!.worktree_path = worktreePath;
   return { runner, state, statePath };
+}
+
+function expectedRoleWorktreePath(state: RunState, role: 'reviewer' | 'tester'): string {
+  return join(dir, '.worktrees', 'pi-herd', state.run_id, role);
+}
+
+function branchForCwd(cwd: string | undefined): string {
+  if (!cwd) return 'main\n';
+  const role = basename(cwd);
+  if (role !== 'reviewer' && role !== 'tester') return 'main\n';
+  const runId = basename(dirname(cwd));
+  return `pi-herd/${runId}/${role}\n`;
 }
 
 function ok(): CommandResult {

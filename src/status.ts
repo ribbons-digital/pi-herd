@@ -368,7 +368,7 @@ function isArtifactStale(mtimeMs: number, lastActivityAt: string | null): boolea
   if (!lastActivityAt) return false;
   const lastActivityMs = Date.parse(lastActivityAt);
   if (Number.isNaN(lastActivityMs)) return false;
-  return mtimeMs + 2_000 < lastActivityMs;
+  return mtimeMs < lastActivityMs;
 }
 
 function roleEntries(state: RunState): RoleRecord[] {
