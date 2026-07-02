@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 5 messaging and H1 Herdr client reliability hardening complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 5 messaging plus H1 and H2 hardening complete on the current branch.
 
 ## Review provenance
 
@@ -13,8 +13,9 @@ Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation
 Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
 Slice 3 added `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
 Slice 4 added `pi-herd start`, verified or created lead binding, planner launch with kickoff prompt, staged implementer launch, reviewer and tester staged slots, launch metadata persistence, and recoverable failed-run persistence after partial launch failures.
-Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, current-pane active-run resolution, first-send reviewer and tester activation, dash-prefixed literal send parsing, explicit partial-send errors, read-only collection inventory, and non-completion message semantics.
+Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, verified current-pane active-run resolution, first-send reviewer and tester activation, dash-prefixed literal send parsing, explicit partial-send errors, read-only collection inventory, and non-completion message semantics.
 H1 added a shared Herdr client layer, broader metadata parsing, idle readiness waits before first prompt delivery, warning-only readiness fallback, stale pane validation with safe relaunch, and a pinned multi-line prompt delivery shape.
+H2 added shared run resolution, verified current-pane targeting, run listing, role-worktree run discovery, git-root and base-ref guards, additive `state_revision` provenance, locked state updates for messaging writes, and safer run-directory allocation.
 
 ## Files to approve
 
@@ -59,16 +60,18 @@ H1 added a shared Herdr client layer, broader metadata parsing, idle readiness w
 - [x] Slice 4: Herdr pane and session launch.
 - [x] Slice 5: Messaging and lead commands.
 - [x] H1: Herdr client and prompt-delivery reliability.
+- [x] H2: Run resolution and state-write safety.
 - [ ] Slice 6: Status, wait, and collect.
 - [ ] Slice 7: Refresh, diff, and review/test flow.
 - [ ] Slice 8: Cleanup and merge planning.
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After H1
+## After H2
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Implement Slice 6 status, wait, and collect without treating Herdr idle as completion by itself.
+- [ ] Use locked state updates for future status, wait, and collect state writers.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
 

@@ -46,12 +46,13 @@ _Avoid_: treating GitHub issues as part of pi-herd's product model
 
 **Active run**:
 The run a command targets when `--run` is omitted.
-Resolution should prefer explicit flags, then a lead or pane binding, then a single active run, and should fail with choices when multiple active runs are ambiguous.
+Resolution should prefer explicit flags, then a verified lead or role pane binding, then a single active run, and should fail with choices when multiple active runs are ambiguous.
 _Avoid_: silently defaulting to the newest run when multiple runs are active
 
 **Run lifecycle**:
 The state of a run as active, completed, abandoned, or failed.
-Active-run resolution only considers active runs unless the user explicitly selects another run.
+Implicit active-run resolution only considers active runs.
+Use `pi-herd run list --all` from the repository or one of its git worktrees to inspect old completed, abandoned, or failed runs.
 _Avoid_: treating old completed, abandoned, or failed runs as candidates for implicit command targeting
 
 **Worker completion**:
@@ -146,7 +147,7 @@ Developer: Are GitHub issues part of the product?
 Domain expert: No.
 GitHub issues are how we will manage the development slices for building pi-herd, not a feature of pi-herd itself.
 Developer: What happens if multiple runs are active and I omit `--run`?
-Domain expert: pi-herd should first check whether the current lead or pane is bound to a run.
+Domain expert: pi-herd should first check whether the current verified lead or role pane is bound to an active run.
 If not, it should fail with a clear list rather than guessing the newest run.
 Developer: Is a worker done when Herdr says the session is idle?
 Domain expert: Not by itself.

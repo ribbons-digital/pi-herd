@@ -154,20 +154,23 @@ describe('messaging commands', () => {
     expect(result.text).toContain('Sent message to planner');
   });
 
-  it('does not resolve an omitted run from a non-current environment pane', async () => {
+  it('falls back to the single active run when the environment pane is verified but unbound', async () => {
     await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({
-      'herdr pane current --current': okJson({ pane_id: 'other-pane', workspace_id: 'lead-ws', tab_id: 'other-tab' })
+      'herdr pane current --current': okJson({ pane_id: 'other-pane', workspace_id: 'lead-ws', tab_id: 'other-tab' }),
+      'herdr pane send-text planner-pane Pane resolved': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
     }));
 
-    await expect(sendMessage({
+    const result = await sendMessage({
       cwd: dir,
       role: 'planner',
       message: 'Pane resolved',
       runner,
       env: { HERDR_ENV: '1', HERDR_PANE_ID: 'planner-pane', PI_CODING_AGENT: 'true' }
-    })).rejects.toThrow(/Current pane is not bound to an active run/);
-    expect(runner.calls).not.toContain('herdr pane get planner-pane');
+    });
+
+    expect(result.text).toContain('Sent message to planner');
   });
 
   it('prints state-only lead status and read-only collect inventory', async () => {

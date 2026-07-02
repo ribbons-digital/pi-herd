@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 5 and H1 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 5 plus H1 and H2 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -219,6 +219,38 @@ Out of scope:
 TODO:
 
 - Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload approach.
+
+## H2: Run resolution, git guard, provenance, and state-write safety
+
+Goal: Harden run discovery and state writes before status and collection add more writers.
+
+Status: Implemented on the current branch.
+
+Scope:
+
+- Fail run creation outside a git repository.
+- Require run listing and implicit run resolution to start inside the repository or one of its git worktrees.
+- Fail base-ref inference when neither branch nor commit resolves.
+- Resolve runs through one shared resolver across messaging and lead helpers.
+- Prefer explicit `--run`, then verified current Herdr/Pi pane binding, then single active run.
+- Include run choices in ambiguity errors.
+- Discover canonical run state from role worktrees by using `git rev-parse --git-common-dir`, with the legacy `.worktrees/pi-herd` path parser as fallback.
+- Add `state_revision` as an additive provenance field.
+- Add locked `updateRunState` for synchronous read-modify-write state updates and migrate messaging writes to it.
+- Fix run directory allocation so only `EEXIST` is treated as a slug collision.
+- Add `pi-herd run list [--all] [--json]`.
+
+Implemented notes:
+
+- Creation and start-time single-writer paths still use direct atomic writes.
+- Future Slice 6 status, wait, and collect state writers must use `updateRunState` with synchronous mutators only.
+- If the current pane cannot be bound to an active run but exactly one active run exists, commands keep the single-active-run fallback behavior.
+
+Out of scope:
+
+- Completion semantics.
+- Status or wait commands.
+- Reviewer and tester clean-repo policy.
 
 ## Slice 6: Status, wait, and collect
 

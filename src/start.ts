@@ -3,7 +3,7 @@ import { createRun, writeJsonAtomic, type LaunchMetadata, type RoleRecord, type 
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
-import { agentStart, describeFailure, firstLine, paneCurrent, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parsePaneMetadata, waitAgentStatus, workspaceCreate } from './herdr.js';
+import { agentStart, describeFailure, firstLine, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parsePaneMetadata, verifyCurrentPane as verifyCurrentHerdrPane, waitAgentStatus, workspaceCreate } from './herdr.js';
 
 /** Options for creating a run and launching its initial visible Herdr/Pi sessions. */
 export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
@@ -250,17 +250,7 @@ export function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): 
 }
 
 /** Verify that the current Herdr pane matches an expected pane id. */
-export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
-  const current = await paneCurrent(runner, cwd);
-  if (current.exitCode !== 0) {
-    return null;
-  }
-  const metadata = parsePaneMetadata(current.stdout);
-  if (metadata.paneId !== paneId) {
-    return null;
-  }
-  return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
-}
+export const verifyCurrentPane = verifyCurrentHerdrPane;
 
 async function createLeadWorkspace(runner: CommandRunner, state: RunState): Promise<{ workspaceId: string }> {
   const result = await workspaceCreate(runner, state.repo_root, { repoRoot: state.repo_root, label: `pi-herd ${state.run_slug} lead` });

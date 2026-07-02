@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, and H1 Herdr client reliability hardening implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, and H2 run-resolution and state-write safety hardening implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -75,7 +75,9 @@ A run has a lifecycle status:
 - `abandoned`: the run was stopped or cleaned up without completion and should not be implicitly selected.
 - `failed`: creation or orchestration failed and should not be implicitly selected.
 
-Active-run resolution only considers active runs unless the user explicitly selects another run.
+Implicit active-run resolution only considers active runs.
+Explicit `--run` selectors for state and messaging commands currently resolve among active runs.
+`pi-herd run list --all` can inspect completed, abandoned, and failed runs.
 `--run latest` is allowed only as an explicit selector.
 pi-herd must never silently choose the newest run when multiple active runs exist.
 
@@ -166,7 +168,10 @@ The state schema should start with this shape:
 
 Role records may also include `worktree_herdr_workspace_id` after Herdr worktree materialization, preserving the worktree workspace when `herdr_workspace_id` is later updated to the launched session workspace.
 Role `launch_metadata` records the harness command, args, cwd, provider, model, thinking preference, expected writes, launch method, and prompt method when available.
-State writes should be atomic.
+State may include additive `state_revision` provenance after locked read-modify-write updates.
+Creation and start-time single-writer paths use atomic JSON replacement.
+Commands that mutate existing run state should use locked read-modify-write updates so concurrent writers do not lose each other's fields.
+Locked update mutators must be synchronous and must not await caller-provided work while the state lock is held.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
 `pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree provider, worktree status, and Herdr workspace id when available in `state.json`.
@@ -176,7 +181,7 @@ If worktree materialization fails after state creation, pi-herd persists any suc
 When planner readiness cannot be confirmed, pi-herd records a warning and sends the kickoff anyway.
 When a Herdr-created worktree workspace id is later replaced by the session workspace id, pi-herd preserves the worktree workspace id in `worktree_herdr_workspace_id`.
 If launch or kickoff fails after state creation, pi-herd persists any successful launch refs, marks the run `failed`, and excludes it from active-run resolution.
-`pi-herd send` validates saved pane ids before prompt delivery, sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` without inferring completion.
+`pi-herd send` validates saved pane ids before prompt delivery, sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` through a locked state update without inferring completion.
 Send commands accept `--run` and `--config` before or after message text while option parsing is active, and `--` marks the rest of the arguments as literal message text for dash-prefixed prompts.
 Prompt text, including multi-line text, is delivered as one `pane send-text` payload followed by Enter.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
@@ -191,6 +196,7 @@ The current implementation supports selecting `planner`, `implementer`, `reviewe
 Commands accept explicit run selection:
 
 ```bash
+pi-herd run list [--all] [--json]
 pi-herd lead status --run <run_id|slug|latest>
 pi-herd send reviewer "Review current diff." --run <run_id|slug|latest>
 pi-herd send reviewer -- "--audit the implementation branch"
@@ -203,6 +209,10 @@ When `--run` is omitted, resolution order is:
 2. Use the only active run if exactly one active run exists.
 3. Otherwise fail and ask the user to pass `--run`.
 
+If a verified current pane is not bound to an active run but exactly one active run exists, commands keep the single-active-run fallback.
+Run discovery must start inside the repository or one of its git worktrees.
+It works from the main checkout and from role worktrees by using git's common directory when available, with the `.worktrees/pi-herd` path shape as a fallback.
+Ambiguity errors include run choices.
 `latest` is available only when the user explicitly passes it.
 
 ## Role model
@@ -455,6 +465,7 @@ Production command set:
 pi-herd doctor
 pi-herd init
 pi-herd run create
+pi-herd run list
 pi-herd start <goal>
 pi-herd add-role <role>
 pi-herd send <role> <message>
@@ -473,7 +484,11 @@ pi-herd cleanup
 ```
 
 `run create` supports early state and worktree creation without panes or worker sessions.
-It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
+It must run inside a git repository and fails if base ref inference cannot resolve a branch or commit.
+`start` uses the same git repository and base-ref requirements because it creates a run before launching sessions.
+`run create` accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
+`run list` lists active runs by default and accepts `--all`, `--json`, and `--config`.
+It must run inside the repository or one of its git worktrees.
 `start` is the user-facing launch command.
 It accepts repeated `--role` flags for selected roles, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 When selected roles require worktrees, it applies the same clean-repository and materialization rules as `run create --with-worktrees`.

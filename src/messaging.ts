@@ -1,13 +1,13 @@
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { join, relative } from 'node:path';
 import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane, waitForRoleReady } from './start.js';
 import { describeFailure, paneGet } from './herdr.js';
 import { materializeRoleWorktree } from './worktree.js';
-import { listActiveRuns, loadConfigIfPresent, readRunState, resolveRunsRoot, writeJsonAtomic, type ActiveRunSummary, type RoleRecord, type RunState } from './run-state.js';
+import { loadConfigIfPresent, resolveRunContext, resolveRunsRoot, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 
 /** Shared options for commands that resolve and read a pi-herd run. */
 export interface RunCommandOptions {
@@ -56,13 +56,15 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     }
   }
   await sendToPane(runner, state.repo_root, paneId, options.message);
-  record.status = 'working';
-  record.last_activity_at = new Date().toISOString();
-  state.updated_at = new Date().toISOString();
-  await writeJsonAtomic(resolved.statePath, state);
+  const updated = await updateRunState(resolved.statePath, (fresh) => {
+    const freshRecord = fresh.roles[options.role];
+    if (!freshRecord) return;
+    freshRecord.status = 'working';
+    freshRecord.last_activity_at = new Date().toISOString();
+  });
   const warnings = capabilityWarnings(record);
   return {
-    state,
+    state: updated,
     text: [`Sent message to ${options.role} (${paneId}).`, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
   };
 }
@@ -154,8 +156,15 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       baseRef: record.source_ref,
       cleanCheckIgnorePaths: [relative(options.state.repo_root, resolveRunsRoot(options.state.repo_root, options.config.paths.runs_dir || DEFAULT_RUNS_DIR)), '.worktrees'],
       onMaterialized: async () => {
-        options.state.updated_at = new Date().toISOString();
-        await writeJsonAtomic(options.statePath, options.state);
+        await updateRunState(options.statePath, (fresh) => {
+          const freshRecord = fresh.roles[options.role];
+          if (!freshRecord) return;
+          freshRecord.worktree_path = record.worktree_path;
+          freshRecord.worktree_status = record.worktree_status;
+          freshRecord.worktree_provider = record.worktree_provider;
+          freshRecord.worktree_herdr_workspace_id = record.worktree_herdr_workspace_id;
+          freshRecord.herdr_workspace_id = record.herdr_workspace_id;
+        });
       }
     });
   }
@@ -173,8 +182,20 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
     });
     applyRoleLaunch(record, launch);
     launchedNow = true;
-    options.state.updated_at = new Date().toISOString();
-    await writeJsonAtomic(options.statePath, options.state);
+    await updateRunState(options.statePath, (fresh) => {
+      const freshRecord = fresh.roles[options.role];
+      if (!freshRecord) return;
+      freshRecord.herdr_workspace_id = record.herdr_workspace_id;
+      freshRecord.herdr_tab_id = record.herdr_tab_id;
+      freshRecord.herdr_pane_id = record.herdr_pane_id;
+      freshRecord.session_ref = record.session_ref;
+      freshRecord.status = record.status;
+      freshRecord.launch_metadata = record.launch_metadata;
+      freshRecord.worktree_path = record.worktree_path;
+      freshRecord.worktree_status = record.worktree_status;
+      freshRecord.worktree_provider = record.worktree_provider;
+      freshRecord.worktree_herdr_workspace_id = record.worktree_herdr_workspace_id;
+    });
   }
   return { notes, launchedNow };
 }
@@ -192,65 +213,11 @@ function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): bool
 }
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
-  let summary: ActiveRunSummary;
-  if (!options.run && hasCurrentPaneEnv(options.env ?? process.env)) {
-    const paneMatch = await resolveByCurrentPane(options, runner);
-    if (!paneMatch) {
-      throw new Error('Current pane is not bound to an active run. Pass --run <run_id|slug>.');
-    }
-    summary = paneMatch;
-  } else {
-    summary = await listRunsForInvocation(options, runner).then((runs) => selectRun(runs, options.run));
-  }
-  const statePath = join(summary.canonical_run_dir, 'state.json');
-  return { state: await readRunState(statePath), statePath };
+  return resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, env: options.env, runner });
 }
 
 function hasCurrentPaneEnv(env: NodeJS.ProcessEnv): env is NodeJS.ProcessEnv & { HERDR_PANE_ID: string } {
   return env.HERDR_ENV === '1' && Boolean(env.HERDR_PANE_ID) && env.PI_CODING_AGENT === 'true';
-}
-
-async function resolveByCurrentPane(options: RunCommandOptions, runner: CommandRunner) {
-  const env = options.env ?? process.env;
-  if (!hasCurrentPaneEnv(env)) {
-    return null;
-  }
-  const runs = await listRunsForInvocation(options, runner);
-  const matches = [];
-  for (const run of runs) {
-    const state = await readRunState(join(run.canonical_run_dir, 'state.json'));
-    const verified = await verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
-    if (!verified) {
-      continue;
-    }
-    if (state.lead_binding.herdr_pane_id === env.HERDR_PANE_ID || roleEntries(state).some((role) => role.herdr_pane_id === env.HERDR_PANE_ID)) {
-      matches.push(run);
-    }
-  }
-  if (matches.length === 1) {
-    return matches[0];
-  }
-  if (matches.length > 1) {
-    throw new Error(`Current pane matches multiple active runs. Pass --run <run_id|slug>.`);
-  }
-  return null;
-}
-
-function selectRun(runs: Awaited<ReturnType<typeof listActiveRuns>>, selector?: string) {
-  if (selector) {
-    if (selector === 'latest') {
-      const latest = runs.at(-1);
-      if (!latest) throw new Error('No active runs found.');
-      return latest;
-    }
-    const matches = runs.filter((run) => run.run_id === selector || run.run_slug === selector);
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) throw new Error(`Run selector '${selector}' is ambiguous. Pass a run_id.`);
-    throw new Error(`No active run matched '${selector}'.`);
-  }
-  if (runs.length === 1) return runs[0];
-  if (!runs.length) throw new Error('No active runs found.');
-  throw new Error('Multiple active runs found. Pass --run <run_id|slug>.');
 }
 
 async function assertCurrentLead(state: RunState, runner: CommandRunner, env: NodeJS.ProcessEnv): Promise<void> {
@@ -261,59 +228,6 @@ async function assertCurrentLead(state: RunState, runner: CommandRunner, env: No
   if (!verified || state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
     throw new Error('Lead command must run from the bound Pi lead pane for this run.');
   }
-}
-
-async function listRunsForInvocation(options: RunCommandOptions, runner: CommandRunner) {
-  const seen = new Set<string>();
-  const runs: ActiveRunSummary[] = [];
-  for (const cwd of invocationRunSearchCwds(options.cwd)) {
-    let active;
-    try {
-      active = await listActiveRuns(cwd, options.configPath, runner);
-    } catch (error) {
-      if (cwd === options.cwd && options.configPath) {
-        throw error;
-      }
-      continue;
-    }
-    for (const run of active) {
-      if (!seen.has(run.canonical_run_dir)) {
-        seen.add(run.canonical_run_dir);
-        runs.push(run);
-      }
-    }
-  }
-  return runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
-}
-
-function invocationRunSearchCwds(cwd: string): string[] {
-  const candidates = [cwd];
-  const canonicalRoot = inferCanonicalRootFromWorktree(cwd);
-  if (canonicalRoot) {
-    candidates.push(canonicalRoot);
-  }
-  return candidates;
-}
-
-function inferCanonicalRootFromWorktree(cwd: string): string | null {
-  const absolute = resolve(cwd);
-  const parts = absolute.split(sep);
-  const markerParts = DEFAULT_WORKTREES_DIR.split(/[\\/]+/).filter(Boolean);
-  for (let markerIndex = parts.length - markerParts.length; markerIndex > 0; markerIndex -= 1) {
-    if (!markerParts.every((part, offset) => parts[markerIndex + offset] === part)) {
-      continue;
-    }
-    const piHerdIndex = markerIndex + markerParts.length;
-    if (parts[piHerdIndex] !== 'pi-herd' || parts.length < piHerdIndex + 3) {
-      continue;
-    }
-    const root = parts.slice(0, markerIndex).join(sep) || sep;
-    if (!root || root === absolute || !isAbsolute(root)) {
-      return null;
-    }
-    return root;
-  }
-  return null;
 }
 
 function roleEntries(state: RunState): RoleRecord[] {

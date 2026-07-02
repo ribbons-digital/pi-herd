@@ -328,4 +328,5 @@ If Herdr Pi integration is missing:
 - Slice 4 submits the planner kickoff with pane send-text plus Enter.
 - Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter, and reports partial failure clearly if Enter submission fails after text insertion.
 - H1 centralizes Herdr command wrappers, validates saved panes before send, relaunches clearly missing panes, waits briefly for idle readiness before first prompt delivery after fresh launch, and keeps readiness failures warning-only.
+- H2 uses verified current Herdr/Pi pane metadata for run targeting before falling back to single-active-run resolution.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

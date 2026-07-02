@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { runDoctor, formatDoctorText } from './doctor.js';
 import { nodeCommandRunner } from './command-runner.js';
 import { runInit, formatInitText } from './init.js';
-import { createRun, formatRunCreateText, parseRole } from './run-state.js';
+import { createRun, formatRunCreateText, listRunsForInvocation, parseRole, type ActiveRunSummary } from './run-state.js';
 import { formatStartText, startRun } from './start.js';
 import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
 
@@ -14,6 +14,7 @@ Usage:
   pi-herd doctor [--json] [--config PATH]
   pi-herd init [--force] [--config PATH]
   pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
+  pi-herd run list [--all] [--json] [--config PATH]
   pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd send <role> <message> [--run RUN] [--config PATH]
   pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]
@@ -177,7 +178,26 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
     if (command === 'run') {
       const subcommand = argv[1];
       if (!subcommand || subcommand === '--help' || subcommand === '-h') {
-        process.stdout.write('Usage: pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]\n');
+        process.stdout.write('Usage: pi-herd run <create|list> [args]\n');
+        return 0;
+      }
+      if (subcommand === 'list') {
+        const { values } = parseArgs({
+          args: argv.slice(2),
+          options: {
+            all: { type: 'boolean', default: false },
+            json: { type: 'boolean', default: false },
+            config: { type: 'string' },
+            help: { type: 'boolean', short: 'h', default: false }
+          },
+          allowPositionals: false
+        });
+        if (values.help) {
+          process.stdout.write('Usage: pi-herd run list [--all] [--json] [--config PATH]\n');
+          return 0;
+        }
+        const runs = await listRunsForInvocation(cwd, values.config, nodeCommandRunner, values.all);
+        process.stdout.write(values.json ? `${JSON.stringify(runs, null, 2)}\n` : formatRunListText(runs));
         return 0;
       }
       if (subcommand !== 'create') {
@@ -228,6 +248,17 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
+}
+
+export function formatRunListText(runs: ActiveRunSummary[]): string {
+  if (!runs.length) {
+    return 'No runs found.\n';
+  }
+  const lines = ['Runs:'];
+  for (const run of runs) {
+    lines.push(`- ${run.run_id} (${run.status}) ${run.goal}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 export interface ParsedSendArgs {
