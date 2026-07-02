@@ -553,20 +553,31 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
  * Lock, re-read, mutate, and atomically write run state.
  * Mutators should only change fields owned by their command to avoid reintroducing lost updates.
  */
-export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>, now: Date = new Date()): Promise<RunState> {
+export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>): Promise<RunState> {
   const lockDir = join(dirname(path), '.state.lock');
   const lock = await acquireStateLock(lockDir);
   try {
     const state = await readRunState(path);
     await mutate(state);
     await assertStateLockOwned(lock);
-    state.updated_at = now.toISOString();
+    state.updated_at = new Date().toISOString();
     state.state_revision = (state.state_revision ?? 0) + 1;
-    await writeJsonAtomic(path, state);
-    await assertStateLockOwned(lock);
+    await writeJsonAtomicWithStateLock(path, state, lock);
     return state;
   } finally {
     await releaseStateLock(lock);
+  }
+}
+
+async function writeJsonAtomicWithStateLock(path: string, value: unknown, lock: StateLock): Promise<void> {
+  const tempPath = join(lock.lockDir, `.tmp-${process.pid}-${Date.now()}-${randomUUID()}.json`);
+  try {
+    await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await assertStateLockOwned(lock);
+    await rename(tempPath, path);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
   }
 }
 

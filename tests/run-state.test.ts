@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -180,7 +180,7 @@ describe('run state', () => {
     await writeFile(join(dir, 'README.md'), 'hello\n', 'utf8');
     await execFileAsync('git', ['add', 'README.md'], { cwd: dir });
     await execFileAsync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'init'], { cwd: dir });
-    const linked = join(dir, '..', `${dir.split('/').at(-1)}-linked`);
+    const linked = join(dir, '..', `${basename(dir)}-linked`);
     try {
       await execFileAsync('git', ['worktree', 'add', '-b', 'linked', linked], { cwd: dir });
       await expect(listRunsForInvocation(linked)).resolves.toMatchObject([{ run_id: result.state.run_id }]);

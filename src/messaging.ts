@@ -61,15 +61,6 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     if (!freshRecord) return;
     freshRecord.status = 'working';
     freshRecord.last_activity_at = new Date().toISOString();
-    freshRecord.herdr_workspace_id = record.herdr_workspace_id;
-    freshRecord.herdr_tab_id = record.herdr_tab_id;
-    freshRecord.herdr_pane_id = record.herdr_pane_id;
-    freshRecord.session_ref = record.session_ref;
-    freshRecord.launch_metadata = record.launch_metadata;
-    freshRecord.worktree_path = record.worktree_path;
-    freshRecord.worktree_status = record.worktree_status;
-    freshRecord.worktree_provider = record.worktree_provider;
-    freshRecord.worktree_herdr_workspace_id = record.worktree_herdr_workspace_id;
   });
   const warnings = capabilityWarnings(record);
   return {

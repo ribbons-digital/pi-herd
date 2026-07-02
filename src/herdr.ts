@@ -51,15 +51,19 @@ export function paneCurrent(runner: CommandRunner, cwd: string): Promise<Command
 
 /** Verify that the current Herdr pane matches an expected pane id. */
 export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
-  const current = await paneCurrent(runner, cwd);
-  if (current.exitCode !== 0) {
+  try {
+    const current = await paneCurrent(runner, cwd);
+    if (current.exitCode !== 0) {
+      return null;
+    }
+    const metadata = parsePaneMetadata(current.stdout);
+    if (metadata.paneId !== paneId) {
+      return null;
+    }
+    return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
+  } catch {
     return null;
   }
-  const metadata = parsePaneMetadata(current.stdout);
-  if (metadata.paneId !== paneId) {
-    return null;
-  }
-  return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
 }
 
 export function paneGet(runner: CommandRunner, cwd: string, paneId: string): Promise<CommandResult> {
