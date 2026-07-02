@@ -30,6 +30,8 @@ Slice 6 uses the locked update path for `wait` and top-level `collect` role verd
 `status` stays read-only and does not bump `state_revision`.
 `wait` and `collect` only persist `done`, `incomplete`, or `blocked` verdicts for roles that are still mutable and whose `last_activity_at` has not changed since the activity probe.
 Top-level `collect` writes `logs/` pane captures and `FINAL_SUMMARY.md`, but it does not change the run lifecycle status to `completed` or `abandoned`.
+Slice 7 refresh updates reviewer or tester worktree metadata through locked state updates after materializing, recreating, or refreshing the role worktree.
+Refresh sets the role source ref to the implementation branch and preserves role pane/session refs without changing the run lifecycle.
 
 Run state writes use atomic JSON replacement.
 Read-modify-write commands lock, re-read, mutate only owned fields synchronously, increment `state_revision` when a write is needed, and then atomically replace the JSON file.

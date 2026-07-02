@@ -194,6 +194,10 @@ When readiness cannot be confirmed after first-send activation, pi-herd records 
 If a stored blocked role reports working again, `wait` keeps polling rather than treating the stale blocked state as resolved.
 `pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
 Top-level `collect` does not mark the run `completed` or `abandoned`; run lifecycle closure remains cleanup scope.
+`pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
+Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed.
+Forced refresh resets the role worktree to the implementation branch and cleans untracked files.
+`pi-herd diff` prints bounded stat and changed-file output for the `base_ref...implementation_branch` merge-base range.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -206,6 +210,8 @@ pi-herd lead status --run <run_id|slug|latest>
 pi-herd send reviewer "Review current diff." --run <run_id|slug|latest>
 pi-herd send reviewer -- "--audit the implementation branch"
 pi-herd lead collect --run <run_id|slug|latest>
+pi-herd refresh reviewer --run <run_id|slug|latest>
+pi-herd diff --run <run_id|slug|latest>
 ```
 
 When `--run` is omitted, resolution order is:
@@ -345,6 +351,9 @@ The implementer owns the implementation branch and implementation worktree.
 `--planner-worktree` also creates the planner worktree and branch when the planner role is selected.
 Reviewer and tester role worktree views should be materialized lazily when those roles are activated or refreshed.
 Reviewer and tester worktrees are created from the implementation branch on first activation or refresh.
+`pi-herd refresh reviewer` and `pi-herd refresh tester` also recreate missing stored worktrees when the role branch still exists, or rematerialize a pending role worktree when needed.
+Refresh refuses unexpected paths, non-role branches, dirty paths, committed role-branch changes, and working roles unless forced.
+Forced refresh resets to the implementation branch and cleans untracked files.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
@@ -436,7 +445,9 @@ Herdr `done` was listed in wait help but not observed in the live probe, so pi-h
 A missing pane is a stopped signal only when Herdr clearly reports that the saved pane does not exist.
 A `blocked` activity signal maps to role status `blocked`.
 An `unknown` activity signal never maps to `done`, even when required artifacts are present.
-Required artifacts are valid only when present and non-empty after trimming whitespace.
+Required artifacts are valid only when present, non-empty after trimming whitespace, and fresh relative to the role's latest activity timestamp.
+Stale artifacts are reported separately and do not satisfy worker completion for repeated passes.
+Reviewer and tester materialized worktrees are checked for dirty paths during status evaluation, and dirty artifact-only worktrees produce warnings.
 
 ## Staged activation
 
@@ -487,7 +498,7 @@ pi-herd status
 pi-herd collect
 pi-herd focus <role>
 pi-herd diff
-pi-herd refresh <role>
+pi-herd refresh <reviewer|tester>
 pi-herd merge-plan
 pi-herd cleanup
 ```
@@ -505,6 +516,9 @@ When selected roles require worktrees, it applies the same clean-repository and 
 It validates saved pane ids before delivery, relaunches only when Herdr clearly reports a missing pane, and treats readiness waits after fresh launch as warning-only.
 `lead status`, `lead send`, `lead collect`, and `lead brief` are implemented as bounded lead helpers.
 `status`, `wait`, and top-level `collect` are implemented for Slice 6 observability and artifact-first completion.
+`refresh reviewer`, `refresh tester`, and `diff` are implemented for Slice 7 repeated review and test passes.
+`refresh` accepts `--force`, `--run`, and `--config`.
+`diff` accepts `--run` and `--config`.
 `wait` and `collect` return 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.
@@ -519,7 +533,7 @@ Top-level `collect` now:
 1. Reads current run state.
 2. Reads worker artifacts from the canonical run directory.
 3. Saves recent pane output logs under `logs/` where Herdr can provide them.
-4. Validates expected artifact presence and non-empty content.
+4. Validates expected artifact presence, non-empty content, and freshness relative to role activity.
 5. Persists role verdicts through locked state updates.
 6. Generates `FINAL_SUMMARY.md`.
 7. Prints a concise summary and the generated path.
@@ -564,7 +578,7 @@ It can provide:
 /herd collect
 /herd brief
 /herd focus reviewer
-/herd diff implementer
+/herd diff
 ```
 
 Agent-callable tools should be disabled by default.

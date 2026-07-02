@@ -278,7 +278,7 @@ Implemented notes:
 - `pi-herd wait` polls working or blocked roles, excludes pending and staged roles, and persists resolved role verdicts through locked `updateRunState` synchronous mutators only.
 - Status persistence is guarded so stale observations do not overwrite roles whose `last_activity_at` changed after probing.
 - Activity mapping treats a clear missing pane as `stopped`, treats `blocked` as `blocked`, keeps polling a stored blocked role that reports working again, and never maps `unknown` to `done` even when artifacts are present.
-- Required artifacts are valid only when present and non-empty after trimming.
+- Required artifacts are valid only when present and non-empty after trimming; Slice 7 adds repeated-pass freshness checks.
 - `pi-herd collect` persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with run provenance and bounded artifact excerpts.
 - Top-level `collect` does not mark the run `completed` or `abandoned`; lifecycle closure remains later cleanup work.
 - `pi-herd lead collect` remains a read-only inventory helper and does not write `FINAL_SUMMARY.md`.
