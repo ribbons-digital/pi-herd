@@ -551,6 +551,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
 
 /**
  * Lock, re-read, mutate synchronously, and atomically write run state.
+ * Mutators must not return thenables or await caller-provided work while the state lock is held.
  * Mutators should only change fields owned by their command to avoid reintroducing lost updates.
  */
 type NonThenable<T> = T extends PromiseLike<unknown> ? never : T;

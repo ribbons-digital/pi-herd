@@ -52,7 +52,7 @@ _Avoid_: silently defaulting to the newest run when multiple runs are active
 **Run lifecycle**:
 The state of a run as active, completed, abandoned, or failed.
 Implicit active-run resolution only considers active runs.
-Use `pi-herd run list --all` to inspect old completed, abandoned, or failed runs.
+Use `pi-herd run list --all` from the repository or one of its git worktrees to inspect old completed, abandoned, or failed runs.
 _Avoid_: treating old completed, abandoned, or failed runs as candidates for implicit command targeting
 
 **Worker completion**:

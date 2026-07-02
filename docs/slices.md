@@ -229,20 +229,21 @@ Status: Implemented on the current branch.
 Scope:
 
 - Fail run creation outside a git repository.
+- Require run listing and implicit run resolution to start inside the repository or one of its git worktrees.
 - Fail base-ref inference when neither branch nor commit resolves.
 - Resolve runs through one shared resolver across messaging and lead helpers.
 - Prefer explicit `--run`, then verified current Herdr/Pi pane binding, then single active run.
 - Include run choices in ambiguity errors.
 - Discover canonical run state from role worktrees by using `git rev-parse --git-common-dir`, with the legacy `.worktrees/pi-herd` path parser as fallback.
 - Add `state_revision` as an additive provenance field.
-- Add locked `updateRunState` for read-modify-write state updates and migrate messaging writes to it.
+- Add locked `updateRunState` for synchronous read-modify-write state updates and migrate messaging writes to it.
 - Fix run directory allocation so only `EEXIST` is treated as a slug collision.
 - Add `pi-herd run list [--all] [--json]`.
 
 Implemented notes:
 
 - Creation and start-time single-writer paths still use direct atomic writes.
-- Future Slice 6 status, wait, and collect state writers must use `updateRunState`.
+- Future Slice 6 status, wait, and collect state writers must use `updateRunState` with synchronous mutators only.
 - If the current pane cannot be bound to an active run but exactly one active run exists, commands keep the single-active-run fallback behavior.
 
 Out of scope:

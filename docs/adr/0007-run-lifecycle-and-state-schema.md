@@ -24,10 +24,12 @@ If Enter submission fails after text insertion, pi-herd reports that the pane ma
 When first-send activation materializes reviewer or tester worktrees, pi-herd persists state after materialization, after launch, and after sending so partial activation remains recoverable.
 Slice 5 lead status, brief, and collect helpers read state and artifact inventory without changing run completion state or writing `FINAL_SUMMARY.md`.
 H2 adds shared run resolution for messaging and lead helpers, verified current-pane targeting before the single-active-run fallback, run discovery from role worktrees through git common-directory metadata, and `pi-herd run list [--all] [--json]`.
+Run discovery and run creation now require a git repository or git worktree so the canonical repository root is unambiguous.
 H2 also adds additive `state_revision` provenance and locked read-modify-write updates for messaging state changes.
 Future status, wait, and collect writers should use the same locked update path.
 
 Run state writes use atomic JSON replacement.
-Read-modify-write commands lock, re-read, mutate only owned fields, increment `state_revision`, and then atomically replace the JSON file.
+Read-modify-write commands lock, re-read, mutate only owned fields synchronously, increment `state_revision`, and then atomically replace the JSON file.
+They must not await caller-provided work while the state lock is held.
 Creation and start-time single-writer paths still write atomically without the lock helper.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and avoid symlink path components before state is written.

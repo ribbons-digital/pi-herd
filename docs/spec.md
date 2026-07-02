@@ -171,6 +171,7 @@ Role `launch_metadata` records the harness command, args, cwd, provider, model, 
 State may include additive `state_revision` provenance after locked read-modify-write updates.
 Creation and start-time single-writer paths use atomic JSON replacement.
 Commands that mutate existing run state should use locked read-modify-write updates so concurrent writers do not lose each other's fields.
+Locked update mutators must be synchronous and must not await caller-provided work while the state lock is held.
 Concurrent runs write separate state files.
 `pi-herd run create` creates `REQUEST.md`, `state.json`, `logs/`, and `inbox/`, with pending role records only for the selected roles.
 `pi-herd run create --with-worktrees` also materializes the implementer worktree and records its path, branch, worktree provider, worktree status, and Herdr workspace id when available in `state.json`.
@@ -209,7 +210,8 @@ When `--run` is omitted, resolution order is:
 3. Otherwise fail and ask the user to pass `--run`.
 
 If a verified current pane is not bound to an active run but exactly one active run exists, commands keep the single-active-run fallback.
-Run discovery works from the main checkout and from role worktrees by using git's common directory when available, with the `.worktrees/pi-herd` path shape as a fallback.
+Run discovery must start inside the repository or one of its git worktrees.
+It works from the main checkout and from role worktrees by using git's common directory when available, with the `.worktrees/pi-herd` path shape as a fallback.
 Ambiguity errors include run choices.
 `latest` is available only when the user explicitly passes it.
 
@@ -483,8 +485,10 @@ pi-herd cleanup
 
 `run create` supports early state and worktree creation without panes or worker sessions.
 It must run inside a git repository and fails if base ref inference cannot resolve a branch or commit.
-It accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
+`start` uses the same git repository and base-ref requirements because it creates a run before launching sessions.
+`run create` accepts repeated `--role` flags for selected roles, `--base-ref` for the recorded source ref, `--with-worktrees` for implementer worktree materialization, `--planner-worktree` for eager planner worktree materialization that implies `--with-worktrees`, `--json` for machine-readable state output, and `--config` for a custom config file.
 `run list` lists active runs by default and accepts `--all`, `--json`, and `--config`.
+It must run inside the repository or one of its git worktrees.
 `start` is the user-facing launch command.
 It accepts repeated `--role` flags for selected roles, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 When selected roles require worktrees, it applies the same clean-repository and materialization rules as `run create --with-worktrees`.
