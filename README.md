@@ -80,6 +80,7 @@ Launch metadata and pane/session refs are persisted after each successful step s
 
 `pi-herd send` sends a prompt to a selected role pane using Herdr pane text submission.
 `--run` and `--config` may appear before or after message text while option parsing is active; use `--` before dash-prefixed message text so it is treated literally.
+When `--run` is omitted, send and lead helpers first try a verified current Herdr/Pi pane binding and otherwise use the single active run fallback.
 Before sending to an existing pane, pi-herd validates the saved pane id with Herdr.
 If Herdr clearly reports that the pane is missing, pi-herd relaunches the role session safely before sending; ambiguous validation failures stop without clearing saved pane state.
 When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, waits briefly for idle readiness, then sends the prompt.

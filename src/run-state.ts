@@ -99,7 +99,7 @@ export interface RunState {
   roles: Partial<Record<BuiltInRole, RoleRecord>>;
 }
 
-/** Minimal active-run data used for implicit and explicit run selection. */
+/** Minimal run data used for run listing and active-run selection. */
 export interface ActiveRunSummary {
   run_id: string;
   run_slug: string;

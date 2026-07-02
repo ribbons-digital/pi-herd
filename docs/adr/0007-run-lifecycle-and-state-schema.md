@@ -16,7 +16,7 @@ Raw git fallback is allowed only after Herdr creation exits nonzero or fails to 
 Slice 4 updates the lead binding with verified or newly launched lead pane/session refs, then updates launched role records with pane ids, session refs, and `launch_metadata` as each launch step succeeds.
 When a Herdr-created worktree workspace id is replaced by the role session workspace id, the original value is preserved as `worktree_herdr_workspace_id`.
 If materialization, launch, or kickoff fails, pi-herd persists the latest state, keeps any successful role materializations or launch refs, marks the run `failed`, and excludes it from active-run resolution.
-Slice 5 sends prompts through role pane refs, marks the role `working`, updates `last_activity_at`, and writes state atomically after message delivery.
+Slice 5 sends prompts through role pane refs, marks the role `working`, updates `last_activity_at`, and persists state after message delivery.
 H1 validates saved pane refs with Herdr before prompt delivery.
 If Herdr clearly reports that a saved pane is missing, pi-herd relaunches the role before sending; ambiguous validation failures stop without clearing saved pane or session refs.
 Freshly launched planner, reviewer, and tester prompts wait briefly for Herdr idle readiness, but readiness failures are warning-only and do not change persisted role state.

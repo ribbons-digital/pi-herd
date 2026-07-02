@@ -49,7 +49,7 @@ export function paneCurrent(runner: CommandRunner, cwd: string): Promise<Command
   return runner.run('herdr', ['pane', 'current', '--current'], { cwd, timeoutMs: HERDR_LAUNCH_TIMEOUT_MS });
 }
 
-/** Verify that the current Herdr pane matches an expected pane id. */
+/** Verify that the current Herdr pane matches an expected pane id, returning null when Herdr cannot answer or metadata cannot be parsed. */
 export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
   try {
     const current = await paneCurrent(runner, cwd);
