@@ -262,6 +262,7 @@ Herdr has two different text-sending behaviors:
 Implementation contract:
 
 - Use pane-level send-text plus Enter for worker prompts.
+- If send-text succeeds but Enter submission fails, treat the target pane as potentially containing unsubmitted text because retrying may duplicate the prompt.
 - Keep agent-level send as a lower-level primitive only when literal text insertion is desired.
 - Log the sending method in verbose or debug output because prompt delivery is critical.
 
@@ -315,5 +316,5 @@ If Herdr Pi integration is missing:
 - If Herdr times out or exits successfully without usable matching metadata, Slice 3 should fail clearly rather than attempt git fallback against the same target.
 - Slice 4 uses `herdr agent start` where possible, falls back to `pane split` plus `pane run` for worker sessions when a lead pane exists, and stores pane/session refs plus launch metadata after each successful step.
 - Slice 4 submits the planner kickoff with pane send-text plus Enter.
-- Slice 5 should extend prompt sending beyond planner kickoff to lead commands and role messaging.
+- Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter, and reports partial failure clearly if Enter submission fails after text insertion.
 - Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.

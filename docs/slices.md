@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0, Slice 1, Slice 2, and Slice 3 complete, and Slice 4 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 5 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -169,6 +169,8 @@ Goal: Let the lead steer workers safely.
 
 Deliverable: `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, and `pi-herd lead brief` work with active-run resolution.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Message sending to role panes.
@@ -178,6 +180,16 @@ Scope:
 - Capability mismatch warnings using adapter metadata.
 - Bounded `lead brief` output.
 - Reviewer and tester activation can call the same refresh/materialization path used later by `pi-herd refresh`.
+
+Implemented notes:
+
+- `pi-herd send` resolves active runs, sends prompts through pane send-text plus Enter, and marks the role working without inferring completion.
+- Send parsing allows `--run` and `--config` before or after message text and preserves dash-prefixed literal message text after `--`.
+- If Enter submission fails after text insertion, pi-herd reports the partial-send state because retrying may duplicate the unsubmitted prompt.
+- `pi-herd lead send` reuses send behavior with a verified lead-pane guard.
+- Reviewer and tester first activation materializes a role worktree from the implementation branch, launches the session, persists state after each step, and then sends the prompt.
+- Active-run resolution can use a verified current Herdr/Pi pane binding before falling back to single-active-run resolution.
+- `lead status`, `lead brief`, and `lead collect` are bounded state and artifact inventory helpers, not completion or final summary commands.
 
 Out of scope:
 

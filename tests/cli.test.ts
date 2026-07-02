@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { main } from '../src/cli.js';
+import { main, parseSendArgs } from '../src/cli.js';
 
 describe('cli main', () => {
   afterEach(() => {
@@ -36,5 +36,18 @@ describe('cli main', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('parses send run and config options after the message', () => {
+    const parsed = parseSendArgs(['planner', 'hello', '--run', 'latest', '--config', 'herd.yaml'], 'usage');
+
+    expect(parsed).toMatchObject({ role: 'planner', message: 'hello', run: 'latest', config: 'herd.yaml' });
+  });
+
+  it('treats tokens after the send separator as literal message text', () => {
+    const parsed = parseSendArgs(['planner', '--run', 'latest', '--', '--', '--run', 'literal', '--config', 'text'], 'usage');
+
+    expect(parsed).toMatchObject({ role: 'planner', message: '-- --run literal --config text', run: 'latest' });
+    expect(parsed.config).toBeUndefined();
   });
 });

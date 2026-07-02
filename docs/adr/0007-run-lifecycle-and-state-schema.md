@@ -15,6 +15,10 @@ Raw git fallback is allowed only after Herdr creation exits nonzero or fails to 
 Slice 4 updates the lead binding with verified or newly launched lead pane/session refs, then updates launched role records with pane ids, session refs, and `launch_metadata` as each launch step succeeds.
 When a Herdr-created worktree workspace id is replaced by the role session workspace id, the original value is preserved as `worktree_herdr_workspace_id`.
 If materialization, launch, or kickoff fails, pi-herd persists the latest state, keeps any successful role materializations or launch refs, marks the run `failed`, and excludes it from active-run resolution.
+Slice 5 sends prompts through role pane refs, marks the role `working`, updates `last_activity_at`, and writes state atomically after message delivery.
+If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text so callers know a retry may duplicate it.
+When first-send activation materializes reviewer or tester worktrees, pi-herd persists state after materialization, after launch, and after sending so partial activation remains recoverable.
+Slice 5 lead status, brief, and collect helpers read state and artifact inventory without changing run completion state or writing `FINAL_SUMMARY.md`.
 
 Run state writes are atomic: pi-herd writes a temporary JSON file in the run directory and renames it into place.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and avoid symlink path components before state is written.

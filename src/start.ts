@@ -32,7 +32,8 @@ interface PiCommandSpec {
   metadata: LaunchMetadata;
 }
 
-interface HerdrLaunchResult {
+/** Herdr launch metadata captured for a lead or worker session. */
+export interface HerdrLaunchResult {
   workspaceId: string | null;
   tabId: string | null;
   paneId: string;
@@ -179,7 +180,8 @@ async function bindOrLaunchLead(state: RunState, config: PiHerdConfig, runner: C
   return { ...launched, workspaceId: launched.workspaceId ?? workspace.workspaceId };
 }
 
-async function launchRoleSession(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole; cwd: string }): Promise<HerdrLaunchResult> {
+/** Launch a worker role session inside the bound lead workspace. */
+export async function launchRoleSession(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole; cwd: string }): Promise<HerdrLaunchResult> {
   const leadWorkspace = options.state.lead_binding.herdr_workspace_id;
   if (!leadWorkspace) {
     throw new Error('Lead workspace is missing; cannot launch worker session.');
@@ -229,7 +231,8 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.sessionId, launchMethod: 'herdr-pane-run', metadata: { ...spec.metadata, launch_method: 'herdr-pane-run' } };
 }
 
-function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): void {
+/** Persist launch refs and additive metadata onto a role record. */
+export function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): void {
   if (record.worktree_provider === 'herdr' && record.herdr_workspace_id && !record.worktree_herdr_workspace_id) {
     record.worktree_herdr_workspace_id = record.herdr_workspace_id;
   }
@@ -241,22 +244,17 @@ function applyRoleLaunch(record: RoleRecord, launch: HerdrLaunchResult): void {
   record.launch_metadata = { ...(record.launch_metadata ?? {}), ...(launch.metadata ?? {}), launch_method: launch.launchMethod };
 }
 
-async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
+/** Verify that the current Herdr pane matches an expected pane id. */
+export async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: string): Promise<{ workspaceId: string | null; tabId: string | null } | null> {
   const current = await runner.run('herdr', ['pane', 'current', '--current'], { cwd, timeoutMs: LAUNCH_TIMEOUT_MS });
-  if (current.exitCode === 0) {
-    const metadata = parsePaneMetadata(current.stdout);
-    if (metadata.paneId === paneId) {
-      return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
-    }
+  if (current.exitCode !== 0) {
+    return null;
   }
-  const pane = await runner.run('herdr', ['pane', 'get', paneId], { cwd, timeoutMs: LAUNCH_TIMEOUT_MS });
-  if (pane.exitCode === 0) {
-    const metadata = parsePaneMetadata(pane.stdout);
-    if (metadata.paneId === paneId) {
-      return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
-    }
+  const metadata = parsePaneMetadata(current.stdout);
+  if (metadata.paneId !== paneId) {
+    return null;
   }
-  return null;
+  return { workspaceId: metadata.workspaceId, tabId: metadata.tabId };
 }
 
 async function createLeadWorkspace(runner: CommandRunner, state: RunState): Promise<{ workspaceId: string }> {
@@ -273,15 +271,23 @@ async function createLeadWorkspace(runner: CommandRunner, state: RunState): Prom
 
 async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: RunState): Promise<void> {
   const prompt = `You are the planner for pi-herd run ${state.run_id}.\nGoal: ${state.goal}\nWrite your plan to ${join(state.canonical_run_dir, 'PLAN.md')}.\nDo not edit source files unless explicitly instructed by the lead.`;
-  const text = await runner.run('herdr', ['pane', 'send-text', paneId, prompt], { cwd: state.repo_root, timeoutMs: PROMPT_TIMEOUT_MS });
-  if (text.exitCode !== 0) {
+  try {
+    await sendToPane(runner, state.repo_root, paneId, prompt);
+  } catch (error) {
     state.roles.planner!.status = 'failed';
-    throw new Error(`Could not send planner kickoff text: ${describeFailure(text, 'pane send-text failed')}`);
+    throw error;
   }
-  const enter = await runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd: state.repo_root, timeoutMs: PROMPT_TIMEOUT_MS });
+}
+
+/** Submit text to a Herdr pane using send-text followed by Enter; Enter failure may leave unsubmitted text in the pane. */
+export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<void> {
+  const text = await runner.run('herdr', ['pane', 'send-text', paneId, message], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
+  if (text.exitCode !== 0) {
+    throw new Error(`Could not send pane text: ${describeFailure(text, 'pane send-text failed')}`);
+  }
+  const enter = await runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
   if (enter.exitCode !== 0) {
-    state.roles.planner!.status = 'failed';
-    throw new Error(`Could not submit planner kickoff: ${describeFailure(enter, 'pane send-keys failed')}`);
+    throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, 'pane send-keys failed')}`);
   }
 }
 
