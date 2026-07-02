@@ -243,7 +243,7 @@ Scope:
 Implemented notes:
 
 - Creation and start-time single-writer paths still use direct atomic writes.
-- Future Slice 6 status, wait, and collect state writers must use `updateRunState` with synchronous mutators only.
+- Slice 6 `wait` and `collect` state writers use `updateRunState` with synchronous mutators only.
 - If the current pane cannot be bound to an active run but exactly one active run exists, commands keep the single-active-run fallback behavior.
 
 Out of scope:

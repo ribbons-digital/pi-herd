@@ -167,9 +167,11 @@ Implementation contract:
 - Wait briefly for `idle` before the first prompt sent to a freshly launched worker pane.
 - Treat readiness wait failure as warning-only for prompt delivery, not as worker completion or launch failure.
 - Treat Herdr status values as activity signals.
-- Do not depend on Herdr `done` until Slice 6 verifies when it is emitted.
-- Map Herdr `idle` or a stopped or missing pane/process signal plus valid artifact to pi-herd `done`.
-- Map Herdr `idle` or a stopped or missing pane/process signal plus missing or invalid artifact to pi-herd `incomplete`.
+- Poll Herdr `done`, `blocked`, `idle`, and `working` as activity signals for Slice 6 status evaluation.
+- Map Herdr `idle`, `done`, or a clearly missing saved pane plus valid artifact to pi-herd `done`.
+- Map Herdr `idle`, `done`, or a clearly missing saved pane plus missing or invalid artifact to pi-herd `incomplete`.
+- Map Herdr `blocked` to pi-herd `blocked`.
+- Treat unsupported status waits, ambiguous pane validation failures, and other unclear activity reads as `unknown` signals that never become `done` by themselves.
 
 ### Integration
 
@@ -290,10 +292,12 @@ Implementation contract:
 
 - Raw Herdr status is not pi-herd worker completion.
 - Raw status is an activity signal.
-- The Herdr `done` wait value is listed in help but was not observed in the live probe, so Slice 6 must not rely on it without re-verification.
-- pi-herd completion requires stopped or idle-like activity plus required artifact completion.
+- The Herdr `done` wait value is listed in help but was not observed in the live probe, so it is only one possible activity signal and still requires artifact validation.
+- pi-herd completion requires stopped, done, or idle-like activity plus required artifact completion.
+- A saved pane that Herdr clearly reports as missing can be treated as stopped for completion evaluation.
+- Ambiguous pane validation failures and unsupported status waits should produce an `unknown` signal and should not mark the role `done`.
 - `blocked` should be captured when Herdr reports blocked or when the worker writes an explicit blocker artifact or inbox request.
-- `failed` should be reserved for orchestration errors such as missing pane, failed command, missing worktree, or process launch failure.
+- `failed` should be reserved for orchestration errors such as failed command, missing worktree, or process launch failure.
 
 ## Fallback paths
 
@@ -329,4 +333,4 @@ If Herdr Pi integration is missing:
 - Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter, and reports partial failure clearly if Enter submission fails after text insertion.
 - H1 centralizes Herdr command wrappers, validates saved panes before send, relaunches clearly missing panes, waits briefly for idle readiness before first prompt delivery after fresh launch, and keeps readiness failures warning-only.
 - H2 uses verified current Herdr/Pi pane metadata for run targeting before falling back to single-active-run resolution.
-- Slice 6 completion logic should consume Herdr activity signals but require artifact validation before marking workers done.
+- Slice 6 completion logic consumes Herdr activity signals, requires non-empty required artifacts before marking workers done, keeps `status` read-only, persists `wait` and top-level `collect` role verdicts through locked state updates, and writes `FINAL_SUMMARY.md` from top-level `collect`.

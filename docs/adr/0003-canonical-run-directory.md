@@ -9,4 +9,5 @@ The initial contents are `REQUEST.md`, `state.json`, `logs/`, and `inbox/`.
 Slice 3 may then materialize selected role worktrees outside the canonical run directory and update `state.json` with their paths, branches, provider-derived workspace ids, and materialization status.
 Slice 4 may launch lead, planner, and implementer sessions while still pointing workers at this shared run directory for artifacts.
 The planner kickoff asks for `PLAN.md` in the canonical run directory, not inside a worker worktree.
-Future slices add worker artifacts such as `IMPLEMENTATION_NOTES.md`, `REVIEW.md`, `TEST_REPORT.md`, `FINAL_SUMMARY.md`, and `MERGE_DECISION.md` as their roles run.
+Slice 6 top-level `collect` writes bounded pane logs under `logs/` and generates `FINAL_SUMMARY.md` from role verdicts, artifact excerpts, and provenance.
+Future slices add worker artifacts such as `IMPLEMENTATION_NOTES.md`, `REVIEW.md`, `TEST_REPORT.md`, and `MERGE_DECISION.md` as their roles run.
