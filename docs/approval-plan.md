@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 6 status, wait, and collect plus H1 and H2 hardening complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 7 refresh, diff, and review/test flow plus H1 and H2 hardening complete on the current branch.
 
 ## Review provenance
 
@@ -17,6 +17,7 @@ Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-he
 H1 added a shared Herdr client layer, broader metadata parsing, idle readiness waits before first prompt delivery, warning-only readiness fallback, stale pane validation with safe relaunch, and a pinned multi-line prompt delivery shape.
 H2 added shared run resolution, verified current-pane targeting, run listing, role-worktree run discovery, git-root and base-ref guards, additive `state_revision` provenance, locked state updates for messaging writes, and safer run-directory allocation.
 Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`, including artifact validation, role verdict persistence, bounded pane-log collection, `FINAL_SUMMARY.md` generation, and non-closing collect semantics.
+Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 
 ## Files to approve
 
@@ -63,17 +64,17 @@ Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`,
 - [x] H1: Herdr client and prompt-delivery reliability.
 - [x] H2: Run resolution and state-write safety.
 - [x] Slice 6: Status, wait, and collect.
-- [ ] Slice 7: Refresh, diff, and review/test flow.
+- [x] Slice 7: Refresh, diff, and review/test flow.
 - [ ] Slice 8: Cleanup and merge planning.
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 6
+## After Slice 7
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
-- [ ] Implement Slice 7 refresh, diff, and review/test flow on top of Slice 6 role verdicts.
+- [ ] Implement Slice 8 cleanup and merge planning on top of Slice 7 refresh and diff support.
 
 ## Slice 6 implementation guardrails
 

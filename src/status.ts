@@ -1,10 +1,11 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { describeFailure, paneGet, waitAgentStatus } from './herdr.js';
 import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RoleStatus, type RunState } from './run-state.js';
+import { dirtyPaths } from './refresh.js';
 
 export interface StatusCommandOptions {
   cwd: string;
@@ -56,6 +57,7 @@ export interface ArtifactStatus {
   path: string;
   present: boolean;
   valid: boolean;
+  stale: boolean;
   bytes: number;
   preview?: string;
 }
@@ -158,6 +160,8 @@ async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, 
   for (const record of roleEntries(state)) {
     const artifacts = await artifactStatuses(state, record);
     const signalResult = probeSignals ? await readRoleSignal(runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
+    const dirtyWarnings = await artifactOnlyWorktreeWarnings(runner, record);
+    const roleWarnings = [...signalResult.warnings, ...dirtyWarnings, ...artifacts.filter((artifact) => artifact.stale).map((artifact) => `${artifact.name} is stale for the current pass`)];
     const evaluatedStatus = evaluateRole(record, signalResult.signal, artifacts);
     roles.push({
       role: record.role,
@@ -167,9 +171,9 @@ async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, 
       pane_id: record.herdr_pane_id,
       worktree_status: record.worktree_status,
       artifacts,
-      warnings: signalResult.warnings
+      warnings: roleWarnings
     });
-    warnings.push(...signalResult.warnings.map((warning) => `${record.role}: ${warning}`));
+    warnings.push(...roleWarnings.map((warning) => `${record.role}: ${warning}`));
   }
   return {
     run_id: state.run_id,
@@ -231,13 +235,14 @@ async function artifactStatuses(state: RunState, record: RoleRecord): Promise<Ar
   const statuses: ArtifactStatus[] = [];
   for (const name of record.required_artifacts) {
     const path = join(state.canonical_run_dir, name);
-    const status: ArtifactStatus = { role: record.role, name, path, present: false, valid: false, bytes: 0 };
+    const status: ArtifactStatus = { role: record.role, name, path, present: false, valid: false, stale: false, bytes: 0 };
     try {
-      const raw = await readFile(path);
+      const [raw, fileStat] = await Promise.all([readFile(path), stat(path)]);
       status.present = true;
       status.bytes = raw.byteLength;
       const text = raw.toString('utf8');
-      status.valid = text.trim().length > 0;
+      status.stale = isArtifactStale(fileStat.mtimeMs, record.last_activity_at);
+      status.valid = text.trim().length > 0 && !status.stale;
       status.preview = truncateBytes(text, OUTPUT_BUDGETS.artifactPreviewBytes);
     } catch (error) {
       if (!isNodeErrorWithCode(error, 'ENOENT')) throw error;
@@ -301,7 +306,7 @@ function formatStatusText(snapshot: RunSnapshot): string {
     'Roles:'
   ];
   for (const role of snapshot.roles) {
-    const artifactSummary = role.artifacts.map((artifact) => `${artifact.valid ? 'valid' : artifact.present ? 'invalid' : 'missing'} ${artifact.name}`).join(', ');
+    const artifactSummary = role.artifacts.map((artifact) => `${artifact.valid ? 'valid' : artifact.stale ? 'stale' : artifact.present ? 'invalid' : 'missing'} ${artifact.name}`).join(', ');
     lines.push(`- ${role.role}: stored=${role.stored_status}; evaluated=${role.evaluated_status}; signal=${role.signal}; artifacts=${artifactSummary || 'none'}`);
     for (const warning of role.warnings) {
       lines.push(`  Warning: ${warning}`);
@@ -334,7 +339,7 @@ function formatFinalSummary(snapshot: RunSnapshot): string {
   lines.push('', '## Artifacts');
   for (const role of snapshot.roles) {
     for (const artifact of role.artifacts) {
-      lines.push('', `### ${role.role}/${artifact.name}`, '', `Path: ${artifact.path}`, `Status: ${artifact.valid ? 'valid' : artifact.present ? 'invalid' : 'missing'}`, `Bytes: ${artifact.bytes}`);
+      lines.push('', `### ${role.role}/${artifact.name}`, '', `Path: ${artifact.path}`, `Status: ${artifact.valid ? 'valid' : artifact.stale ? 'stale' : artifact.present ? 'invalid' : 'missing'}`, `Bytes: ${artifact.bytes}`);
       if (artifact.preview) {
         lines.push('', '```text', artifact.preview, '```');
       }
@@ -344,6 +349,32 @@ function formatFinalSummary(snapshot: RunSnapshot): string {
     lines.push('', '## Warnings', ...snapshot.warnings.map((warning) => `- ${warning}`));
   }
   return `${lines.join('\n')}\n`;
+}
+
+async function artifactOnlyWorktreeWarnings(runner: CommandRunner, record: RoleRecord): Promise<string[]> {
+  if ((record.role !== 'reviewer' && record.role !== 'tester') || record.worktree_status !== 'materialized' || !record.worktree_path) {
+    return [];
+  }
+  try {
+    const dirty = await dirtyPaths(runner, record.worktree_path);
+    if (!dirty.length) return [];
+    return [`artifact-only worktree has source changes: ${formatBoundedItems(dirty)}`];
+  } catch (error) {
+    return [`could not check artifact-only worktree cleanliness: ${error instanceof Error ? error.message : String(error)}`];
+  }
+}
+
+function formatBoundedItems(items: string[]): string {
+  const budget = OUTPUT_BUDGETS.terminalSummaryLines;
+  if (items.length <= budget) return items.join(', ');
+  return `${items.slice(0, budget).join(', ')}, ... truncated ${items.length - budget} item(s) ...`;
+}
+
+function isArtifactStale(mtimeMs: number, lastActivityAt: string | null): boolean {
+  if (!lastActivityAt) return false;
+  const lastActivityMs = Date.parse(lastActivityAt);
+  if (Number.isNaN(lastActivityMs)) return false;
+  return mtimeMs < lastActivityMs;
 }
 
 function roleEntries(state: RunState): RoleRecord[] {

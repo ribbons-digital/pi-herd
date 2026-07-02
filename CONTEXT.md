@@ -57,12 +57,12 @@ _Avoid_: treating old completed, abandoned, or failed runs as candidates for imp
 
 **Worker completion**:
 The condition where a worker session is considered done for orchestration purposes.
-A worker is complete only when the harness activity signal says work has stopped and the required artifact exists, with role-specific validation added over time.
+A worker is complete only when the harness activity signal says work has stopped and the required artifact is present, non-empty, and fresh relative to the worker's latest activity.
 `pi-herd status` evaluates this without writing state, while `pi-herd wait` and top-level `pi-herd collect` persist resolved role verdicts.
-_Avoid_: treating idle terminal state alone as done
+_Avoid_: treating idle terminal state or a stale artifact alone as done
 
 **Incomplete worker**:
-A worker session where the harness activity signal says work has stopped but a required artifact is missing or invalid.
+A worker session where the harness activity signal says work has stopped but a required artifact is missing, empty, or stale for the current pass.
 This status tells the lead to inspect or re-prompt the worker instead of collecting it as done.
 _Avoid_: calling this done
 
@@ -138,6 +138,7 @@ An isolated worktree assigned to a role for inspecting, editing, or testing the 
 `pi-herd start` materializes the implementer worktree when the implementer role is selected, and it can also materialize the planner worktree with `--planner-worktree`.
 Reviewer and tester worktrees should be materialized or refreshed from the implementation branch rather than sharing the implementer's worktree.
 The first send to reviewer or tester can activate that role by creating the role worktree, launching the session, waiting briefly for readiness, and sending the prompt.
+`pi-herd refresh reviewer` and `pi-herd refresh tester` refresh artifact-only role worktrees between passes and refuse dirty, committed, or working-role refreshes unless forced with backup protection.
 _Avoid_: multiple workers operating in the same source worktree by default
 
 ## Example dialogue
@@ -195,5 +196,7 @@ Domain expert: pi-herd validates the pane before sending and relaunches only whe
 Ambiguous validation errors stop without clearing saved state.
 Developer: What do the top-level status, wait, and collect commands do now?
 Domain expert: `pi-herd status` evaluates roles without writing state, `pi-herd wait` polls working or blocked roles and persists resolved role verdicts, and `pi-herd collect` persists verdicts, saves bounded pane logs, and writes `FINAL_SUMMARY.md` without closing the run lifecycle.
+Developer: How do repeated reviewer and tester passes get fresh source?
+Domain expert: The lead can run `pi-herd refresh reviewer` or `pi-herd refresh tester` to refresh the artifact-only role worktree from the implementation branch, while stale artifacts stop old `REVIEW.md` or `TEST_REPORT.md` files from counting as completion.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.

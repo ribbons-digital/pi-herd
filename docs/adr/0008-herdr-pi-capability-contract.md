@@ -8,4 +8,5 @@ H1 applies this contract through shared Herdr command wrappers, pane metadata pa
 H2 treats current-pane verification as best-effort run targeting: command failures or unparseable pane metadata behave like an unbound current pane and preserve the single-active-run fallback.
 Slice 6 probes `pane get` before reading activity, treats clear missing-pane failures as stopped, and treats ambiguous pane validation or unsupported status waits as unknown activity.
 Slice 6 checks Herdr `done`, `blocked`, `idle`, and `working` as activity signals, but still requires required artifacts to be present and non-empty before a role can evaluate to `done`.
+Slice 7 additionally treats artifacts older than the role's latest activity timestamp as stale, so repeated passes need fresh `REVIEW.md` or `TEST_REPORT.md` output before completion.
 Current prompt delivery deliberately sends multi-line prompts as one `pane send-text` payload plus Enter until a later live probe justifies a different shape.

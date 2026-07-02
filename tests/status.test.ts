@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -74,6 +74,56 @@ describe('status, wait, and collect commands', () => {
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('done');
     expect(saved.state_revision).toBe(1);
+  });
+
+  it('treats artifacts older than the current pass as stale', async () => {
+    const { state, statePath } = await createWorkingRun('planner-pane');
+    const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
+    await writeFile(artifactPath, 'old plan\n', 'utf8');
+    await utimes(artifactPath, new Date('2026-07-01T11:59:50.000Z'), new Date('2026-07-01T11:59:50.000Z'));
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await waitRun({ cwd: dir, run: state.run_id, timeoutMs: 10, pollIntervalMs: 1, runner, now: NOW });
+
+    expect(result.exitCode).toBe(3);
+    expect(result.text).toContain('stale PLAN.md');
+    expect(result.text).toContain('PLAN.md is stale for the current pass');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('incomplete');
+  });
+
+  it('treats artifacts written within the previous freshness grace as stale', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
+    await writeFile(artifactPath, 'almost current plan\n', 'utf8');
+    await utimes(artifactPath, new Date('2026-07-01T11:59:59.000Z'), new Date('2026-07-01T11:59:59.000Z'));
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('stale PLAN.md');
+    expect(result.text).toContain('PLAN.md is stale for the current pass');
+  });
+
+  it('does not retroactively flip stored done roles when artifacts are stale', async () => {
+    const { state, statePath } = await createWorkingRun('planner-pane');
+    state.roles.planner!.status = 'done';
+    const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
+    await writeFile(artifactPath, 'old plan\n', 'utf8');
+    await utimes(artifactPath, new Date('2026-07-01T11:59:50.000Z'), new Date('2026-07-01T11:59:50.000Z'));
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('planner: stored=done; evaluated=done');
+    expect(result.text).toContain('stale PLAN.md');
   });
 
   it('maps a missing pane to stopped and persists incomplete when artifacts are missing', async () => {
@@ -168,6 +218,40 @@ describe('status, wait, and collect commands', () => {
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('blocked');
     expect(saved.state_revision).toBeUndefined();
+  });
+
+  it('warns when artifact-only role worktrees are dirty', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = join(dir, 'reviewer-worktree');
+    await mkdir(state.roles.reviewer!.worktree_path, { recursive: true });
+    const statePath = join(state.canonical_run_dir, 'state.json');
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'git status --porcelain --untracked-files=all': okText(' M src/file.ts\n')
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('reviewer: artifact-only worktree has source changes:  M src/file.ts');
+  });
+
+  it('bounds dirty artifact-only role warnings by the shared terminal line budget', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    state.roles.reviewer!.worktree_status = 'materialized';
+    state.roles.reviewer!.worktree_path = join(dir, 'reviewer-worktree');
+    await mkdir(state.roles.reviewer!.worktree_path, { recursive: true });
+    const statePath = join(state.canonical_run_dir, 'state.json');
+    await writeJsonAtomic(statePath, state);
+    const dirty = Array.from({ length: 81 }, (_, index) => ` M src/file-${index}.ts`).join('\n');
+    const runner = new RecordingRunner(baseResponses({
+      'git status --porcelain --untracked-files=all': okText(`${dirty}\n`)
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('... truncated 1 item(s) ...');
+    expect(result.text).not.toContain('src/file-80.ts');
   });
 
   it('writes FINAL_SUMMARY.md and pane logs without changing run status', async () => {

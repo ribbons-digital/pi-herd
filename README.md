@@ -16,7 +16,8 @@ Slice 4 Herdr pane and session launch is complete.
 Slice 5 messaging and lead commands are complete.
 H1 Herdr client reliability hardening is complete.
 H2 run-resolution and state-write safety hardening is complete.
-Slice 6 status, wait, and collect is implemented on the current branch.
+Slice 6 status, wait, and collect is complete.
+Slice 7 refresh, diff, and review/test flow is complete.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -46,6 +47,9 @@ pi-herd status
 pi-herd status --json
 pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
 pi-herd collect
+pi-herd refresh reviewer
+pi-herd refresh tester --force
+pi-herd diff
 pi-herd lead status
 pi-herd lead send tester "Run the approved smoke test."
 pi-herd lead collect
@@ -104,6 +108,11 @@ Use `--timeout-ms`, `--poll-interval-ms`, and `--json` to tune wait behavior and
 `wait` and `collect` return exit code 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
 `pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
 It never marks the run itself completed or abandoned.
+`pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
+Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed; forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
+`pi-herd diff` prints a bounded `base_ref...implementation_branch` stat and changed-file summary.
+Repeated-pass artifacts must be fresh relative to the role's latest activity timestamp, so stale `REVIEW.md` or `TEST_REPORT.md` files do not count as complete.
+Generated reviewer and tester prompt templates describe this refresh flow, but `pi-herd init` does not overwrite existing prompt files unless `--force` is passed.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
 `lead collect` prints a read-only artifact and inbox inventory.
 They do not infer worker completion or write `FINAL_SUMMARY.md`; use top-level `pi-herd collect` for final collection.

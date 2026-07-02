@@ -97,7 +97,7 @@ function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltIn
   return roles;
 }
 
-function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
+export function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
   return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runId, role);
 }
 
@@ -122,7 +122,7 @@ async function assertPathAvailable(path: string): Promise<void> {
   throw new Error(`Worktree path already exists: ${path}`);
 }
 
-async function assertNoSymlinkPathComponents(repoRoot: string, worktreePath: string): Promise<void> {
+export async function assertNoSymlinkPathComponents(repoRoot: string, worktreePath: string): Promise<void> {
   const relativeWorktreePath = relative(repoRoot, worktreePath);
   if (!relativeWorktreePath || relativeWorktreePath === '..' || relativeWorktreePath.startsWith(`..${sep}`) || isAbsolute(relativeWorktreePath)) {
     throw new Error('Worktree path must stay within the repository root.');

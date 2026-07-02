@@ -8,6 +8,7 @@ import { createRun, formatRunCreateText, listRunsForInvocation, parseRole, type 
 import { formatStartText, startRun } from './start.js';
 import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
 import { collectRun, statusRun, waitRun } from './status.js';
+import { diffRun, refreshRole } from './refresh.js';
 
 const HELP = `pi-herd
 
@@ -21,6 +22,8 @@ Usage:
   pi-herd status [--json] [--run RUN] [--config PATH]
   pi-herd wait [--timeout-ms MS] [--poll-interval-ms MS] [--json] [--run RUN] [--config PATH]
   pi-herd collect [--json] [--run RUN] [--config PATH]
+  pi-herd refresh <reviewer|tester> [--force] [--run RUN] [--config PATH]
+  pi-herd diff [--run RUN] [--config PATH]
   pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]
   pi-herd --help
 
@@ -33,6 +36,8 @@ Commands:
   status  Evaluate role activity and required artifacts without writing state.
   wait    Wait for working roles to resolve and persist role verdicts.
   collect Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
+  refresh Refresh reviewer/tester worktrees from the implementation branch.
+  diff    Show implementation branch changes against the run base ref.
   lead    Lead-session shortcuts for status, brief, collect, and send.
 `;
 
@@ -204,6 +209,48 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       const result = await collectRun({ cwd, configPath: values.config, run: values.run, json: values.json, runner: nodeCommandRunner });
       process.stdout.write(result.text);
       return result.exitCode;
+    }
+
+    if (command === 'refresh') {
+      const { values, positionals } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          force: { type: 'boolean', default: false },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: true
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd refresh <reviewer|tester> [--force] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      if (positionals.length !== 1) {
+        throw new Error('Usage: pi-herd refresh <reviewer|tester> [--force] [--run RUN] [--config PATH]');
+      }
+      const result = await refreshRole({ cwd, configPath: values.config, run: values.run, role: parseRole(positionals[0]), force: values.force, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return 0;
+    }
+
+    if (command === 'diff') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd diff [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await diffRun({ cwd, configPath: values.config, run: values.run, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return 0;
     }
 
     if (command === 'lead') {
