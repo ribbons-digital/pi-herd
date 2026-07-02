@@ -86,8 +86,9 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
     }
 
     for (const role of ['reviewer', 'tester'] as const) {
-      if (state.roles[role]) {
-        state.roles[role].status = 'staged';
+      const record = state.roles[role];
+      if (record) {
+        record.status = 'staged';
       }
     }
     state.updated_at = new Date().toISOString();
@@ -204,16 +205,16 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
     throw new Error(`Could not launch ${options.role}. Herdr agent start returned unusable metadata.`);
   }
   if (agent.timedOut) {
-    throw new Error(`Could not launch ${options.role}. Herdr agent start timed out.`);
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, 'agent start timed out')}.`);
   }
 
   const parentPaneId = options.state.lead_binding.herdr_pane_id;
   if (!parentPaneId) {
-    throw new Error(`Could not launch ${options.role}. Herdr: ${firstLine(agent.stderr) || firstLine(agent.stdout) || 'agent start failed'}. Pane fallback requires a lead pane.`);
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, 'agent start failed')}. Pane fallback requires a lead pane.`);
   }
   const split = await options.runner.run('herdr', ['pane', 'split', parentPaneId, '--direction', 'down', '--cwd', options.cwd, '--no-focus'], { cwd: options.state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
   if (split.exitCode !== 0) {
-    throw new Error(`Could not launch ${options.role}. Herdr: ${firstLine(agent.stderr) || firstLine(agent.stdout) || 'agent start failed'}. Pane split: ${firstLine(split.stderr) || firstLine(split.stdout) || 'pane split failed'}`);
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, 'agent start failed')}. Pane split: ${describeFailure(split, 'pane split failed')}`);
   }
   const pane = parsePaneMetadata(split.stdout).paneId;
   if (!pane) {
@@ -221,7 +222,7 @@ async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdCo
   }
   const paneRun = await options.runner.run('herdr', ['pane', 'run', pane, spec.command, ...spec.args], { cwd: options.state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
   if (paneRun.exitCode !== 0) {
-    throw new Error(`Could not launch ${options.role}. Pane run: ${firstLine(paneRun.stderr) || firstLine(paneRun.stdout) || 'pane run failed'}`);
+    throw new Error(`Could not launch ${options.role}. Pane run: ${describeFailure(paneRun, 'pane run failed')}`);
   }
   return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.metadata.agent_name ?? pane, launchMethod: 'herdr-pane-run', metadata: { ...spec.metadata, launch_method: 'herdr-pane-run' } };
 }
@@ -259,7 +260,7 @@ async function verifyCurrentPane(runner: CommandRunner, cwd: string, paneId: str
 async function createLeadWorkspace(runner: CommandRunner, state: RunState): Promise<{ workspaceId: string }> {
   const result = await runner.run('herdr', ['workspace', 'create', '--cwd', state.repo_root, '--label', `pi-herd ${state.run_slug} lead`, '--no-focus'], { cwd: state.repo_root, timeoutMs: LAUNCH_TIMEOUT_MS });
   if (result.exitCode !== 0) {
-    throw new Error(`Could not create lead workspace: ${firstLine(result.stderr) || firstLine(result.stdout) || 'herdr workspace create failed'}`);
+    throw new Error(`Could not create lead workspace: ${describeFailure(result, 'herdr workspace create failed')}`);
   }
   const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? stringFromJson(result.stdout, ['workspace_id', 'workspaceId', 'id']) ?? firstToken(result.stdout);
   if (!workspaceId) {
@@ -273,12 +274,12 @@ async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: 
   const text = await runner.run('herdr', ['pane', 'send-text', paneId, prompt], { cwd: state.repo_root, timeoutMs: PROMPT_TIMEOUT_MS });
   if (text.exitCode !== 0) {
     state.roles.planner!.status = 'failed';
-    throw new Error(`Could not send planner kickoff text: ${firstLine(text.stderr) || firstLine(text.stdout) || 'pane send-text failed'}`);
+    throw new Error(`Could not send planner kickoff text: ${describeFailure(text, 'pane send-text failed')}`);
   }
   const enter = await runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd: state.repo_root, timeoutMs: PROMPT_TIMEOUT_MS });
   if (enter.exitCode !== 0) {
     state.roles.planner!.status = 'failed';
-    throw new Error(`Could not submit planner kickoff: ${firstLine(enter.stderr) || firstLine(enter.stdout) || 'pane send-keys failed'}`);
+    throw new Error(`Could not submit planner kickoff: ${describeFailure(enter, 'pane send-keys failed')}`);
   }
 }
 
@@ -376,6 +377,16 @@ function stringFromRecords(records: Record<string, unknown>[], keys: string[]): 
     }
   }
   return null;
+}
+
+function describeFailure(result: CommandResult, fallback: string): string {
+  if (result.error) {
+    return result.error.code ? `${result.error.code}: ${result.error.message}` : result.error.message;
+  }
+  if (result.timedOut) {
+    return `${fallback} timed out`;
+  }
+  return firstLine(result.stderr) || firstLine(result.stdout) || fallback;
 }
 
 function firstLine(value: string): string | undefined {

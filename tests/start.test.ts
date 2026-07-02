@@ -123,6 +123,15 @@ describe('start orchestration', () => {
     expect(runner.calls.some((call) => call.startsWith('git status '))).toBe(false);
   });
 
+  it('reports spawn errors when Herdr workspace creation fails', async () => {
+    const spawnError = Object.assign(new Error('spawn herdr ENOENT'), { code: 'ENOENT' }) as NodeJS.ErrnoException;
+    const runner = new RecordingRunner(baseResponses({
+      'herdr workspace create --cwd DIR --label pi-herd missing-herdr lead --no-focus': { exitCode: null, stdout: '', stderr: '', error: spawnError }
+    }));
+
+    await expect(startRun({ cwd: dir, goal: 'Missing Herdr', now: NOW, roles: ['planner'], runner, env: {} })).rejects.toThrow(/ENOENT: spawn herdr ENOENT/);
+  });
+
   it('creates a lead workspace and session when no current lead is verified', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr workspace create --cwd DIR --label pi-herd shell-start lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
