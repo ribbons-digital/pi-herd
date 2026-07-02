@@ -34,6 +34,9 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args[0] === 'show-ref') {
       return { exitCode: 1, stdout: '', stderr: '' };
     }
+    if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
     throw new Error(`Unexpected command: ${key}`);
   }
 }
@@ -83,6 +86,11 @@ describe('start orchestration', () => {
       env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', HERDR_WORKSPACE_ID: 'lead-ws', HERDR_TAB_ID: 'lead-tab', PI_CODING_AGENT: 'true' }
     });
 
+    const waitIndex = runner.calls.indexOf('herdr wait agent-status planner-pane --status idle --timeout 15000');
+    const sendIndex = runner.calls.findIndex((call) => call.startsWith('herdr pane send-text planner-pane'));
+    expect(waitIndex).toBeGreaterThan(-1);
+    expect(sendIndex).toBeGreaterThan(waitIndex);
+    expect(result.warnings).toEqual([]);
     expect(result.state.lead_binding.herdr_pane_id).toBe('lead-pane');
     expect(result.state.lead_binding.session_ref).toBeNull();
     expect(result.launched.find((launch) => launch.role === 'lead')?.sessionRef).toBeNull();
@@ -129,6 +137,22 @@ describe('start orchestration', () => {
     expect(result.state.roles.planner?.worktree_path).toBeNull();
     expect(result.state.roles.planner?.status).toBe('working');
     expect(runner.calls.some((call) => call.startsWith('git status '))).toBe(false);
+  });
+
+  it('warns and still sends planner kickoff when readiness wait times out', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr workspace create --cwd DIR --label pi-herd slow-planner lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-slow-planner-lead --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-slow-planner-lead --session-id 2026-07-01T12-00-00-slow-planner-lead': okJson({ pane_id: 'new-lead-pane', workspace_id: 'new-lead-ws', tab_id: 'new-lead-tab' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-slow-planner-planner --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-slow-planner-planner --session-id 2026-07-01T12-00-00-slow-planner-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'new-lead-ws', tab_id: 'planner-tab' }),
+      'herdr wait agent-status planner-pane --status idle --timeout 15000': { exitCode: null, stdout: '', stderr: '', timedOut: true },
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-slow-planner.\nGoal: Slow planner\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-slow-planner/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+    }));
+
+    const result = await startRun({ cwd: dir, goal: 'Slow planner', now: NOW, roles: ['planner'], runner, env: {} });
+
+    expect(result.warnings.join('\n')).toContain('planner pane did not report idle');
+    expect(result.state.roles.planner?.status).toBe('working');
   });
 
   it('reports spawn errors when Herdr workspace creation fails', async () => {

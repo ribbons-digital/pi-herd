@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 import { sendMessage, leadStatus, leadCollect, leadBrief } from '../src/messaging.js';
+import { sendToPane } from '../src/start.js';
 import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
 
 let dir: string;
@@ -29,11 +30,27 @@ class RecordingRunner implements CommandRunner {
     const response = this.responses[key.replaceAll(dir, 'DIR')];
     if (response) return response;
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
+    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2] }), stderr: '' };
+    if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 0, stdout: '', stderr: '' };
     throw new Error(`Unexpected command: ${key}`);
   }
 }
 
 describe('messaging commands', () => {
+  it('submits multi-line pane text as one send-text call plus Enter', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text pane-1 line one\nline two': ok(),
+      'herdr pane send-keys pane-1 enter': ok()
+    }));
+
+    await sendToPane(runner, dir, 'pane-1', 'line one\nline two');
+
+    expect(runner.calls).toEqual([
+      'herdr pane send-text pane-1 line one\nline two',
+      'herdr pane send-keys pane-1 enter'
+    ]);
+  });
+
   it('sends to an existing role pane and marks the role working', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({
@@ -44,6 +61,8 @@ describe('messaging commands', () => {
     const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
 
     expect(result.text).toContain('Sent message to planner');
+    expect(runner.calls).toContain('herdr pane get planner-pane');
+    expect(runner.calls.some((call) => call.includes('wait agent-status'))).toBe(false);
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('working');
     expect(saved.roles.planner?.last_activity_at).toBeTruthy();
@@ -204,6 +223,38 @@ describe('messaging commands', () => {
     expect(sendRunner.calls).toContain('git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees :!custom-runs');
   });
 
+  it('relaunches a stale role pane before sending', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'old-pane' });
+    state.roles.planner!.session_ref = `${state.run_id}-planner`;
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get old-pane': { exitCode: 1, stdout: '', stderr: 'missing pane\n' },
+      [`herdr agent start pi-herd-${state.run_id}-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${state.run_id}-planner --session-id ${state.run_id}-planner`]: okJson({ pane_id: 'new-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' }),
+      'herdr wait agent-status new-pane --status idle --timeout 15000': ok(),
+      'herdr pane send-text new-pane Retry after stale': ok(),
+      'herdr pane send-keys new-pane enter': ok()
+    }));
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Retry after stale', runner });
+
+    expect(result.text).toContain('Detected stale pane for planner; relaunching.');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('new-pane');
+    expect(saved.roles.planner?.status).toBe('working');
+  });
+
+  it('does not clear state when pane validation times out', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get planner-pane': { exitCode: null, stdout: '', stderr: '', timedOut: true }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'No mutate', runner })).rejects.toThrow(/Could not validate planner pane/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('planner-pane');
+  });
+
   it('activates reviewer from the implementation branch before first send', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
     const reviewerPath = join(dir, '.worktrees/pi-herd', state.run_id, 'reviewer');
@@ -220,6 +271,7 @@ describe('messaging commands', () => {
     expect(result.text).toContain('Activating reviewer: materializing worktree');
     expect(result.text).toContain('Activating reviewer: launching session');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(runner.calls).toContain('herdr wait agent-status review-pane --status idle --timeout 15000');
     expect(saved.roles.reviewer?.worktree_path).toBe(reviewerPath);
     expect(saved.roles.reviewer?.herdr_pane_id).toBe('review-pane');
     expect(saved.roles.reviewer?.status).toBe('working');

@@ -2,10 +2,9 @@ import { access, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { CommandRunner } from './command-runner.js';
+import { firstLine, parseWorktreeCreateResult, worktreeCreate, HERDR_WORKTREE_CREATE_TIMEOUT_MS } from './herdr.js';
 import { DEFAULT_WORKTREES_DIR, type BuiltInRole } from './defaults.js';
 import type { RunState } from './run-state.js';
-
-const WORKTREE_CREATE_TIMEOUT_MS = 120_000;
 
 /** Options for materializing Slice 3 role worktrees without launching panes or sessions. */
 export interface WorktreeMaterializeOptions {
@@ -178,22 +177,13 @@ async function createWorktreeHerdrFirst(options: {
   path: string;
 }): Promise<MaterializedWorktree> {
   const label = `pi-herd ${options.runSlug} ${options.role}`;
-  const herdr = await options.runner.run('herdr', [
-    'worktree',
-    'create',
-    '--cwd',
-    options.repoRoot,
-    '--branch',
-    options.branch,
-    '--base',
-    options.baseRef,
-    '--path',
-    options.path,
-    '--label',
-    label,
-    '--no-focus',
-    '--json'
-  ], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
+  const herdr = await worktreeCreate(options.runner, options.repoRoot, {
+    repoRoot: options.repoRoot,
+    branch: options.branch,
+    baseRef: options.baseRef,
+    path: options.path,
+    label
+  });
 
   if (herdr.exitCode === 0) {
     const herdrResult = parseHerdrWorktreeResult(herdr.stdout, options);
@@ -206,7 +196,7 @@ async function createWorktreeHerdrFirst(options: {
     throw new Error(`Could not create worktree for ${options.role}. Herdr: herdr worktree create timed out`);
   }
 
-  const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot, timeoutMs: WORKTREE_CREATE_TIMEOUT_MS });
+  const git = await options.runner.run('git', ['worktree', 'add', '-b', options.branch, options.path, options.baseRef], { cwd: options.repoRoot, timeoutMs: HERDR_WORKTREE_CREATE_TIMEOUT_MS });
   if (git.exitCode !== 0) {
     const herdrDetail = firstLine(herdr.stderr) || firstLine(herdr.stdout) || herdr.error?.message || 'herdr worktree create failed';
     const gitDetail = firstLine(git.stderr) || firstLine(git.stdout) || git.error?.message || 'git worktree add failed';
@@ -226,78 +216,12 @@ function parseHerdrWorktreeResult(stdout: string, options: {
   branch: string;
   path: string;
 }): MaterializedWorktree | null {
-  const value = parseJsonRecord(stdout);
-  for (const container of herdrMetadataContainers(value)) {
-    const workspaceId = stringFromRecords([container, childRecord(container, 'workspace'), childRecord(container, 'worktree')], ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);
-    const path = stringFromRecords([container, childRecord(container, 'worktree'), childRecord(container, 'checkout')], ['path', 'checkout_path', 'worktree_path']);
-    const branch = stringFromRecords([container, childRecord(container, 'worktree'), childRecord(container, 'checkout')], ['branch', 'branch_name']);
-    if (workspaceId && path && branch === options.branch && isAbsolute(path) && resolve(path) === resolve(options.path)) {
-      return {
-        role: options.role,
-        branch: options.branch,
-        path: options.path,
-        provider: 'herdr',
-        herdr_workspace_id: workspaceId
-      };
-    }
-  }
-  return null;
+  return parseWorktreeCreateResult(stdout, {
+    role: options.role,
+    branch: options.branch,
+    path: options.path,
+    isAbsolutePath: isAbsolute,
+    normalizePath: resolve
+  });
 }
 
-function parseJsonRecord(stdout: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(stdout) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    return Object.create(null) as Record<string, unknown>;
-  }
-  return Object.create(null) as Record<string, unknown>;
-}
-
-function herdrMetadataContainers(value: Record<string, unknown>): Record<string, unknown>[] {
-  const containers: Record<string, unknown>[] = [];
-  const queue = [value];
-  while (queue.length > 0) {
-    const container = queue.shift();
-    if (!container) {
-      continue;
-    }
-    containers.push(container);
-    for (const key of ['result', 'data']) {
-      const child = childRecord(container, key);
-      if (child) {
-        queue.push(child);
-      }
-    }
-  }
-  return containers;
-}
-
-function childRecord(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  const child = value[key];
-  if (child && typeof child === 'object' && !Array.isArray(child)) {
-    return child as Record<string, unknown>;
-  }
-  return null;
-}
-
-function stringFromRecords(records: Array<Record<string, unknown> | null>, keys: string[]): string | null {
-  for (const record of records) {
-    if (!record) {
-      continue;
-    }
-    for (const key of keys) {
-      const item = record[key];
-      if (typeof item === 'string' && item.length > 0) {
-        return item;
-      }
-    }
-  }
-  return null;
-}
-
-function firstLine(value: string): string | undefined {
-  return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-}
