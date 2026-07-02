@@ -12,7 +12,9 @@ Role records start as `pending` with `worktree_path: null`, `worktree_status: pe
 Slice 3 updates selected role records to `worktree_status: materialized` with `worktree_path` and `worktree_provider` when `--with-worktrees` or `--planner-worktree` materializes them.
 `herdr_workspace_id` is recorded only when Herdr-managed materialization succeeds; raw `git worktree add` fallback records `worktree_provider: git` and leaves `herdr_workspace_id: null`.
 Raw git fallback is allowed only after Herdr creation exits nonzero or fails to spawn; Herdr timeouts and successful Herdr creation with unusable, missing, or mismatched metadata fail clearly instead of attempting fallback against the same target.
-If materialization fails, pi-herd persists the latest state, keeps any successful role materializations, marks the run `failed`, and excludes it from active-run resolution.
+Slice 4 updates the lead binding with verified or newly launched lead pane/session refs, then updates launched role records with pane ids, session refs, and `launch_metadata` as each launch step succeeds.
+When a Herdr-created worktree workspace id is replaced by the role session workspace id, the original value is preserved as `worktree_herdr_workspace_id`.
+If materialization, launch, or kickoff fails, pi-herd persists the latest state, keeps any successful role materializations or launch refs, marks the run `failed`, and excludes it from active-run resolution.
 
 Run state writes are atomic: pi-herd writes a temporary JSON file in the run directory and renames it into place.
 Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and avoid symlink path components before state is written.

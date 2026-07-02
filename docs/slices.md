@@ -132,7 +132,7 @@ Out of scope:
 
 Goal: Create visible Herdr panes and launch harness sessions.
 
-Deliverable: `pi-herd start` creates or binds lead, opens worker panes, launches Pi sessions, and activates only planner by default.
+Deliverable: `pi-herd start` creates or binds lead, opens planner and implementer panes when selected, launches Pi sessions for those roles, and activates only planner by default.
 
 Status: Implemented on the current branch.
 
@@ -142,7 +142,7 @@ Scope:
 - Pi harness adapter.
 - Lead binding from verified context source.
 - Lead pane creation when no current lead is detectable.
-- Worker panes and staged workers.
+- Planner and implementer panes, plus staged reviewer and tester slots.
 - Reviewer and tester can be staged with `worktree: pending`.
 - Planner kickoff prompt.
 - State persistence for pane/session refs.

@@ -7,14 +7,17 @@ import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
 const LAUNCH_TIMEOUT_MS = 30_000;
 const PROMPT_TIMEOUT_MS = 10_000;
 
+/** Options for creating a run and launching its initial visible Herdr/Pi sessions. */
 export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
   env?: NodeJS.ProcessEnv;
 }
 
+/** Result for `pi-herd start`, including persisted run state and launched session refs. */
 export interface StartResult extends RunCreateResult {
   launched: LaunchRef[];
 }
 
+/** A visible launch reference persisted or reported after a successful launch step. */
 export interface LaunchRef {
   role: 'lead' | BuiltInRole;
   paneId: string | null;
@@ -37,6 +40,7 @@ interface HerdrLaunchResult {
   metadata?: LaunchMetadata;
 }
 
+/** Create run artifacts, bind or create lead, launch planner, and stage selected workers. */
 export async function startRun(options: StartOptions): Promise<StartResult> {
   const runner = options.runner ?? nodeCommandRunner;
   const result = await createRun({ ...options, withWorktrees: startRequiresWorktrees(options), runner });
@@ -102,6 +106,7 @@ function startRequiresWorktrees(options: StartOptions): boolean {
   return selectedRoles.includes('implementer') || Boolean(options.plannerWorktree && selectedRoles.includes('planner'));
 }
 
+/** Format the human-readable result for `pi-herd start`. */
 export function formatStartText(result: StartResult): string {
   const lines = [
     `Started run ${result.state.run_id}`,
@@ -115,6 +120,7 @@ export function formatStartText(result: StartResult): string {
   return `${lines.join('\n')}\n`;
 }
 
+/** Build the Pi command and launch metadata for a lead or worker role. */
 export function buildPiCommand(config: PiHerdConfig, role: 'lead' | BuiltInRole, state: RunState): PiCommandSpec {
   const profile = config.harness.profiles[config.harness.default];
   if (!profile) {

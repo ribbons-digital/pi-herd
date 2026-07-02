@@ -116,7 +116,8 @@ _Avoid_: treating reviewer or tester branches as merge targets
 
 **Role worktree view**:
 An isolated worktree assigned to a role for inspecting, editing, or testing the run's source state.
-Slice 3 materializes the implementer worktree when `pi-herd run create --with-worktrees` is passed and can also materialize the planner worktree with `--planner-worktree`.
+`pi-herd run create --with-worktrees` materializes the implementer worktree and can also materialize the planner worktree with `--planner-worktree`.
+`pi-herd start` materializes the implementer worktree when the implementer role is selected, and it can also materialize the planner worktree with `--planner-worktree`.
 Reviewer and tester worktrees should be refreshed from the implementation branch rather than sharing the implementer's worktree.
 _Avoid_: multiple workers operating in the same source worktree by default
 
@@ -166,3 +167,5 @@ Domain expert: No.
 They should get isolated role worktree views refreshed from the implementation branch.
 Developer: What does Slice 3 create when I pass `--with-worktrees`?
 Domain expert: It creates the implementer worktree, optionally creates the planner worktree with `--planner-worktree`, and keeps reviewer and tester worktrees pending.
+Developer: What does `pi-herd start` launch now?
+Domain expert: It binds the current verified Pi/Herdr pane as lead or creates a lead workspace and session, launches the planner with a kickoff prompt, launches the implementer as staged when selected, and leaves reviewer and tester as staged slots without sessions.

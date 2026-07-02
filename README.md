@@ -12,7 +12,7 @@ Slice 0 capability discovery is complete.
 Slice 1 CLI foundation is complete.
 Slice 2 run state and artifact model is complete.
 Slice 3 worktree orchestration is complete.
-Slice 4 Herdr pane and session launch is in progress.
+Slice 4 Herdr pane and session launch is complete.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -54,10 +54,12 @@ Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in tex
 If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
 It does not create panes or worker sessions.
 
-`pi-herd start` creates the run artifacts, checks that the repository is clean outside ignored pi-herd paths before materializing worktrees, materializes the implementer worktree when selected, binds the current Pi/Herdr pane as lead when verified, or creates a lead session when needed.
+`pi-herd start` creates the run artifacts, checks that the repository is clean outside ignored pi-herd paths before materializing worktrees, materializes the implementer worktree when selected, binds the current Pi/Herdr pane as lead when verified, or creates a lead workspace and session when needed.
+It accepts repeated `--role` flags, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 It launches and activates the planner with an initial kickoff prompt.
-It launches the implementer as a staged session in the implementation worktree.
+It launches the implementer as a staged session in the implementation worktree when the implementer role is selected.
 Reviewer and tester remain staged slots with pending worktrees until later activation slices.
+Launch metadata and pane/session refs are persisted after each successful step so partial launch failures leave recoverable state.
 
 ## Local development
 

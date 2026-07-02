@@ -66,6 +66,7 @@ export interface RoleRecord {
   last_activity_at: string | null;
 }
 
+/** Additive session launch details persisted after Herdr/Pi launch steps succeed. */
 export interface LaunchMetadata {
   agent_name?: string;
   command?: string;
