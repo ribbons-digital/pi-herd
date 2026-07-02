@@ -553,12 +553,19 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
  * Lock, re-read, mutate synchronously, and atomically write run state.
  * Mutators should only change fields owned by their command to avoid reintroducing lost updates.
  */
-export async function updateRunState(path: string, mutate: (state: RunState) => void): Promise<RunState> {
+type NonThenable<T> = T extends PromiseLike<unknown> ? never : T;
+
+type RunStateMutator<T> = (state: RunState) => NonThenable<T>;
+
+export async function updateRunState<T>(path: string, mutate: RunStateMutator<T>): Promise<RunState> {
   const lockDir = join(dirname(path), '.state.lock');
   const lock = await acquireStateLock(lockDir);
   try {
     const state = await readRunState(path);
-    mutate(state);
+    const mutationResult = mutate(state);
+    if (isThenable(mutationResult)) {
+      throw new Error('Run state mutators must be synchronous');
+    }
     await assertStateLockOwned(lock);
     state.updated_at = new Date().toISOString();
     state.state_revision = (state.state_revision ?? 0) + 1;
@@ -567,6 +574,10 @@ export async function updateRunState(path: string, mutate: (state: RunState) => 
   } finally {
     await releaseStateLock(lock);
   }
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (typeof value === 'object' || typeof value === 'function') && value !== null && typeof (value as { then?: unknown }).then === 'function';
 }
 
 async function writeJsonAtomicWithStateLock(path: string, value: unknown, lock: StateLock): Promise<void> {

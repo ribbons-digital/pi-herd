@@ -11,6 +11,11 @@ const execFileAsync = promisify(execFile);
 
 let dir: string;
 
+function assertUpdateRunStateRejectsAsyncMutatorType() {
+  // @ts-expect-error updateRunState mutators must be synchronous
+  void updateRunState('state.json', async () => {});
+}
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'pi-herd-run-'));
   await execFileAsync('git', ['init', '-b', 'main'], { cwd: dir });
@@ -167,6 +172,20 @@ describe('run state', () => {
     expect(saved.roles.planner?.status).toBe('pending');
     expect(saved.state_revision).toBeUndefined();
     await expect(readFile(join(lockDir, 'owner.json'), 'utf8')).resolves.toContain('fresh-token');
+  });
+
+  it('rejects thenable state mutators before writing state', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Async state mutator' });
+    const asyncMutator = (async (state: RunState) => {
+      state.roles.planner!.status = 'working';
+    }) as unknown as (state: RunState) => void;
+
+    await expect(updateRunState(result.statePath, asyncMutator)).rejects.toThrow(/mutators must be synchronous/);
+
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('pending');
+    expect(saved.state_revision).toBeUndefined();
+    await expect(readFile(join(result.state.canonical_run_dir, '.state.lock', 'owner.json'), 'utf8')).rejects.toThrow();
   });
 
   it('fails implicit active-run resolution when multiple active runs exist', async () => {
