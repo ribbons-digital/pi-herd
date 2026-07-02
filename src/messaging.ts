@@ -250,15 +250,22 @@ function invocationRunSearchCwds(cwd: string): string[] {
 function inferCanonicalRootFromWorktree(cwd: string): string | null {
   const absolute = resolve(cwd);
   const parts = absolute.split(sep);
-  const markerIndex = parts.lastIndexOf(DEFAULT_WORKTREES_DIR);
-  if (markerIndex <= 0) {
-    return null;
+  const markerParts = DEFAULT_WORKTREES_DIR.split(/[\\/]+/).filter(Boolean);
+  for (let markerIndex = parts.length - markerParts.length; markerIndex > 0; markerIndex -= 1) {
+    if (!markerParts.every((part, offset) => parts[markerIndex + offset] === part)) {
+      continue;
+    }
+    const piHerdIndex = markerIndex + markerParts.length;
+    if (parts[piHerdIndex] !== 'pi-herd' || parts.length < piHerdIndex + 3) {
+      continue;
+    }
+    const root = parts.slice(0, markerIndex).join(sep) || sep;
+    if (!root || root === absolute || !isAbsolute(root)) {
+      return null;
+    }
+    return root;
   }
-  const root = parts.slice(0, markerIndex).join(sep) || sep;
-  if (!root || root === absolute || !isAbsolute(root)) {
-    return null;
-  }
-  return root;
+  return null;
 }
 
 function roleEntries(state: RunState): RoleRecord[] {

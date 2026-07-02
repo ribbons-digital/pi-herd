@@ -23,11 +23,11 @@ class RecordingRunner implements CommandRunner {
   async run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
-    const response = this.responses[key.replaceAll(dir, 'DIR')];
-    if (response) return response;
     if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel' && options?.cwd?.includes(`${dir}/.worktrees/`)) {
       return { exitCode: 0, stdout: `${options.cwd}\n`, stderr: '' };
     }
+    const response = this.responses[key.replaceAll(dir, 'DIR')];
+    if (response) return response;
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
     throw new Error(`Unexpected command: ${key}`);
   }
