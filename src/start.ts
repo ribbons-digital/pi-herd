@@ -35,7 +35,7 @@ interface HerdrLaunchResult {
   workspaceId: string | null;
   tabId: string | null;
   paneId: string;
-  sessionRef: string;
+  sessionRef: string | null;
   launchMethod: 'herdr-agent-start' | 'herdr-pane-run' | 'bound-current-pane';
   metadata?: LaunchMetadata;
 }
@@ -165,7 +165,7 @@ async function bindOrLaunchLead(state: RunState, config: PiHerdConfig, runner: C
         workspaceId: verified.workspaceId ?? env.HERDR_WORKSPACE_ID ?? null,
         tabId: verified.tabId ?? env.HERDR_TAB_ID ?? null,
         paneId: env.HERDR_PANE_ID,
-        sessionRef: `${state.run_id}-lead`,
+        sessionRef: null,
         launchMethod: 'bound-current-pane',
         metadata: { launch_method: 'bound-current-pane', expected_writes: 'none' }
       };

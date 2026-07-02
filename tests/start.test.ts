@@ -84,6 +84,8 @@ describe('start orchestration', () => {
     });
 
     expect(result.state.lead_binding.herdr_pane_id).toBe('lead-pane');
+    expect(result.state.lead_binding.session_ref).toBeNull();
+    expect(result.launched.find((launch) => launch.role === 'lead')?.sessionRef).toBeNull();
     expect(result.state.roles.planner?.status).toBe('working');
     expect(result.state.roles.planner?.herdr_pane_id).toBe('planner-pane');
     expect(result.state.roles.implementer?.status).toBe('staged');
@@ -98,6 +100,7 @@ describe('start orchestration', () => {
     expect(runner.calls.some((call) => call.includes('reviewer'))).toBe(false);
 
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.lead_binding.session_ref).toBeNull();
     expect(saved.roles.planner?.launch_metadata?.launch_method).toBe('herdr-agent-start');
     expect(saved.roles.planner?.launch_metadata?.prompt_method).toBe('pane-send-text-enter');
   });
