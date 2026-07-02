@@ -17,7 +17,7 @@ Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-he
 H1 added a shared Herdr client layer, broader metadata parsing, idle readiness waits before first prompt delivery, warning-only readiness fallback, stale pane validation with safe relaunch, and a pinned multi-line prompt delivery shape.
 H2 added shared run resolution, verified current-pane targeting, run listing, role-worktree run discovery, git-root and base-ref guards, additive `state_revision` provenance, locked state updates for messaging writes, and safer run-directory allocation.
 Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`, including artifact validation, role verdict persistence, bounded pane-log collection, `FINAL_SUMMARY.md` generation, and non-closing collect semantics.
-Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
+Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 
 ## Files to approve
 

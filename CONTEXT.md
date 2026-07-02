@@ -57,7 +57,7 @@ _Avoid_: treating old completed, abandoned, or failed runs as candidates for imp
 
 **Worker completion**:
 The condition where a worker session is considered done for orchestration purposes.
-A worker is complete only when the harness activity signal says work has stopped and the required artifact exists, is non-empty, and is fresh relative to the worker's latest activity.
+A worker is complete only when the harness activity signal says work has stopped and the required artifact is present, non-empty, and fresh relative to the worker's latest activity.
 `pi-herd status` evaluates this without writing state, while `pi-herd wait` and top-level `pi-herd collect` persist resolved role verdicts.
 _Avoid_: treating idle terminal state or a stale artifact alone as done
 
@@ -138,7 +138,7 @@ An isolated worktree assigned to a role for inspecting, editing, or testing the 
 `pi-herd start` materializes the implementer worktree when the implementer role is selected, and it can also materialize the planner worktree with `--planner-worktree`.
 Reviewer and tester worktrees should be materialized or refreshed from the implementation branch rather than sharing the implementer's worktree.
 The first send to reviewer or tester can activate that role by creating the role worktree, launching the session, waiting briefly for readiness, and sending the prompt.
-`pi-herd refresh reviewer` and `pi-herd refresh tester` refresh artifact-only role worktrees between passes and refuse dirty, committed, or working-role refreshes unless forced.
+`pi-herd refresh reviewer` and `pi-herd refresh tester` refresh artifact-only role worktrees between passes and refuse dirty, committed, or working-role refreshes unless forced with backup protection.
 _Avoid_: multiple workers operating in the same source worktree by default
 
 ## Example dialogue

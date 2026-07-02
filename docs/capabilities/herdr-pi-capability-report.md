@@ -293,7 +293,7 @@ Implementation contract:
 - Raw Herdr status is not pi-herd worker completion.
 - Raw status is an activity signal.
 - The Herdr `done` wait value is listed in help but was not observed in the live probe, so it is only one possible activity signal and still requires artifact validation.
-- pi-herd completion requires stopped, done, or idle-like activity plus required artifact completion.
+- pi-herd completion requires stopped, done, or idle-like activity plus fresh required artifact completion.
 - A saved pane that Herdr clearly reports as missing can be treated as stopped for completion evaluation.
 - Ambiguous pane validation failures and unsupported status waits should produce an `unknown` signal and should not mark the role `done`.
 - `blocked` should be captured when Herdr reports blocked or when the worker writes an explicit blocker artifact or inbox request.
@@ -333,5 +333,5 @@ If Herdr Pi integration is missing:
 - Slice 5 extends prompt sending beyond planner kickoff to lead commands and role messaging with pane send-text plus Enter, and reports partial failure clearly if Enter submission fails after text insertion.
 - H1 centralizes Herdr command wrappers, validates saved panes before send, relaunches clearly missing panes, waits briefly for idle readiness before first prompt delivery after fresh launch, and keeps readiness failures warning-only.
 - H2 uses verified current Herdr/Pi pane metadata for run targeting before falling back to single-active-run resolution.
-- Slice 6 completion logic consumes Herdr activity signals, requires non-empty required artifacts before marking workers done, keeps `status` read-only, persists `wait` and top-level `collect` role verdicts through locked state updates, and writes `FINAL_SUMMARY.md` from top-level `collect`.
-- Slice 7 repeated-pass logic treats artifacts older than role activity as stale, warns when reviewer or tester worktrees contain source changes, refreshes reviewer and tester worktrees from the implementation branch, and reports implementation diffs with a bounded merge-base range.
+- Slice 6 completion logic consumes Herdr activity signals, requires non-empty required artifacts before marking workers done, keeps `status` read-only, persists `wait` and top-level `collect` role verdicts through locked state updates, and writes `FINAL_SUMMARY.md` from top-level `collect`; Slice 7 adds freshness checks.
+- Slice 7 repeated-pass logic treats artifacts older than role activity as stale, warns when reviewer or tester worktrees contain source changes, refreshes reviewer and tester worktrees from the implementation branch with forced-refresh backup refs and dirty stashes, and reports implementation diffs with a bounded merge-base range.

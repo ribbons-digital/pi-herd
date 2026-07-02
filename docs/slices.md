@@ -311,7 +311,7 @@ Implemented notes:
 
 - `pi-herd refresh <reviewer|tester>` materializes pending role worktrees or refreshes existing worktrees from the implementation branch.
 - Dirty worktrees are refused with bounded dirty-path output unless `--force` is passed.
-- Forced refresh resets to the implementation branch and cleans untracked files.
+- Forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
 - `pi-herd diff` prints bounded `git diff --stat` and `git diff --name-status` output for `base_ref...implementation_branch`.
 - `status`, `wait`, and `collect` treat stale required artifacts as invalid for active passes and warn when artifact-only role worktrees are dirty.
 - Generated reviewer and tester prompt templates explain repeated-pass refresh expectations.

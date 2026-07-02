@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, and Slice 6 status/wait/collect implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, and Slice 7 refresh/diff flow implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -196,7 +196,7 @@ If a stored blocked role reports working again, `wait` keeps polling rather than
 Top-level `collect` does not mark the run `completed` or `abandoned`; run lifecycle closure remains cleanup scope.
 `pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
 Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed.
-Forced refresh resets the role worktree to the implementation branch and cleans untracked files.
+Forced refresh saves a backup ref, stashes dirty work when needed, resets the role worktree to the implementation branch, and cleans untracked files.
 `pi-herd diff` prints bounded stat and changed-file output for the `base_ref...implementation_branch` merge-base range.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
@@ -352,8 +352,8 @@ The implementer owns the implementation branch and implementation worktree.
 Reviewer and tester role worktree views should be materialized lazily when those roles are activated or refreshed.
 Reviewer and tester worktrees are created from the implementation branch on first activation or refresh.
 `pi-herd refresh reviewer` and `pi-herd refresh tester` also recreate missing stored worktrees when the role branch still exists, or rematerialize a pending role worktree when needed.
-Refresh refuses unexpected paths, non-role branches, dirty paths, committed role-branch changes, and working roles unless forced.
-Forced refresh resets to the implementation branch and cleans untracked files.
+Refresh refuses unexpected paths, non-role branches, other repositories, dirty paths, committed role-branch changes, and working roles unless forced.
+Forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
 Reviewer and tester branches are not default merge targets.
 
 Preferred worktree creation uses Herdr worktree commands.
@@ -427,8 +427,8 @@ The lead owns decisions about inbox items.
 ## Worker completion
 
 Harness idle or stopped state is an input signal, not an orchestration status.
-A worker is complete only when the session is no longer actively working and the required artifact exists.
-Role-specific artifact validation should be added over time.
+A worker is complete only when the session is no longer actively working and the required artifact is present, non-empty, and fresh relative to the worker's latest activity.
+Role-specific artifact validation can still be added over time.
 
 Statuses:
 

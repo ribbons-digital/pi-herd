@@ -17,7 +17,7 @@ Slice 5 messaging and lead commands are complete.
 H1 Herdr client reliability hardening is complete.
 H2 run-resolution and state-write safety hardening is complete.
 Slice 6 status, wait, and collect is complete.
-Slice 7 refresh, diff, and review/test flow is implemented on the current branch.
+Slice 7 refresh, diff, and review/test flow is complete.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -109,7 +109,7 @@ Use `--timeout-ms`, `--poll-interval-ms`, and `--json` to tune wait behavior and
 `pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
 It never marks the run itself completed or abandoned.
 `pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
-Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed; forced refresh resets to the implementation branch and cleans untracked files.
+Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed; forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
 `pi-herd diff` prints a bounded `base_ref...implementation_branch` stat and changed-file summary.
 Repeated-pass artifacts must be fresh relative to the role's latest activity timestamp, so stale `REVIEW.md` or `TEST_REPORT.md` files do not count as complete.
 Generated reviewer and tester prompt templates describe this refresh flow, but `pi-herd init` does not overwrite existing prompt files unless `--force` is passed.
