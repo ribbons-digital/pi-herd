@@ -6,4 +6,7 @@ coverage/
 .env.*
 !.env.example
 /.pi-herd/runs/
+/.pi-subagents/
 /.worktrees/
+.memory-lane/
+.memory-lane-scope

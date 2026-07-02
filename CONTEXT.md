@@ -58,12 +58,23 @@ _Avoid_: treating old completed, abandoned, or failed runs as candidates for imp
 **Worker completion**:
 The condition where a worker session is considered done for orchestration purposes.
 A worker is complete only when the harness activity signal says work has stopped and the required artifact exists, with role-specific validation added over time.
+`pi-herd status` evaluates this without writing state, while `pi-herd wait` and top-level `pi-herd collect` persist resolved role verdicts.
 _Avoid_: treating idle terminal state alone as done
 
 **Incomplete worker**:
 A worker session where the harness activity signal says work has stopped but a required artifact is missing or invalid.
 This status tells the lead to inspect or re-prompt the worker instead of collecting it as done.
 _Avoid_: calling this done
+
+**Blocked worker**:
+A worker session whose activity signal says it is blocked or whose persisted role status remains blocked until it reports progress or is re-prompted.
+`pi-herd wait` keeps polling a stored blocked role that reports working again rather than collecting the stale blocked state as final.
+_Avoid_: treating a stale blocked status as completion
+
+**Final summary**:
+The generated run-level summary at `FINAL_SUMMARY.md` in the canonical run directory.
+Top-level `pi-herd collect` writes this file from role verdicts, artifacts, pane-log collection results, and provenance, but `pi-herd lead collect` remains a read-only inventory helper.
+_Avoid_: expecting `lead collect` to close a run or write the final summary
 
 **Staged worker**:
 A worker session slot whose pane may exist but whose task prompt has not been activated yet.
@@ -182,5 +193,7 @@ Domain expert: It materializes that role worktree from the implementation branch
 Developer: What if a saved worker pane has disappeared?
 Domain expert: pi-herd validates the pane before sending and relaunches only when Herdr clearly reports the pane is missing.
 Ambiguous validation errors stop without clearing saved state.
+Developer: What do the top-level status, wait, and collect commands do now?
+Domain expert: `pi-herd status` evaluates roles without writing state, `pi-herd wait` polls working or blocked roles and persists resolved role verdicts, and `pi-herd collect` persists verdicts, saves bounded pane logs, and writes `FINAL_SUMMARY.md` without closing the run lifecycle.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.

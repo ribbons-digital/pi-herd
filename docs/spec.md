@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, and H2 run-resolution and state-write safety hardening implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, and Slice 6 status/wait/collect implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -189,6 +189,11 @@ When Herdr clearly reports that a saved role pane is missing, pi-herd relaunches
 The first send to a reviewer or tester can materialize that role worktree from the implementation branch, launch the role session, wait briefly for idle readiness, persist state after each successful step, and then send the prompt.
 When readiness cannot be confirmed after first-send activation, pi-herd records a warning and sends anyway.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` read state and artifact inventory without changing completion state or writing `FINAL_SUMMARY.md`.
+`pi-herd status` evaluates role activity and required artifacts without writing state.
+`pi-herd wait` polls working or blocked roles until they resolve to `done`, `incomplete`, or `blocked`, then persists role verdicts through locked `updateRunState` synchronous mutators only.
+If a stored blocked role reports working again, `wait` keeps polling rather than treating the stale blocked state as resolved.
+`pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
+Top-level `collect` does not mark the run `completed` or `abandoned`; run lifecycle closure remains cleanup scope.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
 
 ## Run resolution
@@ -428,6 +433,10 @@ Statuses:
 
 Slice 0 verified that Herdr agent status, pane process state, Pi integration metadata, and wait events are activity signals, not completion by themselves.
 Herdr `done` was listed in wait help but not observed in the live probe, so pi-herd must continue to require stopped or idle-like activity plus required artifact validation before marking a worker `done`.
+A missing pane is a stopped signal only when Herdr clearly reports that the saved pane does not exist.
+A `blocked` activity signal maps to role status `blocked`.
+An `unknown` activity signal never maps to `done`, even when required artifacts are present.
+Required artifacts are valid only when present and non-empty after trimming whitespace.
 
 ## Staged activation
 
@@ -455,7 +464,7 @@ pi-herd lead brief
 `lead send` requires the command to run from the verified bound Pi lead pane, then sends the role prompt with the same parsing and delivery semantics as `send`.
 `lead collect` prints a read-only artifact and inbox inventory.
 `lead brief` prints a bounded orchestration brief suitable for pasting into or reading from the lead session.
-These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md` in the current implementation.
+These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md`; use top-level `pi-herd collect` for final collection.
 
 ## Core CLI commands
 
@@ -495,6 +504,8 @@ When selected roles require worktrees, it applies the same clean-repository and 
 `send` is implemented for selected roles and can activate reviewer or tester on first send.
 It validates saved pane ids before delivery, relaunches only when Herdr clearly reports a missing pane, and treats readiness waits after fresh launch as warning-only.
 `lead status`, `lead send`, `lead collect`, and `lead brief` are implemented as bounded lead helpers.
+`status`, `wait`, and top-level `collect` are implemented for Slice 6 observability and artifact-first completion.
+`wait` and `collect` return 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
 `merge-plan` prepares safe merge instructions.
 It does not merge automatically.
 
@@ -503,17 +514,17 @@ It does not merge automatically.
 `lead collect` currently reads current run state, lists expected worker artifacts from the canonical run directory, and lists up to 20 inbox entries.
 It is read-only and does not save logs, validate completion, or generate `FINAL_SUMMARY.md`.
 
-The future full `collect` should:
+Top-level `collect` now:
 
-1. Read current run state.
-2. Read worker artifacts from the canonical run directory.
-3. Save recent pane output logs under `logs/`.
-4. Validate expected artifact presence.
-5. Detect unexpected source edits by artifact-only roles where practical.
-6. Generate `FINAL_SUMMARY.md`.
-7. Print a concise next action.
+1. Reads current run state.
+2. Reads worker artifacts from the canonical run directory.
+3. Saves recent pane output logs under `logs/` where Herdr can provide them.
+4. Validates expected artifact presence and non-empty content.
+5. Persists role verdicts through locked state updates.
+6. Generates `FINAL_SUMMARY.md`.
+7. Prints a concise summary and the generated path.
 
-`FINAL_SUMMARY.md` should include provenance.
+`FINAL_SUMMARY.md` includes provenance.
 It is generated from worker artifacts and does not replace them.
 
 `lead brief` should be shorter than `FINAL_SUMMARY.md` and optimized for the lead session.

@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 5 plus H1 and H2 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 5 plus H1, H2, and Slice 6 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -243,7 +243,7 @@ Scope:
 Implemented notes:
 
 - Creation and start-time single-writer paths still use direct atomic writes.
-- Future Slice 6 status, wait, and collect state writers must use `updateRunState` with synchronous mutators only.
+- Slice 6 `wait` and `collect` state writers use `updateRunState` with synchronous mutators only.
 - If the current pane cannot be bound to an active run but exactly one active run exists, commands keep the single-active-run fallback behavior.
 
 Out of scope:
@@ -258,6 +258,8 @@ Goal: Make orchestration observable and artifact-first.
 
 Deliverable: `pi-herd status`, `pi-herd wait`, and `pi-herd collect` distinguish `done` from `incomplete` and produce `FINAL_SUMMARY.md`.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Harness activity signal read helpers from the verified capability contract.
@@ -269,6 +271,17 @@ Scope:
 - `FINAL_SUMMARY.md` with provenance.
 - Token-aware terminal output.
 - Status table and JSON output.
+
+Implemented notes:
+
+- `pi-herd status` is read-only and reports stored status, evaluated status, activity signal, artifact validity, warnings, and JSON output.
+- `pi-herd wait` polls working or blocked roles, excludes pending and staged roles, and persists resolved role verdicts through locked `updateRunState` synchronous mutators only.
+- Status persistence is guarded so stale observations do not overwrite roles whose `last_activity_at` changed after probing.
+- Activity mapping treats a clear missing pane as `stopped`, treats `blocked` as `blocked`, keeps polling a stored blocked role that reports working again, and never maps `unknown` to `done` even when artifacts are present.
+- Required artifacts are valid only when present and non-empty after trimming.
+- `pi-herd collect` persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with run provenance and bounded artifact excerpts.
+- Top-level `collect` does not mark the run `completed` or `abandoned`; lifecycle closure remains later cleanup work.
+- `pi-herd lead collect` remains a read-only inventory helper and does not write `FINAL_SUMMARY.md`.
 
 Out of scope:
 

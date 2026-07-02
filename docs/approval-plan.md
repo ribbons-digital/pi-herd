@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 5 messaging plus H1 and H2 hardening complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 6 status, wait, and collect plus H1 and H2 hardening complete on the current branch.
 
 ## Review provenance
 
@@ -16,6 +16,7 @@ Slice 4 added `pi-herd start`, verified or created lead binding, planner launch 
 Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, verified current-pane active-run resolution, first-send reviewer and tester activation, dash-prefixed literal send parsing, explicit partial-send errors, read-only collection inventory, and non-completion message semantics.
 H1 added a shared Herdr client layer, broader metadata parsing, idle readiness waits before first prompt delivery, warning-only readiness fallback, stale pane validation with safe relaunch, and a pinned multi-line prompt delivery shape.
 H2 added shared run resolution, verified current-pane targeting, run listing, role-worktree run discovery, git-root and base-ref guards, additive `state_revision` provenance, locked state updates for messaging writes, and safer run-directory allocation.
+Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`, including artifact validation, role verdict persistence, bounded pane-log collection, `FINAL_SUMMARY.md` generation, and non-closing collect semantics.
 
 ## Files to approve
 
@@ -61,23 +62,22 @@ H2 added shared run resolution, verified current-pane targeting, run listing, ro
 - [x] Slice 5: Messaging and lead commands.
 - [x] H1: Herdr client and prompt-delivery reliability.
 - [x] H2: Run resolution and state-write safety.
-- [ ] Slice 6: Status, wait, and collect.
+- [x] Slice 6: Status, wait, and collect.
 - [ ] Slice 7: Refresh, diff, and review/test flow.
 - [ ] Slice 8: Cleanup and merge planning.
 - [ ] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After H2
+## After Slice 6
 
 - [ ] Continue with one branch and one PR per issue.
-- [ ] Implement Slice 6 status, wait, and collect without treating Herdr idle as completion by itself.
-- [ ] Use locked state updates for future status, wait, and collect state writers.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
+- [ ] Implement Slice 7 refresh, diff, and review/test flow on top of Slice 6 role verdicts.
 
 ## Slice 6 implementation guardrails
 
-- [ ] Keep `lead collect` read-only until full `pi-herd collect` is implemented.
-- [ ] Require required artifact presence before marking workers `done`.
-- [ ] Preserve bounded terminal output and brief output.
+- [x] Keep `lead collect` read-only after full `pi-herd collect` is implemented.
+- [x] Require required artifact presence before marking workers `done`.
+- [x] Preserve bounded terminal output and brief output.
 - [ ] Let no-mistakes handle final validation, PR updates, and CI.
