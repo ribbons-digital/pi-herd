@@ -1,11 +1,12 @@
-import { access, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
+import { firstLine, verifyCurrentPane } from './herdr.js';
 
 export type RunStatus = 'active' | 'completed' | 'abandoned' | 'failed';
 export type RoleStatus = 'pending' | 'staged' | 'working' | 'done' | 'incomplete' | 'blocked' | 'failed';
@@ -89,6 +90,7 @@ export interface RunState {
   status: RunStatus;
   created_at: string;
   updated_at: string;
+  state_revision?: number;
   repo_root: string;
   base_ref: string;
   canonical_run_dir: string;
@@ -195,58 +197,171 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   return { state, requestPath, statePath, inboxDir, logsDir, created, worktrees, config };
 }
 
-/** Return active runs sorted by creation time, ignoring non-active runs. */
-export async function listActiveRuns(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary[]> {
+export interface ResolveRunContextOptions {
+  cwd: string;
+  run?: string;
+  configPath?: string;
+  env?: NodeJS.ProcessEnv;
+  runner?: CommandRunner;
+}
+
+export interface ResolvedRunContext {
+  state: RunState;
+  statePath: string;
+  summary: ActiveRunSummary;
+}
+
+/** Return runs sorted by creation time. Defaults to active runs only. */
+export async function listRuns(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner, includeAll = false): Promise<ActiveRunSummary[]> {
   const repoRoot = await resolveRepoRoot(cwd, runner);
   const config = await loadConfigIfPresent(configPath ? cwd : repoRoot, configPath);
   const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
   await assertNoSymlinkPathComponents(repoRoot, runsRoot);
+  return listRunsInRoot(runsRoot, includeAll);
+}
+
+/** Return active runs sorted by creation time, ignoring non-active runs. */
+export async function listActiveRuns(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary[]> {
+  return listRuns(cwd, configPath, runner, false);
+}
+
+/** Resolve an explicit run selector or the only active run, failing on ambiguity. */
+export async function resolveActiveRun(cwd: string, selector?: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary> {
+  return selectRunFromSummaries(await listActiveRuns(cwd, configPath, runner), selector);
+}
+
+/** Resolve a run state from explicit selector, verified current pane, or single active run. */
+export async function resolveRunContext(options: ResolveRunContextOptions): Promise<ResolvedRunContext> {
+  const runner = options.runner ?? nodeCommandRunner;
+  const activeRuns = await listRunsForInvocation(options.cwd, options.configPath, runner, false);
+  let summary: ActiveRunSummary;
+  if (options.run) {
+    summary = selectRunFromSummaries(activeRuns, options.run);
+  } else {
+    const paneMatch = await resolveRunByCurrentPane(options, activeRuns, runner);
+    summary = paneMatch ?? selectRunFromSummaries(activeRuns);
+  }
+  const statePath = join(summary.canonical_run_dir, 'state.json');
+  return { state: await readRunState(statePath), statePath, summary };
+}
+
+export async function listRunsForInvocation(cwd: string, configPath?: string, runner: CommandRunner = nodeCommandRunner, includeAll = false): Promise<ActiveRunSummary[]> {
+  const primaryCwd = resolve(cwd);
+  const seen = new Set<string>();
+  const runs: ActiveRunSummary[] = [];
+  for (const candidate of await invocationRunSearchCwds(cwd, runner)) {
+    try {
+      for (const run of await listRuns(candidate, configPath, runner, includeAll)) {
+        if (!seen.has(run.canonical_run_dir)) {
+          seen.add(run.canonical_run_dir);
+          runs.push(run);
+        }
+      }
+    } catch (error) {
+      if (candidate === primaryCwd) {
+        throw error;
+      }
+    }
+  }
+  return runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+export function selectRunFromSummaries(runs: ActiveRunSummary[], selector?: string): ActiveRunSummary {
+  if (selector) {
+    if (selector === 'latest') {
+      const latest = runs.at(-1);
+      if (!latest) throw new Error('No active runs found.');
+      return latest;
+    }
+    const matches = runs.filter((run) => run.run_id === selector || run.run_slug === selector);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) throw new Error(`Run selector '${selector}' is ambiguous. Pass a run_id.\n${formatRunChoices(matches)}`);
+    throw new Error(`No active run matched '${selector}'.`);
+  }
+  if (runs.length === 1) return runs[0];
+  if (!runs.length) throw new Error('No active runs found.');
+  throw new Error(`Multiple active runs found. Pass --run <run_id|slug>.\n${formatRunChoices(runs)}`);
+}
+
+async function listRunsInRoot(runsRoot: string, includeAll: boolean): Promise<ActiveRunSummary[]> {
   let entries: string[];
   try {
     entries = await readdir(runsRoot);
   } catch {
     return [];
   }
-  const active: ActiveRunSummary[] = [];
+  const runs: ActiveRunSummary[] = [];
   for (const entry of entries) {
     try {
       const state = await readRunState(join(runsRoot, entry, 'state.json'));
-      if (state.status === 'active') {
-        active.push(toSummary(state));
+      if (includeAll || state.status === 'active') {
+        runs.push(toSummary(state));
       }
     } catch {
       continue;
     }
   }
-  return active.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
-/** Resolve an explicit run selector or the only active run, failing on ambiguity. */
-export async function resolveActiveRun(cwd: string, selector?: string, configPath?: string, runner: CommandRunner = nodeCommandRunner): Promise<ActiveRunSummary> {
-  const activeRuns = await listActiveRuns(cwd, configPath, runner);
-  if (selector) {
-    if (selector === 'latest') {
-      if (!activeRuns.length) {
-        throw new Error('No active runs found.');
-      }
-      return activeRuns[activeRuns.length - 1];
-    }
-    const matches = activeRuns.filter((run) => run.run_id === selector || run.run_slug === selector);
-    if (matches.length === 1) {
-      return matches[0];
-    }
-    if (matches.length > 1) {
-      throw new Error(`Run selector '${selector}' is ambiguous. Pass a run_id.\n${formatRunChoices(matches)}`);
-    }
-    throw new Error(`No active run matched '${selector}'.`);
+async function resolveRunByCurrentPane(options: ResolveRunContextOptions, runs: ActiveRunSummary[], runner: CommandRunner): Promise<ActiveRunSummary | null> {
+  const env = options.env ?? process.env;
+  if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
+    return null;
   }
-  if (activeRuns.length === 1) {
-    return activeRuns[0];
+  const matches: ActiveRunSummary[] = [];
+  for (const run of runs) {
+    const state = await readRunState(join(run.canonical_run_dir, 'state.json'));
+    const verified = await verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
+    if (!verified) continue;
+    if (state.lead_binding.herdr_pane_id === env.HERDR_PANE_ID || Object.values(state.roles).some((role) => role?.herdr_pane_id === env.HERDR_PANE_ID)) {
+      matches.push(run);
+    }
   }
-  if (!activeRuns.length) {
-    throw new Error('No active runs found.');
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) throw new Error(`Current pane matches multiple active runs. Pass --run <run_id|slug>.\n${formatRunChoices(matches)}`);
+  return null;
+}
+
+async function invocationRunSearchCwds(cwd: string, runner: CommandRunner): Promise<string[]> {
+  const candidates = [resolve(cwd)];
+  const gitCommonRoot = await inferCanonicalRootFromGitCommonDir(cwd, runner);
+  if (gitCommonRoot) candidates.push(gitCommonRoot);
+  const fallbackRoot = inferCanonicalRootFromWorktreePath(cwd);
+  if (fallbackRoot) candidates.push(fallbackRoot);
+  return Array.from(new Set(candidates));
+}
+
+async function inferCanonicalRootFromGitCommonDir(cwd: string, runner: CommandRunner): Promise<string | null> {
+  let result;
+  try {
+    result = await runner.run('git', ['rev-parse', '--git-common-dir'], { cwd });
+  } catch {
+    return null;
   }
-  throw new Error(`Multiple active runs found. Pass --run <run_id|slug>.\n${formatRunChoices(activeRuns)}`);
+  if (result.exitCode !== 0 || !result.stdout.trim()) {
+    return null;
+  }
+  const commonDir = resolve(cwd, result.stdout.trim());
+  if (basename(commonDir) !== '.git') {
+    return null;
+  }
+  return dirname(commonDir);
+}
+
+function inferCanonicalRootFromWorktreePath(cwd: string): string | null {
+  const absolute = resolve(cwd);
+  const parts = absolute.split(sep);
+  const markerParts = DEFAULT_WORKTREES_DIR.split(/[\\/]+/).filter(Boolean);
+  for (let markerIndex = parts.length - markerParts.length; markerIndex > 0; markerIndex -= 1) {
+    if (!markerParts.every((part, offset) => parts[markerIndex + offset] === part)) continue;
+    const piHerdIndex = markerIndex + markerParts.length;
+    if (parts[piHerdIndex] !== 'pi-herd' || parts.length < piHerdIndex + 3) continue;
+    const root = parts.slice(0, markerIndex).join(sep) || sep;
+    if (!root || root === absolute || !isAbsolute(root)) return null;
+    return root;
+  }
+  return null;
 }
 
 /** Format the human-readable result for `pi-herd run create`. */
@@ -290,10 +405,10 @@ export async function loadConfigIfPresent(cwd: string, configPath?: string) {
 
 async function resolveRepoRoot(cwd: string, runner: CommandRunner): Promise<string> {
   const result = await runner.run('git', ['rev-parse', '--show-toplevel'], { cwd });
-  if (result.exitCode === 0) {
-    return result.stdout.trim() || resolve(cwd);
+  if (result.exitCode === 0 && result.stdout.trim()) {
+    return result.stdout.trim();
   }
-  return resolve(cwd);
+  throw new Error(`Not inside a git repository: ${firstLine(result.stderr) || firstLine(result.stdout) || result.error?.message || 'git rev-parse --show-toplevel failed'}`);
 }
 
 /** Resolve the configured repository-relative runs directory under the repo root. */
@@ -355,7 +470,7 @@ async function resolveBaseRef(repoRoot: string, runner: CommandRunner): Promise<
   if (commit.exitCode === 0 && commit.stdout.trim()) {
     return commit.stdout.trim();
   }
-  return 'main';
+  throw new Error(`Could not resolve base ref: ${firstLine(commit.stderr) || firstLine(commit.stdout) || commit.error?.message || 'git rev-parse --short HEAD failed'}`);
 }
 
 function formatRunTimestamp(date: Date): string {
@@ -372,8 +487,11 @@ async function allocateRunDirectory(repoRoot: string, runsRoot: string, timestam
     try {
       await mkdir(runDir);
       return { runId, runSlug, runDir };
-    } catch {
-      continue;
+    } catch (error) {
+      if (isNodeErrorWithCode(error, 'EEXIST')) {
+        continue;
+      }
+      throw error;
     }
   }
   const runSlug = `${baseSlug}-${randomUUID().slice(0, 8)}`;
@@ -426,6 +544,63 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
   const tempPath = join(dirname(path), `.tmp-${process.pid}-${Date.now()}-${randomUUID()}.json`);
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   await rename(tempPath, path);
+}
+
+/**
+ * Lock, re-read, mutate, and atomically write run state.
+ * Mutators should only change fields owned by their command to avoid reintroducing lost updates.
+ */
+export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>, now: Date = new Date()): Promise<RunState> {
+  const lockDir = join(dirname(path), '.state.lock');
+  await acquireStateLock(lockDir, now);
+  try {
+    const state = await readRunState(path);
+    await mutate(state);
+    state.updated_at = now.toISOString();
+    state.state_revision = (state.state_revision ?? 0) + 1;
+    await writeJsonAtomic(path, state);
+    return state;
+  } finally {
+    await rm(lockDir, { recursive: true, force: true });
+  }
+}
+
+async function acquireStateLock(lockDir: string, now: Date): Promise<void> {
+  const started = Date.now();
+  const timeoutMs = 5_000;
+  const staleMs = 30_000;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      await mkdir(lockDir);
+      try {
+        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: process.pid, created_at: now.toISOString() }), 'utf8');
+      } catch (error) {
+        await rm(lockDir, { recursive: true, force: true });
+        throw error;
+      }
+      return;
+    } catch (error) {
+      if (!isNodeErrorWithCode(error, 'EEXIST')) {
+        throw error;
+      }
+      try {
+        const existing = await stat(lockDir);
+        if (Date.now() - existing.mtimeMs > staleMs) {
+          await rm(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        await sleep(50);
+        continue;
+      }
+      await sleep(50);
+    }
+  }
+  throw new Error(`Timed out waiting for run state lock: ${lockDir}`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
 /** Read a persisted run state JSON file. */

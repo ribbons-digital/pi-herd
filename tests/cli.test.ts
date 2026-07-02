@@ -1,8 +1,12 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { main, parseSendArgs } from '../src/cli.js';
+
+const execFileAsync = promisify(execFile);
 
 describe('cli main', () => {
   afterEach(() => {
@@ -26,6 +30,7 @@ describe('cli main', () => {
     const dir = await mkdtemp(join(tmpdir(), 'pi-herd-cli-'));
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
+      await execFileAsync('git', ['init', '-b', 'main'], { cwd: dir });
       await expect(main(['run', 'create', 'Add run state'], dir)).resolves.toBe(0);
       expect(stdout.mock.calls.join('\n')).toContain('Created run');
       const runsDir = join(dir, '.pi-herd/runs');
@@ -33,6 +38,20 @@ describe('cli main', () => {
       const runId = output.match(/Created run (\S+)/)?.[1];
       expect(runId).toBeTruthy();
       await expect(readFile(join(runsDir, runId ?? '', 'state.json'), 'utf8')).resolves.toContain('add-run-state');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('lists runs from the CLI', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pi-herd-cli-list-'));
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await execFileAsync('git', ['init', '-b', 'main'], { cwd: dir });
+      await expect(main(['run', 'create', 'List me'], dir)).resolves.toBe(0);
+      stdout.mockClear();
+      await expect(main(['run', 'list'], dir)).resolves.toBe(0);
+      expect(stdout.mock.calls.flat().join('')).toContain('list-me');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

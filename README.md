@@ -13,8 +13,9 @@ Slice 1 CLI foundation is complete.
 Slice 2 run state and artifact model is complete.
 Slice 3 worktree orchestration is complete.
 Slice 4 Herdr pane and session launch is complete.
-Slice 5 messaging and lead commands are implemented on the current branch.
-H1 Herdr client reliability hardening is implemented on the current branch.
+Slice 5 messaging and lead commands are complete.
+H1 Herdr client reliability hardening is complete.
+H2 run-resolution and state-write safety hardening is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -35,6 +36,8 @@ pi-herd doctor --json
 pi-herd run create "replace legacy auth refresh flow"
 pi-herd run create "plan auth refresh" --role planner --base-ref main --json
 pi-herd run create "implement auth refresh" --with-worktrees
+pi-herd run list
+pi-herd run list --all --json
 pi-herd start "replace legacy auth refresh flow"
 pi-herd send implementer "Implement the approved plan."
 pi-herd send reviewer -- "--check the implementation branch"
@@ -62,6 +65,10 @@ Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in tex
 If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
 It does not create panes or worker sessions.
 
+`pi-herd run list` lists active runs by default.
+Use `--all` to include completed, failed, and abandoned runs, or `--json` for machine-readable output.
+Run discovery works from the main checkout and from role worktrees when git can identify the shared common directory.
+
 `pi-herd start` creates the run artifacts, checks that the repository is clean outside ignored pi-herd paths before materializing worktrees, materializes the implementer worktree when selected, binds the current Pi/Herdr pane as lead when verified, or creates a lead workspace and session when needed.
 It accepts repeated `--role` flags, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
 It launches and activates the planner with an initial kickoff prompt after a bounded Herdr idle wait.
@@ -76,7 +83,7 @@ Before sending to an existing pane, pi-herd validates the saved pane id with Her
 If Herdr clearly reports that the pane is missing, pi-herd relaunches the role session safely before sending; ambiguous validation failures stop without clearing saved pane state.
 When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, waits briefly for idle readiness, then sends the prompt.
 If readiness cannot be confirmed, it prints a warning and sends anyway.
-Sending marks the role `working` and records `last_activity_at`, but does not infer completion.
+Sending marks the role `working` and records `last_activity_at` through a locked state update, but does not infer completion.
 Prompt text, including multi-line text, is delivered as one `pane send-text` payload followed by Enter.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
 `pi-herd lead send` performs the same send with a lead-pane guard.

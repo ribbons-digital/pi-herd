@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createRun, listActiveRuns, resolveActiveRun, type RunState } from '../src/run-state.js';
+import { createRun, listActiveRuns, listRunsForInvocation, resolveActiveRun, updateRunState, type RunState } from '../src/run-state.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -12,6 +12,7 @@ let dir: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'pi-herd-run-'));
+  await execFileAsync('git', ['init', '-b', 'main'], { cwd: dir });
 });
 
 afterEach(async () => {
@@ -19,6 +20,15 @@ afterEach(async () => {
 });
 
 describe('run state', () => {
+  it('rejects run creation outside a git repository', async () => {
+    const nonGitDir = await mkdtemp(join(tmpdir(), 'pi-herd-non-git-'));
+    try {
+      await expect(createRun({ cwd: nonGitDir, goal: 'No git' })).rejects.toThrow(/Not inside a git repository/);
+    } finally {
+      await rm(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
   it('creates canonical run artifacts and default role state', async () => {
     const result = await createRun({
       cwd: dir,
@@ -29,7 +39,7 @@ describe('run state', () => {
     expect(result.state.run_id).toBe('2026-07-01T12-00-00-replace-legacy-auth-refresh-flow');
     expect(result.state.run_slug).toBe('replace-legacy-auth-refresh-flow');
     expect(result.state.status).toBe('active');
-    expect(result.state.canonical_run_dir).toBe(join(dir, '.pi-herd/runs', result.state.run_id));
+    expect(result.state.canonical_run_dir).toBe(join(await realpath(dir), '.pi-herd/runs', result.state.run_id));
     expect(result.state.lead_binding.harness).toBe('pi');
     expect(result.state.roles.planner?.required_artifacts).toEqual(['PLAN.md']);
     expect(result.state.roles.implementer?.source_ref).toBeUndefined();
@@ -73,6 +83,24 @@ describe('run state', () => {
     await expect(resolveActiveRun(dir, second.state.run_slug)).resolves.toMatchObject({ run_id: second.state.run_id });
   });
 
+  it('locks and increments state revisions for concurrent updates', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Concurrent state' });
+
+    await Promise.all([
+      updateRunState(result.statePath, (state) => {
+        state.roles.planner!.status = 'working';
+      }),
+      updateRunState(result.statePath, (state) => {
+        state.roles.implementer!.status = 'working';
+      })
+    ]);
+
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('working');
+    expect(saved.roles.implementer?.status).toBe('working');
+    expect(saved.state_revision).toBe(2);
+  });
+
   it('fails implicit active-run resolution when multiple active runs exist', async () => {
     await createRun({ cwd: dir, goal: 'First run', now: new Date('2026-07-01T12:00:00.000Z') });
     await createRun({ cwd: dir, goal: 'Second run', now: new Date('2026-07-01T12:01:00.000Z') });
@@ -80,8 +108,22 @@ describe('run state', () => {
     await expect(resolveActiveRun(dir)).rejects.toThrow(/Multiple active runs found/);
   });
 
+  it('discovers runs from a git worktree through git-common-dir', async () => {
+    const result = await createRun({ cwd: dir, goal: 'Common dir run' });
+    await writeFile(join(dir, 'README.md'), 'hello\n', 'utf8');
+    await execFileAsync('git', ['add', 'README.md'], { cwd: dir });
+    await execFileAsync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'init'], { cwd: dir });
+    const linked = join(dir, '..', `${dir.split('/').at(-1)}-linked`);
+    try {
+      await execFileAsync('git', ['worktree', 'add', '-b', 'linked', linked], { cwd: dir });
+      await expect(listRunsForInvocation(linked)).resolves.toMatchObject([{ run_id: result.state.run_id }]);
+    } finally {
+      await rm(linked, { recursive: true, force: true });
+    }
+  });
+
   it('uses the git root and current branch when invoked from a subdirectory', async () => {
-    await execFileAsync('git', ['init', '-b', 'trunk'], { cwd: dir });
+    await execFileAsync('git', ['checkout', '-b', 'trunk'], { cwd: dir });
     await mkdir(join(dir, 'packages/app'), { recursive: true });
 
     const result = await createRun({ cwd: join(dir, 'packages/app'), goal: 'Nested run' });
