@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -154,11 +155,11 @@ describe('run state', () => {
     const lockDir = join(result.state.canonical_run_dir, '.state.lock');
 
     await expect(
-      updateRunState(result.statePath, async (state) => {
+      updateRunState(result.statePath, (state) => {
         state.roles.planner!.status = 'working';
-        await rm(lockDir, { recursive: true, force: true });
-        await mkdir(lockDir);
-        await writeFile(join(lockDir, 'owner.json'), JSON.stringify({ pid: 12345, token: 'fresh-token', created_at: new Date().toISOString() }), 'utf8');
+        rmSync(lockDir, { recursive: true, force: true });
+        mkdirSync(lockDir);
+        writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({ pid: 12345, token: 'fresh-token', created_at: new Date().toISOString() }), 'utf8');
       })
     ).rejects.toThrow(/lock ownership was lost/);
 

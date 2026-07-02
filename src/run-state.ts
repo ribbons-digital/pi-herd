@@ -550,15 +550,15 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
 }
 
 /**
- * Lock, re-read, mutate, and atomically write run state.
+ * Lock, re-read, mutate synchronously, and atomically write run state.
  * Mutators should only change fields owned by their command to avoid reintroducing lost updates.
  */
-export async function updateRunState(path: string, mutate: (state: RunState) => void | Promise<void>): Promise<RunState> {
+export async function updateRunState(path: string, mutate: (state: RunState) => void): Promise<RunState> {
   const lockDir = join(dirname(path), '.state.lock');
   const lock = await acquireStateLock(lockDir);
   try {
     const state = await readRunState(path);
-    await mutate(state);
+    mutate(state);
     await assertStateLockOwned(lock);
     state.updated_at = new Date().toISOString();
     state.state_revision = (state.state_revision ?? 0) + 1;
