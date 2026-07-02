@@ -36,7 +36,9 @@ pi-herd run create "plan auth refresh" --role planner --base-ref main --json
 pi-herd run create "implement auth refresh" --with-worktrees
 pi-herd start "replace legacy auth refresh flow"
 pi-herd send implementer "Implement the approved plan."
+pi-herd send reviewer -- "--check the implementation branch"
 pi-herd lead status
+pi-herd lead send tester "Run the approved smoke test."
 pi-herd lead collect
 pi-herd lead brief
 ```
@@ -67,8 +69,10 @@ Reviewer and tester remain staged slots with pending worktrees until first activ
 Launch metadata and pane/session refs are persisted after each successful step so partial launch failures leave recoverable state.
 
 `pi-herd send` sends a prompt to a selected role pane using Herdr pane text submission.
+`--run` and `--config` may appear before or after message text while option parsing is active; use `--` before dash-prefixed message text so it is treated literally.
 When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, then sends the prompt.
 Sending marks the role `working` and records `last_activity_at`, but does not infer completion.
+If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
 `pi-herd lead send` performs the same send with a lead-pane guard.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
 `lead collect` prints a read-only artifact and inbox inventory.

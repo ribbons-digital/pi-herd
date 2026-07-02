@@ -279,7 +279,7 @@ async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: 
   }
 }
 
-/** Submit text to a Herdr pane using send-text followed by Enter. */
+/** Submit text to a Herdr pane using send-text followed by Enter; Enter failure may leave unsubmitted text in the pane. */
 export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<void> {
   const text = await runner.run('herdr', ['pane', 'send-text', paneId, message], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
   if (text.exitCode !== 0) {

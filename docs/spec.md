@@ -176,6 +176,8 @@ If worktree materialization fails after state creation, pi-herd persists any suc
 When a Herdr-created worktree workspace id is later replaced by the session workspace id, pi-herd preserves the worktree workspace id in `worktree_herdr_workspace_id`.
 If launch or kickoff fails after state creation, pi-herd persists any successful launch refs, marks the run `failed`, and excludes it from active-run resolution.
 `pi-herd send` sends prompts through pane send-text plus Enter, marks the targeted role `working`, and records `last_activity_at` without inferring completion.
+Send commands accept `--run` and `--config` before or after message text while option parsing is active, and `--` marks the rest of the arguments as literal message text for dash-prefixed prompts.
+If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
 The first send to a reviewer or tester can materialize that role worktree from the implementation branch, launch the role session, persist state after each successful step, and then send the prompt.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` read state and artifact inventory without changing completion state or writing `FINAL_SUMMARY.md`.
 The current implementation supports selecting `planner`, `implementer`, `reviewer`, and `tester`; `researcher` remains a future role.
@@ -187,6 +189,7 @@ Commands accept explicit run selection:
 ```bash
 pi-herd lead status --run <run_id|slug|latest>
 pi-herd send reviewer "Review current diff." --run <run_id|slug|latest>
+pi-herd send reviewer -- "--audit the implementation branch"
 pi-herd lead collect --run <run_id|slug|latest>
 ```
 
@@ -434,7 +437,7 @@ pi-herd lead brief
 ```
 
 `lead status` prints current run and role state from `state.json`.
-`lead send` requires the command to run from the verified bound Pi lead pane, then sends the role prompt.
+`lead send` requires the command to run from the verified bound Pi lead pane, then sends the role prompt with the same parsing and delivery semantics as `send`.
 `lead collect` prints a read-only artifact and inbox inventory.
 `lead brief` prints a bounded orchestration brief suitable for pasting into or reading from the lead session.
 These lead helpers do not infer worker completion or write `FINAL_SUMMARY.md` in Slice 5.
@@ -450,6 +453,10 @@ pi-herd run create
 pi-herd start <goal>
 pi-herd add-role <role>
 pi-herd send <role> <message>
+pi-herd lead status
+pi-herd lead send <role> <message>
+pi-herd lead collect
+pi-herd lead brief
 pi-herd wait
 pi-herd status
 pi-herd collect

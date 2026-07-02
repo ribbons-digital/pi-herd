@@ -13,7 +13,7 @@ Slice 1 added the TypeScript CLI foundation, `init`, `doctor`, config validation
 Slice 2 added `pi-herd run create`, canonical run artifacts, pending role state, active-run resolution helpers, and atomic state writes without worktrees or worker launch.
 Slice 3 added `--with-worktrees`, Herdr-first implementer worktree creation, git fallback only after Herdr creation exits nonzero or fails to spawn, optional planner worktree creation, dirty and collision checks, worktree state persistence, and failed-run persistence without panes or worker launch.
 Slice 4 added `pi-herd start`, verified or created lead binding, planner launch with kickoff prompt, staged implementer launch, reviewer and tester staged slots, launch metadata persistence, and recoverable failed-run persistence after partial launch failures.
-Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, current-pane active-run resolution, first-send reviewer and tester activation, read-only collection inventory, and non-completion message semantics.
+Slice 5 added `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, `pi-herd lead brief`, current-pane active-run resolution, first-send reviewer and tester activation, dash-prefixed literal send parsing, explicit partial-send errors, read-only collection inventory, and non-completion message semantics.
 
 ## Files to approve
 

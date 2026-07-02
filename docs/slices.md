@@ -184,6 +184,8 @@ Scope:
 Implemented notes:
 
 - `pi-herd send` resolves active runs, sends prompts through pane send-text plus Enter, and marks the role working without inferring completion.
+- Send parsing allows `--run` and `--config` before or after message text and preserves dash-prefixed literal message text after `--`.
+- If Enter submission fails after text insertion, pi-herd reports the partial-send state because retrying may duplicate the unsubmitted prompt.
 - `pi-herd lead send` reuses send behavior with a verified lead-pane guard.
 - Reviewer and tester first activation materializes a role worktree from the implementation branch, launches the session, persists state after each step, and then sends the prompt.
 - Active-run resolution can use a verified current Herdr/Pi pane binding before falling back to single-active-run resolution.

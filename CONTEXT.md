@@ -172,3 +172,5 @@ Developer: What does `pi-herd start` launch now?
 Domain expert: It binds the current verified Pi/Herdr pane as lead or creates a lead workspace and session, launches the planner with a kickoff prompt, launches the implementer as staged when selected, and leaves reviewer and tester as staged slots without sessions.
 Developer: What does first send to reviewer or tester do now?
 Domain expert: It materializes that role worktree from the implementation branch, launches the role session, persists state, submits the prompt, and marks the role working without deciding whether it is done.
+Developer: How should I send a prompt that starts with a dash?
+Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.

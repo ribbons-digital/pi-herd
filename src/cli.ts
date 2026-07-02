@@ -238,6 +238,7 @@ export interface ParsedSendArgs {
   help: boolean;
 }
 
+/** Parse send command args, preserving dash-prefixed prompt text after `--`. */
 export function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
   let run: string | undefined;
   let config: string | undefined;
