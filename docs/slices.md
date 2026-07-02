@@ -169,6 +169,8 @@ Goal: Let the lead steer workers safely.
 
 Deliverable: `pi-herd send`, `pi-herd lead status`, `pi-herd lead send`, `pi-herd lead collect`, and `pi-herd lead brief` work with active-run resolution.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Message sending to role panes.
@@ -178,6 +180,14 @@ Scope:
 - Capability mismatch warnings using adapter metadata.
 - Bounded `lead brief` output.
 - Reviewer and tester activation can call the same refresh/materialization path used later by `pi-herd refresh`.
+
+Implemented notes:
+
+- `pi-herd send` resolves active runs, sends prompts through pane send-text plus Enter, and marks the role working without inferring completion.
+- `pi-herd lead send` reuses send behavior with a verified lead-pane guard.
+- Reviewer and tester first activation materializes a role worktree from the implementation branch, launches the session, persists state after each step, and then sends the prompt.
+- Active-run resolution can use a verified current Herdr/Pi pane binding before falling back to single-active-run resolution.
+- `lead status`, `lead brief`, and `lead collect` are bounded state and artifact inventory helpers, not completion or final summary commands.
 
 Out of scope:
 

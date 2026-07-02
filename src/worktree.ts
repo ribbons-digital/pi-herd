@@ -35,33 +35,56 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
   const materialized: MaterializedWorktree[] = [];
 
   for (const role of roles) {
-    const record = options.state.roles[role];
-    if (!record?.branch) {
-      continue;
-    }
-    const worktreePath = roleWorktreePath(options.state.repo_root, options.state.run_id, role);
-    await assertNoSymlinkPathComponents(options.state.repo_root, worktreePath);
-    await assertPathAvailable(worktreePath);
-    await assertBranchAvailable(options.runner, options.state.repo_root, record.branch);
-    const result = await createWorktreeHerdrFirst({
-      runner: options.runner,
-      repoRoot: options.state.repo_root,
-      role,
-      runSlug: options.state.run_slug,
-      branch: record.branch,
-      baseRef: options.state.base_ref,
-      path: worktreePath
-    });
-    record.worktree_path = result.path;
-    record.worktree_status = 'materialized';
-    record.worktree_provider = result.provider;
-    record.worktree_herdr_workspace_id = result.herdr_workspace_id;
-    record.herdr_workspace_id = result.herdr_workspace_id;
+    const baseRef = role === 'reviewer' || role === 'tester' ? options.state.roles[role]?.source_ref : options.state.base_ref;
+    const result = await materializeRoleWorktree({ ...options, role, baseRef, skipCleanCheck: true });
     materialized.push(result);
-    await options.onMaterialized?.(result);
   }
 
   return materialized;
+}
+
+/** Materialize one role worktree, using source_ref for reviewer/tester activation when provided. */
+export async function materializeRoleWorktree(options: WorktreeMaterializeOptions & { role: BuiltInRole; baseRef?: string }): Promise<MaterializedWorktree> {
+  if (!options.skipCleanCheck) {
+    await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
+  }
+  const record = options.state.roles[options.role];
+  if (!record?.branch) {
+    throw new Error(`Role ${options.role} is not selected for this run.`);
+  }
+  if (record.worktree_status === 'materialized' && record.worktree_path) {
+    return {
+      role: options.role,
+      branch: record.branch,
+      path: record.worktree_path,
+      provider: record.worktree_provider ?? 'git',
+      herdr_workspace_id: record.worktree_herdr_workspace_id ?? null
+    };
+  }
+  const baseRef = options.baseRef ?? record.source_ref ?? options.state.base_ref;
+  if (record.source_ref) {
+    await assertRefAvailable(options.runner, options.state.repo_root, baseRef, options.role);
+  }
+  const worktreePath = roleWorktreePath(options.state.repo_root, options.state.run_id, options.role);
+  await assertNoSymlinkPathComponents(options.state.repo_root, worktreePath);
+  await assertPathAvailable(worktreePath);
+  await assertBranchAvailable(options.runner, options.state.repo_root, record.branch);
+  const result = await createWorktreeHerdrFirst({
+    runner: options.runner,
+    repoRoot: options.state.repo_root,
+    role: options.role,
+    runSlug: options.state.run_slug,
+    branch: record.branch,
+    baseRef,
+    path: worktreePath
+  });
+  record.worktree_path = result.path;
+  record.worktree_status = 'materialized';
+  record.worktree_provider = result.provider;
+  record.worktree_herdr_workspace_id = result.herdr_workspace_id;
+  record.herdr_workspace_id = result.herdr_workspace_id;
+  await options.onMaterialized?.(result);
+  return result;
 }
 
 function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltInRole[] {
@@ -135,6 +158,14 @@ async function assertBranchAvailable(runner: CommandRunner, repoRoot: string, br
     return;
   }
   throw new Error(`Could not check branch ${branch}: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git show-ref failed'}`);
+}
+
+async function assertRefAvailable(runner: CommandRunner, repoRoot: string, ref: string, role: BuiltInRole): Promise<void> {
+  const result = await runner.run('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoRoot });
+  if (result.exitCode === 0) {
+    return;
+  }
+  throw new Error(`Cannot materialize ${role} worktree because source ref '${ref}' is unavailable.`);
 }
 
 async function createWorktreeHerdrFirst(options: {

@@ -426,7 +426,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
   await rename(tempPath, path);
 }
 
-async function readRunState(path: string): Promise<RunState> {
+export async function readRunState(path: string): Promise<RunState> {
   return JSON.parse(await readFile(path, 'utf8')) as RunState;
 }
 

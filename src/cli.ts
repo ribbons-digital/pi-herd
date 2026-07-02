@@ -6,6 +6,7 @@ import { nodeCommandRunner } from './command-runner.js';
 import { runInit, formatInitText } from './init.js';
 import { createRun, formatRunCreateText, parseRole } from './run-state.js';
 import { formatStartText, startRun } from './start.js';
+import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
 
 const HELP = `pi-herd
 
@@ -14,6 +15,8 @@ Usage:
   pi-herd init [--force] [--config PATH]
   pi-herd run create <goal> [--with-worktrees] [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
+  pi-herd send <role> <message> [--run RUN] [--config PATH]
+  pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]
   pi-herd --help
 
 Commands:
@@ -21,6 +24,8 @@ Commands:
   init    Create .pi-herd config, run directory, prompts, and ignore entries.
   run     Create and manage orchestration run state.
   start   Create or bind lead, launch visible sessions, and activate planner.
+  send    Send a prompt to a selected role pane, activating reviewer/tester if needed.
+  lead    Lead-session shortcuts for status, brief, collect, and send.
 `;
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()): Promise<number> {
@@ -110,6 +115,89 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
         process.stdout.write(formatStartText(result));
       }
       return 0;
+    }
+
+    if (command === 'send') {
+      const { values, positionals } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: true
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd send <role> <message> [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const role = parseRole(positionals[0] ?? '');
+      const message = positionals.slice(1).join(' ').trim();
+      if (!message) {
+        throw new Error('Message must be a non-empty string.');
+      }
+      const result = await sendMessage({ cwd, configPath: values.config, run: values.run, role, message, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return 0;
+    }
+
+    if (command === 'lead') {
+      const subcommand = argv[1];
+      if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+        process.stdout.write('Usage: pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      if (subcommand === 'send') {
+        const { values, positionals } = parseArgs({
+          args: argv.slice(2),
+          options: {
+            run: { type: 'string' },
+            config: { type: 'string' },
+            help: { type: 'boolean', short: 'h', default: false }
+          },
+          allowPositionals: true
+        });
+        if (values.help) {
+          process.stdout.write('Usage: pi-herd lead send <role> <message> [--run RUN] [--config PATH]\n');
+          return 0;
+        }
+        const role = parseRole(positionals[0] ?? '');
+        const message = positionals.slice(1).join(' ').trim();
+        if (!message) {
+          throw new Error('Message must be a non-empty string.');
+        }
+        const result = await sendMessage({ cwd, configPath: values.config, run: values.run, role, message, requireLead: true, runner: nodeCommandRunner });
+        process.stdout.write(result.text);
+        return 0;
+      }
+      const { values } = parseArgs({
+        args: argv.slice(2),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write(`Usage: pi-herd lead ${subcommand} [--run RUN] [--config PATH]\n`);
+        return 0;
+      }
+      const options = { cwd, configPath: values.config, run: values.run, runner: nodeCommandRunner };
+      if (subcommand === 'status') {
+        process.stdout.write((await leadStatus(options)).text);
+        return 0;
+      }
+      if (subcommand === 'brief') {
+        process.stdout.write((await leadBrief(options)).text);
+        return 0;
+      }
+      if (subcommand === 'collect') {
+        process.stdout.write((await leadCollect(options)).text);
+        return 0;
+      }
+      process.stderr.write(`Unknown lead command: ${subcommand}\n`);
+      return 1;
     }
 
     if (command === 'run') {

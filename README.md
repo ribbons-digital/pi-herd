@@ -13,6 +13,7 @@ Slice 1 CLI foundation is complete.
 Slice 2 run state and artifact model is complete.
 Slice 3 worktree orchestration is complete.
 Slice 4 Herdr pane and session launch is complete.
+Slice 5 messaging and lead commands is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -34,6 +35,9 @@ pi-herd run create "replace legacy auth refresh flow"
 pi-herd run create "plan auth refresh" --role planner --base-ref main --json
 pi-herd run create "implement auth refresh" --with-worktrees
 pi-herd start "replace legacy auth refresh flow"
+pi-herd send implementer "Implement the approved plan."
+pi-herd lead status
+pi-herd lead brief
 ```
 
 `pi-herd init` creates `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates under `.pi-herd/prompts/`, and safe ignore entries.
@@ -60,6 +64,12 @@ It launches and activates the planner with an initial kickoff prompt.
 It launches the implementer as a staged session in the implementation worktree when the implementer role is selected.
 Reviewer and tester remain staged slots with pending worktrees until later activation slices.
 Launch metadata and pane/session refs are persisted after each successful step so partial launch failures leave recoverable state.
+
+`pi-herd send` sends a prompt to a selected role pane using Herdr pane text submission.
+When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, then sends the prompt.
+`pi-herd lead send` performs the same send with a lead-pane guard.
+`pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
+They do not infer worker completion or write `FINAL_SUMMARY.md`; full collection remains a later slice.
 
 ## Local development
 
