@@ -293,7 +293,7 @@ export async function sendToPane(runner: CommandRunner, cwd: string, paneId: str
   }
   const enter = await runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd, timeoutMs: PROMPT_TIMEOUT_MS });
   if (enter.exitCode !== 0) {
-    throw new Error(`Could not submit pane text: ${describeFailure(enter, 'pane send-keys failed')}`);
+    throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, 'pane send-keys failed')}`);
   }
 }
 

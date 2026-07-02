@@ -118,25 +118,12 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
     }
 
     if (command === 'send') {
-      const { values, positionals } = parseArgs({
-        args: argv.slice(1),
-        options: {
-          run: { type: 'string' },
-          config: { type: 'string' },
-          help: { type: 'boolean', short: 'h', default: false }
-        },
-        allowPositionals: true
-      });
-      if (values.help) {
+      const parsed = parseSendArgs(argv.slice(1), 'pi-herd send <role> <message> [--run RUN] [--config PATH]');
+      if (parsed.help) {
         process.stdout.write('Usage: pi-herd send <role> <message> [--run RUN] [--config PATH]\n');
         return 0;
       }
-      const role = parseRole(positionals[0] ?? '');
-      const message = positionals.slice(1).join(' ').trim();
-      if (!message) {
-        throw new Error('Message must be a non-empty string.');
-      }
-      const result = await sendMessage({ cwd, configPath: values.config, run: values.run, role, message, runner: nodeCommandRunner });
+      const result = await sendMessage({ cwd, configPath: parsed.config, run: parsed.run, role: parsed.role, message: parsed.message, runner: nodeCommandRunner });
       process.stdout.write(result.text);
       return 0;
     }
@@ -148,25 +135,12 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
         return 0;
       }
       if (subcommand === 'send') {
-        const { values, positionals } = parseArgs({
-          args: argv.slice(2),
-          options: {
-            run: { type: 'string' },
-            config: { type: 'string' },
-            help: { type: 'boolean', short: 'h', default: false }
-          },
-          allowPositionals: true
-        });
-        if (values.help) {
+        const parsed = parseSendArgs(argv.slice(2), 'pi-herd lead send <role> <message> [--run RUN] [--config PATH]');
+        if (parsed.help) {
           process.stdout.write('Usage: pi-herd lead send <role> <message> [--run RUN] [--config PATH]\n');
           return 0;
         }
-        const role = parseRole(positionals[0] ?? '');
-        const message = positionals.slice(1).join(' ').trim();
-        if (!message) {
-          throw new Error('Message must be a non-empty string.');
-        }
-        const result = await sendMessage({ cwd, configPath: values.config, run: values.run, role, message, requireLead: true, runner: nodeCommandRunner });
+        const result = await sendMessage({ cwd, configPath: parsed.config, run: parsed.run, role: parsed.role, message: parsed.message, requireLead: true, runner: nodeCommandRunner });
         process.stdout.write(result.text);
         return 0;
       }
@@ -254,6 +228,53 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
+}
+
+interface ParsedSendArgs {
+  role: ReturnType<typeof parseRole>;
+  message: string;
+  run?: string;
+  config?: string;
+  help: boolean;
+}
+
+function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
+  let run: string | undefined;
+  let config: string | undefined;
+  let index = 0;
+  while (index < args.length) {
+    const arg = args[index];
+    if (arg === '--help' || arg === '-h') {
+      return { role: 'planner', message: '', help: true };
+    }
+    if (arg === '--run' || arg === '--config') {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error(`${arg} requires a value.\nUsage: ${usage}`);
+      }
+      if (arg === '--run') {
+        run = value;
+      } else {
+        config = value;
+      }
+      index += 2;
+      continue;
+    }
+    if (arg === '--') {
+      index += 1;
+      break;
+    }
+    if (arg?.startsWith('-')) {
+      throw new Error(`Unknown option before role: ${arg}. Use -- before dash-prefixed message text.\nUsage: ${usage}`);
+    }
+    break;
+  }
+  const role = parseRole(args[index] ?? '');
+  const message = args.slice(index + 1).join(' ').trim();
+  if (!message) {
+    throw new Error('Message must be a non-empty string.');
+  }
+  return { role, message, run, config, help: false };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

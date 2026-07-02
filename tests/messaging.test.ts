@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
@@ -23,7 +23,7 @@ class RecordingRunner implements CommandRunner {
   async run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
-    if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel' && options?.cwd?.includes(`${dir}/.worktrees/`)) {
+    if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel' && options?.cwd?.includes(`${dir}${sep}.worktrees${sep}`)) {
       return { exitCode: 0, stdout: `${options.cwd}\n`, stderr: '' };
     }
     const response = this.responses[key.replaceAll(dir, 'DIR')];
@@ -130,7 +130,8 @@ describe('messaging commands', () => {
     expect(collect.text).toContain('Artifact inventory');
     expect(collect.text).toContain('missing planner/PLAN.md');
     expect(brief.text).toContain('# pi-herd brief');
-    expect(brief.text).not.toContain('done');
+    expect(brief.text).toContain('- planner: staged;');
+    expect(brief.text).not.toMatch(/- planner: done;/);
   });
 
   it('uses custom runs_dir and relative config paths during activation', async () => {

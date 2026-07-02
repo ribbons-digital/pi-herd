@@ -307,7 +307,7 @@ async function artifactInventory(state: RunState): Promise<Array<{ role: BuiltIn
 async function inboxInventory(state: RunState): Promise<string[]> {
   try {
     const { readdir } = await import('node:fs/promises');
-    return (await readdir(join(state.canonical_run_dir, 'inbox'))).slice(0, 20);
+    return (await readdir(join(state.canonical_run_dir, 'inbox'))).sort().slice(0, 20);
   } catch {
     return [];
   }
