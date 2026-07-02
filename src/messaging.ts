@@ -109,7 +109,7 @@ export async function leadBrief(options: RunCommandOptions): Promise<CommandResu
     ...(inbox.length ? inbox.map((item) => `- ${item}`) : ['- none']),
     ...(warnings.length ? ['', '## Warnings', ...warnings.map((warning) => `- ${warning}`)] : []),
     '',
-    'Next: send work to a staged role or wait for active workers; completion checks arrive in a later slice.'
+    'Next: send work to staged roles, wait or collect active workers, refresh reviewer/tester between passes, or diff implementation changes.'
   ];
   return { state, text: `${truncate(lines.join('\n'), 8000)}\n` };
 }
