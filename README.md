@@ -19,7 +19,8 @@ H2 run-resolution and state-write safety hardening is complete.
 Slice 6 status, wait, and collect is complete.
 Slice 7 refresh, diff, and review/test flow is complete.
 Slice 8 cleanup and merge planning is complete.
-Slice 9 Herdr plugin packaging is implemented on the current branch.
+Slice 9 Herdr plugin packaging is complete.
+Slice 10 optional Pi extension is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -172,6 +173,50 @@ The `cleanup` action passes no destructive flags, so it only reports what cleanu
 
 GitHub plugin installation runs the manifest build commands with bare `pnpm`.
 Local validation in this environment uses `sfw pnpm ...`.
+
+## Pi extension development
+
+The repository builds an optional Pi extension at `dist/pi-extension.js`.
+The extension registers one slash command, `/herd`, for lead-session shortcuts:
+
+```text
+/herd status [--run RUN]
+/herd brief [--run RUN]
+/herd collect [--run RUN]
+/herd send <role> <message> [--run RUN]
+```
+
+`/herd collect` maps to read-only `pi-herd lead collect`.
+Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
+For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
+One matching outer quote pair around the `/herd send` message is stripped before delivery, so `/herd send reviewer "please review"` sends `please review`.
+Dash-prefixed `/herd send` message text is preserved directly and does not need the terminal CLI's `--` sentinel.
+Child stdout and stderr capture is capped at 12,000 characters per stream, and displayed output is also bounded.
+Run `/herd help` to print the extension usage; unknown `/herd` subcommands fail with usage instead of invoking the CLI.
+The extension does not register agent-callable tools and does not own orchestration state.
+
+Build before installing the extension:
+
+```bash
+sfw pnpm build
+```
+
+For local development, prefer a symlink so the extension can find sibling `dist/cli.js`:
+
+```bash
+mkdir -p ~/.pi/agent/extensions
+ln -sf "$PWD/dist/pi-extension.js" ~/.pi/agent/extensions/pi-herd.js
+```
+
+If you copy the extension file instead of symlinking it, set `PI_HERD_CLI` to the CLI executable or CLI JavaScript file, or make `pi-herd` available on `PATH`.
+When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
+For example:
+
+```bash
+export PI_HERD_CLI="$PWD/dist/cli.js"
+```
+
+Reload Pi with `/reload` or start a new Pi session after installing the extension.
 
 ## Local development
 

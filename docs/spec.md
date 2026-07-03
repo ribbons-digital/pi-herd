@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, Slice 7 refresh/diff flow, Slice 8 cleanup/merge planning, and Slice 9 Herdr plugin packaging implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, Slice 7 refresh/diff flow, Slice 8 cleanup/merge planning, Slice 9 Herdr plugin packaging, and Slice 10 optional Pi extension implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -585,20 +585,30 @@ Commands should list full artifact paths and provide `--full` where appropriate.
 ## Optional Pi extension
 
 The Pi extension is a convenience layer for the lead session.
-It can provide:
+It provides one slash command, `/herd`, with lead-oriented subcommands:
 
 ```text
-/herd status
-/herd start
-/herd send reviewer <message>
-/herd collect
-/herd brief
-/herd focus reviewer
-/herd diff
+/herd status [--run RUN]
+/herd brief [--run RUN]
+/herd collect [--run RUN]
+/herd send <role> <message> [--run RUN]
 ```
 
-Agent-callable tools should be disabled by default.
-Destructive commands such as cleanup, merge, and worktree removal should not be exposed as agent-callable tools in the first shipped extension.
+`/herd status`, `/herd brief`, `/herd collect`, and `/herd send` map to the existing `pi-herd lead` command family.
+`/herd collect` is the read-only lead collection helper and does not write `FINAL_SUMMARY.md`.
+Top-level `pi-herd collect` remains the state-writing terminal command for final collection.
+For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
+If the `/herd send` message is wrapped in one matching outer quote pair, the extension strips that pair before forwarding the message, while unmatched quotes and non-quote backslashes are preserved.
+Dash-prefixed message text is preserved directly and does not use the terminal CLI's `--` sentinel.
+The extension resolves the CLI through `PI_HERD_CLI`, sibling `dist/cli.js` for symlinked development installs, or `pi-herd` on `PATH`.
+`PI_HERD_CLI` may point to a CLI executable or a CLI JavaScript file.
+When `HERDR_BIN_PATH` is absolute, the extension prepends its directory to the child CLI `PATH`.
+The extension caps child stdout and stderr capture at 12,000 characters per stream and bounds surfaced output before notification or print-mode output.
+`/herd help`, `/herd --help`, and `/herd -h` print usage without invoking the CLI.
+Unrecognized `/herd` subcommands fail with usage instead of invoking the CLI.
+The extension does not register agent-callable tools.
+Destructive commands such as cleanup, merge, and worktree removal are not exposed through the first shipped extension.
+The extension does not own orchestration state or become the runtime.
 
 ## Herdr plugin
 
