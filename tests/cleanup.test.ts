@@ -223,17 +223,23 @@ describe('merge-plan and cleanup commands', () => {
     expect(runner.calls).toContain(`git worktree remove ${state.roles.reviewer!.worktree_path}`);
   });
 
-  it('does not mark lifecycle when worktree removal fails first', async () => {
+  it('keeps cleaning up and marks lifecycle after a transient worktree removal failure', async () => {
     const runner = new RecordingRunner({
       [`git worktree remove DIR/.worktrees/pi-herd/${NOW.toISOString().replace(/\.\d{3}Z$/, '').replace(/:/g, '-')}-lifecycle-failure/reviewer`]: { exitCode: 1, stdout: '', stderr: 'remove failed\n' }
     });
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Lifecycle failure', now: NOW, runner });
     await materializeRole(state, 'reviewer', 'git');
+    await materializeRole(state, 'tester', 'git');
     await writeJsonAtomic(statePath, state);
 
-    await expect(cleanupRun({ cwd: dir, run: state.run_id, removeWorktrees: true, complete: true, runner, now: NOW })).rejects.toThrow('Could not remove reviewer worktree');
+    const result = await cleanupRun({ cwd: dir, run: state.run_id, removeWorktrees: true, complete: true, runner, now: NOW });
+
+    expect(result.text).toContain('Could not remove reviewer worktree');
+    expect(result.text).toContain('Removed tester git worktree');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
-    expect(saved.status).toBe('active');
+    expect(saved.status).toBe('completed');
+    expect(saved.roles.reviewer?.worktree_status).toBe('materialized');
+    expect(saved.roles.tester?.worktree_status).toBe('pending');
   });
 
   it('preserves dirty work before forced worktree removal', async () => {

@@ -115,7 +115,14 @@ export async function cleanupRun(options: CleanupOptions): Promise<LifecycleComm
     }
     for (const record of roleEntries(resolved.state)) {
       if (record.worktree_status !== 'materialized' || !record.worktree_path) continue;
-      const removed = await removeRoleWorktree(resolved.state, record, runner, Boolean(options.force));
+      let removed;
+      try {
+        removed = await removeRoleWorktree(resolved.state, record, runner, Boolean(options.force));
+      } catch (error) {
+        if (!isRecoverableWorktreeRemovalError(error, record)) throw error;
+        warnings.push(error instanceof Error ? error.message : String(error));
+        continue;
+      }
       actions.push(...removed.actions);
       warnings.push(...removed.warnings);
       if (removed.removed) {
@@ -313,6 +320,10 @@ function cleanupReport(state: RunState, snapshot: RunSnapshot, actions: string[]
   }
   lines.push('');
   return lines.join('\n');
+}
+
+function isRecoverableWorktreeRemovalError(error: unknown, record: RoleRecord): boolean {
+  return error instanceof Error && error.message.startsWith(`Could not remove ${record.role} worktree:`);
 }
 
 function isWorkingRole(role: RunSnapshot['roles'][number]): boolean {

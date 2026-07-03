@@ -31,19 +31,19 @@ Usage:
   pi-herd --help
 
 Commands:
-  doctor  Check the local environment and pi-herd config.
-  init    Create .pi-herd config, run directory, prompts, and ignore entries.
-  run     Create and manage orchestration run state.
-  start   Create or bind lead, launch visible sessions, and activate planner.
-  send    Send a prompt to a selected role pane, activating reviewer/tester if needed.
-  status  Evaluate role activity and required artifacts without writing state.
-  wait    Wait for working roles to resolve and persist role verdicts.
-  collect Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
-  refresh Refresh reviewer/tester worktrees from the implementation branch.
-  diff    Show implementation branch changes against the run base ref.
+  doctor     Check the local environment and pi-herd config.
+  init       Create .pi-herd config, run directory, prompts, and ignore entries.
+  run        Create and manage orchestration run state.
+  start      Create or bind lead, launch visible sessions, and activate planner.
+  send       Send a prompt to a selected role pane, activating reviewer/tester if needed.
+  status     Evaluate role activity and required artifacts without writing state.
+  wait       Wait for working roles to resolve and persist role verdicts.
+  collect    Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
+  refresh    Refresh reviewer/tester worktrees from the implementation branch.
+  diff       Show implementation branch changes against the run base ref.
   merge-plan Write MERGE_DECISION.md with manual merge context.
-  cleanup Report or apply safe run cleanup actions.
-  lead    Lead-session shortcuts for status, brief, collect, and send.
+  cleanup    Report or apply safe run cleanup actions.
+  lead       Lead-session shortcuts for status, brief, collect, and send.
 `;
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()): Promise<number> {
