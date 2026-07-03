@@ -197,12 +197,37 @@ Run state and artifacts live under:
 Common artifacts include:
 
 - `REQUEST.md`
+- `state.json`
 - `PLAN.md`
+- `IMPLEMENTATION_NOTES.md`
 - `REVIEW.md`
 - `TEST_REPORT.md`
 - `FINAL_SUMMARY.md`
 - `MERGE_DECISION.md`
+- lead inbox files under `inbox/`
 - bounded pane logs under `logs/`
+
+## Configuration
+
+`pi-herd init` creates a default config at `.pi-herd/config.yaml`:
+
+```yaml
+schema_version: 1
+harness:
+  default: pi
+  profiles:
+    pi:
+      command: pi
+paths:
+  runs_dir: .pi-herd/runs
+  prompts_dir: .pi-herd/prompts
+```
+
+Harness profiles can also set `provider`, `model`, per-role `models`, `thinking`, per-role `thinking`, and extra `args`.
+pi-herd passes these values through to the harness launch command and does not validate model availability.
+
+Configured `paths.runs_dir` must be repository-relative, stay inside the repository, and not traverse symlinks.
+Configured `paths.prompts_dir` must be a non-empty path.
 
 ## Command guide
 
@@ -232,7 +257,7 @@ Hard failures include invalid config, missing Git, or running outside a Git repo
 
 ### `pi-herd run create`
 
-Create run state and artifacts without launching sessions unless worktree flags are used.
+Create `REQUEST.md`, `state.json`, `logs/`, `inbox/`, and selected role records without launching sessions unless worktree flags are used.
 
 ```bash
 pi-herd run create "replace legacy auth refresh flow"
@@ -252,7 +277,9 @@ Useful flags:
 
 Worktree creation requires a clean repository outside pi-herd-managed paths.
 Existing target paths and branches are refused.
+Created worktrees use `.worktrees/pi-herd/{run_id}/{role}`.
 Herdr worktree creation is preferred, with raw Git fallback only when Herdr cannot be spawned or exits nonzero.
+If worktree materialization fails after the run directory is created, the saved run state is marked `failed`.
 
 ### `pi-herd run list`
 
@@ -266,6 +293,16 @@ pi-herd run list --all --json
 
 By default, only active runs are listed.
 Use `--all` to include completed, abandoned, and failed runs.
+Run discovery works from the main checkout and from role worktrees when Git can identify the shared common directory.
+
+### Run selection
+
+Commands that target an existing run accept `--run RUN`.
+`RUN` can be a `run_id`, a `run_slug`, or `latest`.
+
+When `--run` is omitted, pi-herd first tries a verified current Herdr/Pi pane binding and then falls back to the single active run.
+If multiple active runs are visible, pi-herd refuses to guess and asks for `--run`.
+Explicit `--run` selectors for `merge-plan` and `cleanup` can also inspect completed, abandoned, or failed runs.
 
 ### `pi-herd start`
 
@@ -297,6 +334,8 @@ Use `--` before dash-prefixed message text when using the terminal CLI.
 
 Sending marks the target role as `working` and updates activity timestamps.
 It does not infer completion.
+Prompt text, including multi-line text, is delivered as one Herdr `pane send-text` payload followed by Enter.
+If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
 
 If reviewer or tester has not launched yet, first send materializes or refreshes that role worktree, launches the role session, waits briefly for readiness, and then sends the prompt.
 
@@ -326,6 +365,7 @@ pi-herd status --run latest
 ```
 
 A role is done only when its activity signal has stopped and its required artifact is present, non-empty, and fresh enough for the current pass.
+Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
 
 ### `pi-herd wait`
 
@@ -452,6 +492,7 @@ Available shortcuts:
 /herd brief [--run RUN]
 /herd collect [--run RUN]
 /herd send <role> <message> [--run RUN]
+/herd help
 ```
 
 `/herd collect` maps to read-only `pi-herd lead collect`.
@@ -478,6 +519,8 @@ Notes:
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.
+- Child output captured and displayed by the extension is bounded to 12,000 characters per stream.
+- When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
 - The extension does not register agent-callable tools.
 - The extension does not own orchestration state.
 
