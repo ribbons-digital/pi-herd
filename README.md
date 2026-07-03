@@ -1,5 +1,7 @@
 # pi-herd
 
+[![CI](https://github.com/ribbons-digital/pi-herd/actions/workflows/ci.yml/badge.svg)](https://github.com/ribbons-digital/pi-herd/actions/workflows/ci.yml)
+
 Visible Pi session orchestration with Herdr panes and git worktrees.
 
 pi-herd helps you coordinate multiple coding-agent sessions without hiding them inside one parent process.
@@ -7,6 +9,11 @@ It creates visible lead and worker sessions in Herdr, keeps workers in isolated 
 
 pi-herd is Pi-first today.
 The orchestration model is intentionally harness-neutral so other coding-agent runtimes can be added later.
+
+![Illustration of pi-herd running in Herdr with a lead session and visible worker panes.](assets/pi-herd-running.svg)
+
+The running view keeps the lead, planner, implementer, reviewer, and tester visible as normal Herdr panes.
+The image above is an illustration of the layout and artifact flow.
 
 ## What you get
 
@@ -51,15 +58,14 @@ pi-herd doctor --json
 
 ### Install as a Herdr plugin from GitHub
 
-When this repository is public, install it with Herdr:
+Install pi-herd with Herdr:
 
 ```bash
 herdr plugin install ribbons-digital/pi-herd
 ```
 
 Herdr runs the manifest build commands and registers the plugin actions.
-The repository must be public and tagged with the GitHub topic `herdr-plugin` to appear in the Herdr plugin marketplace.
-This repository already has the `herdr-plugin` topic, but it is currently private, so it will not appear in the public marketplace until its visibility changes to public.
+This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for the Herdr plugin marketplace.
 
 ### Link a local checkout as a Herdr plugin
 
@@ -533,9 +539,8 @@ A repository appears in the marketplace when all of these are true:
 - The repository has the GitHub topic `herdr-plugin`.
 - The repository contains a `herdr-plugin.toml` manifest at the root or in an installable subdirectory.
 
-This repository has a root `herdr-plugin.toml` and the `herdr-plugin` topic.
-It is currently private, so it will not appear in the public marketplace until the repository is made public.
-After the repository is public, the marketplace should pick it up automatically on its next refresh.
+This repository is public, has a root `herdr-plugin.toml`, and has the `herdr-plugin` topic.
+The marketplace should pick it up automatically on its next refresh.
 
 Install command for users:
 
