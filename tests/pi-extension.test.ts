@@ -1,10 +1,11 @@
 import { realpathSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildHerdCliEnv,
   buildHerdCommand,
   boundOutput,
   createHerdCommandHandler,
@@ -132,6 +133,21 @@ describe('pi extension CLI resolution', () => {
       source: 'path'
     });
   });
+
+  it('prefixes PATH with the absolute HERDR_BIN_PATH directory', () => {
+    expect(buildHerdCliEnv({ HERDR_BIN_PATH: '/opt/herdr/bin/herdr', PATH: '/usr/bin', KEEP: 'yes' })).toEqual({
+      HERDR_BIN_PATH: '/opt/herdr/bin/herdr',
+      PATH: `/opt/herdr/bin${delimiter}/usr/bin`,
+      KEEP: 'yes'
+    });
+  });
+
+  it('ignores relative HERDR_BIN_PATH values', () => {
+    expect(buildHerdCliEnv({ HERDR_BIN_PATH: 'tools/herdr', PATH: '/usr/bin' })).toEqual({
+      HERDR_BIN_PATH: 'tools/herdr',
+      PATH: '/usr/bin'
+    });
+  });
 });
 
 describe('pi extension command handler', () => {
@@ -142,8 +158,23 @@ describe('pi extension command handler', () => {
 
     await handler('status --run run-1', ctx);
 
-    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'status', '--run', 'run-1'], { cwd: '/tmp/project', timeoutMs: 30_000 });
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'status', '--run', 'run-1'], { cwd: '/tmp/project', timeoutMs: 30_000, env: { PI_HERD_CLI: '/opt/bin/pi-herd' } });
     expect(ctx.ui?.notify).toHaveBeenCalledWith('ok', 'info');
+  });
+
+  it('passes the HERDR_BIN_PATH directory on PATH to the CLI', async () => {
+    const runner = fakeRunner({ exitCode: 0, stdout: 'ok\n', stderr: '' });
+    const ctx = fakeContext();
+    const env = { PI_HERD_CLI: '/opt/bin/pi-herd', HERDR_BIN_PATH: '/opt/herdr/bin/herdr', PATH: '/usr/bin' };
+    const handler = createHerdCommandHandler({ runner, env, moduleUrl: 'file:///missing.js' });
+
+    await handler('status', ctx);
+
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'status'], {
+      cwd: '/tmp/project',
+      timeoutMs: 30_000,
+      env: { ...env, PATH: `/opt/herdr/bin${delimiter}/usr/bin` }
+    });
   });
 
   it('uses the longer activation timeout for send commands', async () => {
@@ -153,7 +184,7 @@ describe('pi extension command handler', () => {
 
     await handler('send reviewer please review', ctx);
 
-    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'send', 'reviewer', 'please review'], { cwd: '/tmp/project', timeoutMs: 300_000 });
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'send', 'reviewer', 'please review'], { cwd: '/tmp/project', timeoutMs: 300_000, env: { PI_HERD_CLI: '/opt/bin/pi-herd' } });
   });
 
   it('prints usage without invoking the CLI for help', async () => {

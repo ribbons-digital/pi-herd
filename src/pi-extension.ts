@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
@@ -30,7 +30,7 @@ export interface CommandResult {
 }
 
 export interface CommandRunner {
-  run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<CommandResult>;
+  run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<CommandResult>;
 }
 
 export interface HerdCliResolution {
@@ -85,11 +85,13 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
       return;
     }
 
-    const resolution = resolveHerdCli({ env: options.env, moduleUrl: options.moduleUrl });
+    const env = buildHerdCliEnv(options.env ?? process.env);
+    const resolution = resolveHerdCli({ env, moduleUrl: options.moduleUrl });
     const runner = options.runner ?? nodeCommandRunner;
     const result = await runner.run(resolution.command, [...resolution.argsPrefix, ...command.cliArgs], {
       cwd: ctx.cwd,
-      timeoutMs: command.timeoutMs
+      timeoutMs: command.timeoutMs,
+      env
     });
 
     if (result.exitCode === 0) {
@@ -285,6 +287,20 @@ export function resolveHerdCli(options: { env?: NodeJS.ProcessEnv; moduleUrl?: s
   return { command: 'pi-herd', argsPrefix: [], source: 'path' };
 }
 
+export function buildHerdCliEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const herdrBinPath = env.HERDR_BIN_PATH?.trim();
+  if (!herdrBinPath || !isAbsolute(herdrBinPath)) {
+    return { ...env };
+  }
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+  const currentPath = env[pathKey];
+  const herdrBinDir = dirname(herdrBinPath);
+  return {
+    ...env,
+    [pathKey]: currentPath ? `${herdrBinDir}${delimiter}${currentPath}` : herdrBinDir
+  };
+}
+
 export function siblingCliPath(moduleUrl: string): string | undefined {
   if (!moduleUrl.startsWith('file:')) {
     return undefined;
@@ -332,6 +348,7 @@ export const nodeCommandRunner: CommandRunner = {
     return new Promise((resolve) => {
       const child = spawn(command, args, {
         cwd: options?.cwd,
+        env: options?.env,
         stdio: ['ignore', 'pipe', 'pipe']
       });
       const timeoutMs = options?.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
