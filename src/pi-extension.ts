@@ -42,6 +42,7 @@ export interface HerdCliResolution {
 export interface HerdCommand {
   cliArgs: string[];
   displayName: string;
+  timeoutMs: number;
 }
 
 export interface HerdCommandHandlerOptions {
@@ -50,7 +51,8 @@ export interface HerdCommandHandlerOptions {
   moduleUrl?: string;
 }
 
-const COMMAND_TIMEOUT_MS = 30_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const SEND_COMMAND_TIMEOUT_MS = 300_000;
 const MAX_NOTIFY_CHARS = 12_000;
 
 export const HERD_USAGE = `Usage:
@@ -87,7 +89,7 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
     const runner = options.runner ?? nodeCommandRunner;
     const result = await runner.run(resolution.command, [...resolution.argsPrefix, ...command.cliArgs], {
       cwd: ctx.cwd,
-      timeoutMs: COMMAND_TIMEOUT_MS
+      timeoutMs: command.timeoutMs
     });
 
     if (result.exitCode === 0) {
@@ -96,7 +98,7 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
       return;
     }
 
-    const failure = formatCommandFailure(command.displayName, result);
+    const failure = formatCommandFailure(command.displayName, result, command.timeoutMs);
     presentOutput(ctx, failure, 'error');
     throw new Error(failure);
   };
@@ -113,7 +115,8 @@ export function buildHerdCommand(args: string): HerdCommand | null {
     const run = parseOptionalRun(tokens.slice(1), `/herd ${subcommand} [--run RUN]`);
     return {
       cliArgs: run ? ['lead', subcommand, '--run', run] : ['lead', subcommand],
-      displayName: `/herd ${subcommand}`
+      displayName: `/herd ${subcommand}`,
+      timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS
     };
   }
 
@@ -148,7 +151,7 @@ export function buildHerdSendCommand(args: string, tokens = tokenizeWithSpans(ar
   if (run) {
     cliArgs.push('--run', run);
   }
-  return { cliArgs, displayName: '/herd send' };
+  return { cliArgs, displayName: '/herd send', timeoutMs: SEND_COMMAND_TIMEOUT_MS };
 }
 
 export function parseOptionalRun(tokens: TokenSpan[], usage: string): string | undefined {
@@ -274,9 +277,9 @@ export function boundOutput(text: string, maxChars = MAX_NOTIFY_CHARS): string {
   return `${text.slice(0, maxChars)}\n\n[Output truncated to ${maxChars} characters.]`;
 }
 
-export function formatCommandFailure(displayName: string, result: CommandResult): string {
+export function formatCommandFailure(displayName: string, result: CommandResult, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS): string {
   if (result.timedOut) {
-    return `${displayName} timed out after ${COMMAND_TIMEOUT_MS}ms.`;
+    return `${displayName} timed out after ${timeoutMs}ms.`;
   }
   if (result.error) {
     return `${displayName} failed to start: ${result.error.message}`;
@@ -303,7 +306,7 @@ export const nodeCommandRunner: CommandRunner = {
         cwd: options?.cwd,
         stdio: ['ignore', 'pipe', 'pipe']
       });
-      const timeoutMs = options?.timeoutMs ?? COMMAND_TIMEOUT_MS;
+      const timeoutMs = options?.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
       let stdout = '';
       let stderr = '';
       let settled = false;

@@ -26,9 +26,9 @@ describe('pi extension /herd argument mapping', () => {
   });
 
   it('maps read-oriented lead commands to existing pi-herd lead commands', () => {
-    expect(buildHerdCommand('status')).toEqual({ cliArgs: ['lead', 'status'], displayName: '/herd status' });
-    expect(buildHerdCommand('brief --run run-1')).toEqual({ cliArgs: ['lead', 'brief', '--run', 'run-1'], displayName: '/herd brief' });
-    expect(buildHerdCommand('collect --run run-1')).toEqual({ cliArgs: ['lead', 'collect', '--run', 'run-1'], displayName: '/herd collect' });
+    expect(buildHerdCommand('status')).toEqual({ cliArgs: ['lead', 'status'], displayName: '/herd status', timeoutMs: 30_000 });
+    expect(buildHerdCommand('brief --run run-1')).toEqual({ cliArgs: ['lead', 'brief', '--run', 'run-1'], displayName: '/herd brief', timeoutMs: 30_000 });
+    expect(buildHerdCommand('collect --run run-1')).toEqual({ cliArgs: ['lead', 'collect', '--run', 'run-1'], displayName: '/herd collect', timeoutMs: 30_000 });
   });
 
   it('rejects unknown args for non-send subcommands', () => {
@@ -38,14 +38,16 @@ describe('pi extension /herd argument mapping', () => {
   it('maps send while preserving message text as one CLI argument', () => {
     expect(buildHerdCommand('send reviewer please review --run run-1')).toEqual({
       cliArgs: ['lead', 'send', 'reviewer', 'please review', '--run', 'run-1'],
-      displayName: '/herd send'
+      displayName: '/herd send',
+      timeoutMs: 300_000
     });
   });
 
   it('allows dash-prefixed send message text', () => {
     expect(buildHerdCommand('send tester --focus flaky tests')).toEqual({
       cliArgs: ['lead', 'send', 'tester', '--focus flaky tests'],
-      displayName: '/herd send'
+      displayName: '/herd send',
+      timeoutMs: 300_000
     });
   });
 
@@ -110,6 +112,16 @@ describe('pi extension command handler', () => {
     expect(ctx.ui?.notify).toHaveBeenCalledWith('ok', 'info');
   });
 
+  it('uses the longer activation timeout for send commands', async () => {
+    const runner = fakeRunner({ exitCode: 0, stdout: 'sent\n', stderr: '' });
+    const ctx = fakeContext();
+    const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await handler('send reviewer please review', ctx);
+
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['lead', 'send', 'reviewer', 'please review'], { cwd: '/tmp/project', timeoutMs: 300_000 });
+  });
+
   it('prints usage without invoking the CLI for help', async () => {
     const runner = fakeRunner({ exitCode: 0, stdout: '', stderr: '' });
     const ctx = fakeContext();
@@ -119,6 +131,15 @@ describe('pi extension command handler', () => {
 
     expect(runner.run).not.toHaveBeenCalled();
     expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('/herd status'), 'info');
+  });
+
+  it('reports send timeout using the send timeout budget', async () => {
+    const runner = fakeRunner({ exitCode: null, stdout: '', stderr: '', timedOut: true });
+    const ctx = fakeContext();
+    const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await expect(handler('send reviewer please review', ctx)).rejects.toThrow('/herd send timed out after 300000ms.');
+    expect(ctx.ui?.notify).toHaveBeenCalledWith('/herd send timed out after 300000ms.', 'error');
   });
 
   it('notifies and throws on CLI failure', async () => {
@@ -137,7 +158,7 @@ describe('pi extension output bounding', () => {
   });
 });
 
-function fakeRunner(result: { exitCode: number | null; stdout: string; stderr: string }): CommandRunner & { run: ReturnType<typeof vi.fn> } {
+function fakeRunner(result: { exitCode: number | null; stdout: string; stderr: string; timedOut?: boolean }): CommandRunner & { run: ReturnType<typeof vi.fn> } {
   return {
     run: vi.fn().mockResolvedValue(result)
   };
