@@ -29,6 +29,7 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 **Pi extension command**:
 A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `status`, `brief`, `collect`, and `send` subcommands that map to the existing `pi-herd lead` command family.
+`/herd collect` stays read-only, and `/herd send` parses `--run` only as a trailing selector so message text is preserved.
 It does not own orchestration state and does not register agent-callable tools.
 _Avoid_: treating the extension as the runtime or exposing destructive cleanup and merge actions through it
 
@@ -233,5 +234,9 @@ Developer: Is `pi-herd cleanup` destructive by default?
 Domain expert: No.
 Without explicit flags it only reports cleanup candidates.
 It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to mutate anything, and it never closes the lead pane or deletes branches.
+Developer: What does the optional Pi extension expose first?
+Domain expert: It registers one `/herd` slash command for lead-session shortcuts: `status`, `brief`, read-only `collect`, and `send`.
+It maps to existing `pi-herd lead` helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.
+For `/herd send`, put `--run RUN` only at the end when selecting a run, because earlier run-looking text remains part of the message.

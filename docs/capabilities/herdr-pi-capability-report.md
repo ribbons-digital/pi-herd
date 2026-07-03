@@ -274,6 +274,9 @@ Implementation contract:
 - Keep `/herd collect` mapped to read-only `pi-herd lead collect`; top-level `pi-herd collect` remains the state-writing final collection command.
 - Run child CLI commands with `cwd` set to `ctx.cwd` so existing repository and active-run resolution semantics are preserved.
 - Prefer `PI_HERD_CLI` when provided, then sibling `dist/cli.js` for symlinked extension installs, then `pi-herd` on `PATH`.
+- Treat `PI_HERD_CLI` values ending in `.js` as Node entrypoints and other values as executables.
+- Prepend the absolute `HERDR_BIN_PATH` directory to the child CLI `PATH` so the CLI can find Herdr from Pi-launched extension commands.
+- Parse `/herd send --run` only as a trailing selector so run-looking text inside the message is preserved.
 - Bound command output before notifying the user or printing in non-UI modes.
 - Register no agent-callable tools in the first extension slice.
 - Do not expose destructive cleanup, merge, or worktree-removal operations through the extension.
@@ -422,3 +425,4 @@ If Herdr Pi integration is missing:
 - Slice 7 repeated-pass logic treats artifacts older than role activity as stale, warns when reviewer or tester worktrees contain source changes, refreshes reviewer and tester worktrees from the implementation branch with forced-refresh backup refs and dirty stashes, and reports implementation diffs with a bounded merge-base range.
 - Slice 8 cleanup closes worker panes with `herdr pane close` (skipping the lead pane) and removes role worktrees with `herdr worktree remove --workspace` using the stored linked-worktree workspace id when Herdr provider metadata is available, falling back to raw `git worktree remove` otherwise; it never closes the lead pane and never deletes role branches.
 - Slice 9 plugin packaging should use the Herdr plugin manifest contract, resolve target project directories for repository-targeting actions from plugin context or pane metadata, fail closed when no target is available, avoid relying on Pi lead binding in plugin invocation, expose `doctor`, `start`, `status`, `collect`, and report-only `cleanup`, and print usage for `start` until Herdr can pass goal text.
+- Slice 10 Pi extension packaging should register only `/herd`, map to existing `pi-herd lead` helpers, preserve read-only `lead collect` behavior, keep destructive actions and agent-callable tools out of scope, resolve the child CLI through `PI_HERD_CLI`, sibling `dist/cli.js`, or `PATH`, and keep orchestration state in CLI-owned run artifacts.

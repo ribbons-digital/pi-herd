@@ -2,7 +2,7 @@
 
 Status: Design approved, with Slice 0 through Slice 10 plus H1 and H2 implemented on the current branch.
 
-Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
+Each slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
 
 ## Slice 0: Herdr and Pi capability discovery
@@ -417,6 +417,9 @@ Implemented notes:
 - `/herd collect` maps to read-only `pi-herd lead collect`, not top-level `pi-herd collect`.
 - The extension registers no agent-callable tools.
 - The extension resolves the CLI from `PI_HERD_CLI`, sibling `dist/cli.js` for symlinked development installs, or `pi-herd` on `PATH`.
+- `PI_HERD_CLI` may point to a CLI executable or a CLI JavaScript file.
+- The extension prepends the absolute `HERDR_BIN_PATH` directory to the child CLI `PATH`.
+- `/herd send` parses `--run` only as a trailing selector so run-looking text inside the message is preserved.
 - Command output is bounded before it is shown through Pi notifications or print-mode stdout.
 - Extension contract probes confirmed command args are delivered as a string, `ctx.cwd` is the session cwd, print mode has no UI but still exposes a notify no-op, and Herdr/Pi env is inherited by child processes.
 

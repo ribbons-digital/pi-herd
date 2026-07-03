@@ -73,12 +73,12 @@ Slice 10 added the optional Pi extension slash command, mapped `/herd` subcomman
 - [x] Slice 9: Herdr plugin packaging.
 - [x] Slice 10: Optional Pi extension.
 
-## After Slice 9
+## After Slice 10
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
-- [x] Implement Slice 10 optional Pi extension on top of the Herdr plugin packaging.
+- [ ] Plan any future board pane, extension tools, or destructive surfaces only in later approved slices.
 
 ## Slice 6 implementation guardrails
 

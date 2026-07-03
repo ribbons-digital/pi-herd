@@ -188,6 +188,8 @@ The extension registers one slash command, `/herd`, for lead-session shortcuts:
 
 `/herd collect` maps to read-only `pi-herd lead collect`.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
+For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
+Run `/herd help` to print the extension usage.
 The extension does not register agent-callable tools and does not own orchestration state.
 
 Build before installing the extension:
@@ -203,7 +205,8 @@ mkdir -p ~/.pi/agent/extensions
 ln -sf "$PWD/dist/pi-extension.js" ~/.pi/agent/extensions/pi-herd.js
 ```
 
-If you copy the extension file instead of symlinking it, set `PI_HERD_CLI` to the CLI JavaScript file or make `pi-herd` available on `PATH`.
+If you copy the extension file instead of symlinking it, set `PI_HERD_CLI` to the CLI executable or CLI JavaScript file, or make `pi-herd` available on `PATH`.
+When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
 For example:
 
 ```bash
