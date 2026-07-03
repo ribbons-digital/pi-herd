@@ -28,13 +28,16 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 
 **Pi extension command**:
 Pi slash commands registered by the optional pi-herd extension for lead-session convenience.
-The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
+The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `diff`, `wait`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
 The extension also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>`.
-`/herd init`, `/herd doctor`, `/herd start`, and `/herd-start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
+`/herd init`, `/herd doctor`, `/herd start`, `/herd-start`, `diff`, and `wait` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
 `/herd start` and `/herd-start` accept a simple goal, reject leading flag-like goals, use a longer timeout, show partial-run recovery guidance on timeout, and rely on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
 `/herd-start` exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
+`/herd diff` stays read-only and shows diff stat plus changed files against the run base ref.
+`/herd wait` waits up to 60 seconds, polls every 2 seconds, records role verdicts in run state like terminal `pi-herd wait`, and presents timeout or unresolved-verdict snapshots as warnings rather than hard failures.
+`/herd wait` does not accept custom timeout flags; use terminal `pi-herd wait` for longer or custom waits.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
 It does not own orchestration state and does not register agent-callable tools.
@@ -242,8 +245,9 @@ Domain expert: No.
 Without explicit flags it only reports cleanup candidates.
 It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to mutate anything, and it never closes the lead pane or deletes branches.
 Developer: What does the optional Pi extension expose first?
-Domain expert: It registers `/herd` for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, `send`, and `help`.
+Domain expert: It registers `/herd` for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, read-only `diff`, bounded `wait`, `send`, and `help`.
 It also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>` because Pi prompt templates do not re-dispatch expanded slash commands.
+`/herd wait` records role verdicts in run state like terminal `pi-herd wait`, while `/herd diff` only reports stat and changed files.
 It maps operational subcommands to existing CLI helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I start a run from Pi inside Herdr?
 Domain expert: Use `/herd start <goal>` or `/herd-start <goal>` for a simple goal.

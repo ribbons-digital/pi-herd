@@ -149,7 +149,10 @@ Inspect the run:
 ```text
 /herd status
 /herd brief
+/herd diff
 ```
+
+`/herd diff` is read-only and shows diff stat plus changed files against the run base ref.
 
 Send work to a role:
 
@@ -174,9 +177,12 @@ pi-herd send tester "Run the smoke tests and write TEST_REPORT.md."
 
 Wait for working roles to settle:
 
-```bash
-pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
+```text
+/herd wait
 ```
+
+`/herd wait` waits up to 60 seconds, polls every 2 seconds, and records role verdicts in run state just like terminal `pi-herd wait`.
+Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
 
 Collect role verdicts, pane logs, and artifact excerpts:
 
@@ -530,6 +536,8 @@ Available shortcuts:
 /herd status [--run RUN]
 /herd brief [--run RUN]
 /herd collect [--run RUN]
+/herd diff [--run RUN]
+/herd wait [--run RUN]
 /herd send <role> <message> [--run RUN]
 /herd help
 ```
@@ -541,6 +549,9 @@ The alias exists because Pi prompt templates expand after extension slash-comman
 Use terminal `pi-herd start ...` for advanced start flags.
 `/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
+`/herd diff` maps to read-only `pi-herd diff` and shows diff stat plus changed files against the run base ref.
+`/herd wait` maps to `pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000` and records role verdicts in run state on success, unresolved verdicts, and timeout, same as terminal `pi-herd wait`.
+Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 
 For local use, build the project and symlink the extension:
@@ -563,6 +574,7 @@ Notes:
 
 - `/herd start` and `/herd-start` strip one matching outer quote pair from goal text and reject leading flag-like goals so advanced flags stay in the terminal CLI.
 - If `/herd start` or `/herd-start` times out, the extension points you to `pi-herd run list`, `pi-herd status`, and cleanup because the run may have partially started.
+- `/herd wait` treats timeout and unresolved verdict snapshots as warnings so the status output remains visible in Pi.
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.
