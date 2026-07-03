@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 8 plus H1 and H2 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 9 plus H1 and H2 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -366,16 +366,33 @@ Goal: Expose common workflows through Herdr plugin actions.
 
 Deliverable: Herdr plugin manifest and actions for doctor, start, status, collect, and cleanup.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - `herdr-plugin.toml` using pnpm build commands.
 - Plugin actions.
-- Basic board pane if practical.
+- Plugin contract verification.
 - Plugin documentation.
+
+Implemented notes:
+
+- The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
+- The manifest build commands use bare `pnpm install --frozen-lockfile` and `pnpm build` for Herdr plugin installation.
+- The manifest declares exactly five actions: `doctor`, `start`, `status`, `collect`, and `cleanup`.
+- The action wrapper resolves the target project cwd from Herdr plugin context or Herdr pane metadata before invoking repository-targeting CLI commands.
+- Repository-targeting actions fail closed when no target project cwd can be resolved.
+- Herdr 0.7.1 plugin action invocation does not pass arbitrary action arguments, so the Herdr-discovered `start` action prints usage without resolving a target project unless explicit goal text is passed to the wrapper directly.
+- Plugin invocation does not provide `PI_CODING_AGENT=true` in the verified probe, so plugin actions do not assume Pi lead binding survives invocation.
+- The `cleanup` action is report-only and rejects destructive cleanup flags.
+- The `collect` action is documented as state and artifact writing.
+- The plugin contract verification is recorded in the capability report.
 
 Out of scope:
 
 - Pi extension.
+- Basic board pane.
+- Destructive cleanup actions.
 
 ## Slice 10: Optional Pi extension
 

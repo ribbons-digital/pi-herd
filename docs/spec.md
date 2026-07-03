@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, Slice 7 refresh/diff flow, and Slice 8 cleanup/merge planning implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, Slice 7 refresh/diff flow, Slice 8 cleanup/merge planning, and Slice 9 Herdr plugin packaging implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -602,7 +602,7 @@ Destructive commands such as cleanup, merge, and worktree removal should not be 
 
 ## Herdr plugin
 
-The Herdr plugin should expose common actions:
+The Herdr plugin exposes common actions:
 
 - doctor
 - start
@@ -610,7 +610,15 @@ The Herdr plugin should expose common actions:
 - collect
 - cleanup
 
-The plugin manifest and build commands must use pnpm, not npm.
+The plugin id is `ribbons-digital.pi-herd`.
+The plugin manifest and build commands use pnpm, not npm.
+The plugin action wrapper resolves the target project cwd from Herdr plugin context or Herdr pane metadata before invoking repository-targeting CLI commands.
+Repository-targeting actions fail closed when no target cwd can be resolved.
+The `cleanup` action is report-only and does not pass destructive cleanup flags.
+The `collect` action may write run state, logs, and `FINAL_SUMMARY.md`.
+Herdr 0.7.1 action invocation does not pass arbitrary action arguments, so the Herdr-discovered `start` action prints usage without resolving a target project unless explicit goal text is supplied to the wrapper directly.
+Herdr records plugin action stdout and stderr in plugin logs.
+The plugin does not own orchestration state.
 
 ## Development workflow
 
