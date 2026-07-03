@@ -152,7 +152,29 @@ export function buildHerdSendCommand(args: string, tokens = tokenizeWithSpans(ar
 }
 
 function parseTrailingSendRun(args: string, roleEnd: number): { run?: string; messageEnd: number } {
-  const trimmed = args.slice(0, trimEndIndex(args));
+  const end = trimEndIndex(args);
+  const messageStart = firstNonWhitespaceIndex(args, roleEnd);
+  const quotedMessageEnd = findOuterQuotedMessageEnd(args, messageStart, end);
+  if (quotedMessageEnd !== undefined) {
+    const afterQuote = args.slice(quotedMessageEnd, end);
+    if (!afterQuote.trim()) {
+      return { messageEnd: args.length };
+    }
+    const trailingRun = matchTrailingRun(args.slice(quotedMessageEnd, end));
+    if (trailingRun && trailingRun.match.index === 0) {
+      return { run: trailingRun.value, messageEnd: quotedMessageEnd };
+    }
+  }
+
+  const trailingRun = matchTrailingRun(args.slice(0, end));
+  if (trailingRun && trailingRun.match.index >= roleEnd) {
+    return { run: trailingRun.value, messageEnd: trailingRun.match.index };
+  }
+
+  return { messageEnd: args.length };
+}
+
+function matchTrailingRun(value: string): { match: RegExpExecArray; value: string } | undefined {
   const patterns: Array<{ regex: RegExp; quoted: boolean }> = [
     { regex: /(?:^|\s)--run\s+"((?:\\.|[^"\\])*)"$/, quoted: true },
     { regex: /(?:^|\s)--run\s+'((?:\\.|[^'\\])*)'$/, quoted: true },
@@ -160,18 +182,45 @@ function parseTrailingSendRun(args: string, roleEnd: number): { run?: string; me
   ];
 
   for (const pattern of patterns) {
-    const match = pattern.regex.exec(trimmed);
-    if (!match || match.index < roleEnd) {
+    const match = pattern.regex.exec(value);
+    if (!match) {
       continue;
     }
-    const value = pattern.quoted ? unescapeQuotedToken(match[1] ?? '') : match[1] ?? '';
-    if (!value) {
+    const run = pattern.quoted ? unescapeQuotedToken(match[1] ?? '') : match[1] ?? '';
+    if (!run) {
       throw new Error(`--run requires a value.\nUsage: /herd send <role> <message> [--run RUN]`);
     }
-    return { run: value, messageEnd: match.index };
+    return { match, value: run };
   }
+  return undefined;
+}
 
-  return { messageEnd: args.length };
+function firstNonWhitespaceIndex(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && /\s/.test(value[index] ?? '')) {
+    index += 1;
+  }
+  return index;
+}
+
+function findOuterQuotedMessageEnd(value: string, start: number, end: number): number | undefined {
+  const quote = value[start];
+  if (quote !== '"' && quote !== "'") {
+    return undefined;
+  }
+  let index = start + 1;
+  while (index < end) {
+    const char = value[index] ?? '';
+    if (char === '\\' && index + 1 < end) {
+      index += 2;
+      continue;
+    }
+    if (char === quote) {
+      return index + 1;
+    }
+    index += 1;
+  }
+  return undefined;
 }
 
 function trimEndIndex(value: string): number {

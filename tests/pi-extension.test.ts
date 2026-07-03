@@ -70,6 +70,19 @@ describe('pi extension /herd argument mapping', () => {
     });
   });
 
+  it('keeps run-looking text inside matching outer message quotes', () => {
+    expect(buildHerdCommand('send reviewer "please mention --run run-1"')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please mention --run run-1'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+    expect(buildHerdCommand("send reviewer 'please mention --run run-1' --run run-2")).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please mention --run run-1', '--run', 'run-2'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
   it('preserves apostrophes and unmatched quote characters in send message text', () => {
     expect(buildHerdCommand('send reviewer don\'t forget tests')).toEqual({
       cliArgs: ['lead', 'send', 'reviewer', 'don\'t forget tests'],
