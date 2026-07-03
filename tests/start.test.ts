@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -116,6 +116,96 @@ describe('start orchestration', () => {
     expect(saved.lead_binding.session_ref).toBeNull();
     expect(saved.roles.planner?.launch_metadata?.launch_method).toBe('herdr-agent-start');
     expect(saved.roles.planner?.launch_metadata?.prompt_method).toBe('pane-send-text-enter');
+  });
+
+  it('refuses to start a duplicate active run from the same verified lead pane', async () => {
+    const existingRunDir = join(dir, '.pi-herd/runs/existing-run');
+    await mkdir(existingRunDir, { recursive: true });
+    await writeFile(join(existingRunDir, 'state.json'), `${JSON.stringify({
+      ...minimalState(),
+      run_id: 'existing-run',
+      run_slug: 'existing-run',
+      goal: 'Existing run',
+      canonical_run_dir: existingRunDir,
+      lead_binding: { role: 'lead', harness: 'pi', herdr_workspace_id: 'lead-ws', herdr_tab_id: 'lead-tab', herdr_pane_id: 'lead-pane', session_ref: null }
+    }, null, 2)}\n`, 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' }))
+    }));
+
+    await expect(startRun({
+      cwd: dir,
+      goal: 'Duplicate start',
+      now: NOW,
+      roles: ['planner'],
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', PI_CODING_AGENT: 'true' }
+    })).rejects.toThrow(/already the lead for active pi-herd run existing-run/);
+    await expect(readFile(join(dir, '.pi-herd/runs/2026-07-01T12-00-00-duplicate-start/state.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('continues when a matching stored lead pane cannot be verified as current', async () => {
+    const existingRunDir = join(dir, '.pi-herd/runs/existing-run');
+    await mkdir(existingRunDir, { recursive: true });
+    await writeFile(join(existingRunDir, 'state.json'), `${JSON.stringify({
+      ...minimalState(),
+      run_id: 'existing-run',
+      run_slug: 'existing-run',
+      goal: 'Existing run',
+      canonical_run_dir: existingRunDir,
+      lead_binding: { role: 'lead', harness: 'pi', herdr_workspace_id: 'lead-ws', herdr_tab_id: 'lead-tab', herdr_pane_id: 'lead-pane', session_ref: null }
+    }, null, 2)}\n`, 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'different-current-pane', workspace_id: 'other-ws', tab_id: 'other-tab' })),
+      'herdr workspace create --cwd DIR --label pi-herd unverified-pane lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-unverified-pane-lead --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-unverified-pane-lead --session-id 2026-07-01T12-00-00-unverified-pane-lead': okJson({ pane_id: 'new-lead-pane', workspace_id: 'new-lead-ws', tab_id: 'new-lead-tab' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-unverified-pane-planner --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-unverified-pane-planner --session-id 2026-07-01T12-00-00-unverified-pane-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'new-lead-ws', tab_id: 'planner-tab' }),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-unverified-pane.\nGoal: Unverified pane\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-unverified-pane/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+    }));
+
+    const result = await startRun({
+      cwd: dir,
+      goal: 'Unverified pane',
+      now: NOW,
+      roles: ['planner'],
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', PI_CODING_AGENT: 'true' }
+    });
+
+    expect(result.state.lead_binding.herdr_pane_id).toBe('new-lead-pane');
+    expect(result.state.lead_binding.session_ref).toBe('2026-07-01T12-00-00-unverified-pane-lead');
+  });
+
+  it('allows a different pane to start while another active run exists', async () => {
+    const existingRunDir = join(dir, '.pi-herd/runs/existing-run');
+    await mkdir(existingRunDir, { recursive: true });
+    await writeFile(join(existingRunDir, 'state.json'), `${JSON.stringify({
+      ...minimalState(),
+      run_id: 'existing-run',
+      run_slug: 'existing-run',
+      goal: 'Existing run',
+      canonical_run_dir: existingRunDir,
+      lead_binding: { role: 'lead', harness: 'pi', herdr_workspace_id: 'other-ws', herdr_tab_id: 'other-tab', herdr_pane_id: 'other-pane', session_ref: null }
+    }, null, 2)}\n`, 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-different-pane-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-different-pane-planner --session-id 2026-07-01T12-00-00-different-pane-planner': okJson(envelopedPane('cli:agent:start', { pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' })),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-different-pane.\nGoal: Different pane\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-different-pane/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+    }));
+
+    const result = await startRun({
+      cwd: dir,
+      goal: 'Different pane',
+      now: NOW,
+      roles: ['planner'],
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', HERDR_WORKSPACE_ID: 'lead-ws', HERDR_TAB_ID: 'lead-tab', PI_CODING_AGENT: 'true' }
+    });
+
+    expect(result.state.lead_binding.herdr_pane_id).toBe('lead-pane');
+    expect(result.state.run_id).toBe('2026-07-01T12-00-00-different-pane');
   });
 
   it('does not require a clean repo for planner-only starts without planner worktrees', async () => {

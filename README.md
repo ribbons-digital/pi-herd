@@ -111,36 +111,55 @@ node dist/cli.js doctor
 
 ## Quick start
 
-Run these commands from the git repository you want pi-herd to orchestrate.
+Run these commands from a Pi session in Herdr, focused on the git repository you want pi-herd to orchestrate.
 
 Initialize pi-herd files:
 
-```bash
-pi-herd init
+```text
+/herd init
 ```
 
 Check that Git, Herdr, Pi, and configuration are usable:
 
-```bash
-pi-herd doctor
+```text
+/herd doctor
 ```
+
+If diagnostics find setup issues, `/herd doctor` shows the report and any warning text as a warning so you can fix it without leaving the Pi prompt.
 
 Start a visible run:
 
-```bash
-pi-herd start "implement the approved auth refresh plan"
+```text
+/herd start implement the approved auth refresh plan
 ```
+
+`/herd start` accepts a simple goal and may take a few minutes while it creates run artifacts, worktrees, panes, sessions, and the planner kickoff.
+Use terminal `pi-herd start ...` for advanced flags such as role selection or custom base refs.
+If the current pane already leads an active run, pi-herd refuses to start a duplicate from that pane and points you to status or cleanup commands.
 
 Inspect the run:
 
-```bash
-pi-herd status
-pi-herd lead brief
+```text
+/herd status
+/herd brief
 ```
 
 Send work to a role:
 
+```text
+/herd send implementer Implement the approved plan.
+/herd send reviewer Review the implementation branch.
+/herd send tester Run the smoke tests and write TEST_REPORT.md.
+```
+
+For terminal use, the same flow is available from the project checkout:
+
 ```bash
+pi-herd init
+pi-herd doctor
+pi-herd start "implement the approved auth refresh plan"
+pi-herd status
+pi-herd lead brief
 pi-herd send implementer "Implement the approved plan."
 pi-herd send reviewer "Review the implementation branch."
 pi-herd send tester "Run the smoke tests and write TEST_REPORT.md."
@@ -179,6 +198,7 @@ The lead session is the user-facing session that coordinates a run.
 It owns final decisions and sends prompts to worker roles.
 
 When `pi-herd start` runs inside a detectable Pi and Herdr pane, pi-herd tries to bind that pane as the lead.
+If that verified pane is already the lead for another active run, pi-herd refuses to start a duplicate from that pane.
 Otherwise, pi-herd creates a lead session.
 
 ### Worker sessions
@@ -324,6 +344,8 @@ pi-herd start "replace legacy auth refresh flow" --base-ref main --json
 The planner receives an initial kickoff prompt.
 The implementer launches as a staged session when selected.
 Reviewer and tester remain staged until first activation.
+When started from a detectable Pi pane in Herdr, pi-herd checks active runs before creating artifacts.
+If the current verified pane is already the lead for an active run, start fails and leaves the duplicate run directory uncreated.
 
 ### `pi-herd send`
 
@@ -494,6 +516,9 @@ It registers one slash command, `/herd`.
 Available shortcuts:
 
 ```text
+/herd init
+/herd doctor
+/herd start <goal>
 /herd status [--run RUN]
 /herd brief [--run RUN]
 /herd collect [--run RUN]
@@ -501,6 +526,10 @@ Available shortcuts:
 /herd help
 ```
 
+`/herd init`, `/herd doctor`, and `/herd start` map to the top-level CLI commands.
+`/herd start` accepts a simple goal and uses a longer timeout because startup can create worktrees, panes, sessions, and kickoff prompts.
+Use terminal `pi-herd start ...` for advanced start flags.
+`/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 
@@ -522,6 +551,8 @@ Reload Pi with `/reload` or start a new Pi session after installing the extensio
 
 Notes:
 
+- `/herd start` strips one matching outer quote pair from goal text and rejects leading flag-like goals so advanced flags stay in the terminal CLI.
+- If `/herd start` times out, the extension points you to `pi-herd run list`, `pi-herd status`, and cleanup because the run may have partially started.
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.
@@ -555,6 +586,11 @@ herdr plugin install ribbons-digital/pi-herd
 Run it from inside a Git repository.
 Confirm that `git`, `pi`, and `herdr` are available on `PATH`.
 Confirm that the Herdr server is running and that the Herdr Pi integration is installed.
+
+### Start refuses a duplicate lead pane
+
+The current Pi pane is already the verified lead for an active run.
+Inspect the existing run with `/herd status` or `pi-herd status`, then complete or abandon it with cleanup before starting another run from the same pane.
 
 ### A command cannot pick a run
 

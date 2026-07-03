@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { createRun, writeJsonAtomic, type LaunchMetadata, type RoleRecord, type RunCreateOptions, type RunCreateResult, type RunState } from './run-state.js';
+import { createRun, listRunsForInvocation, readRunState, writeJsonAtomic, type LaunchMetadata, type RoleRecord, type RunCreateOptions, type RunCreateResult, type RunState } from './run-state.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
@@ -41,9 +41,10 @@ export interface HerdrLaunchResult {
   metadata?: LaunchMetadata;
 }
 
-/** Create run artifacts, bind or create lead, launch planner, and stage selected workers. */
+/** Create run artifacts, bind or create lead, launch planner, and stage selected workers, refusing duplicate starts from an already-bound active lead pane. */
 export async function startRun(options: StartOptions): Promise<StartResult> {
   const runner = options.runner ?? nodeCommandRunner;
+  await assertCurrentPaneIsNotActiveLead(options, runner);
   const result = await createRun({ ...options, withWorktrees: startRequiresWorktrees(options), runner });
   const statePath = result.statePath;
   const state = result.state;
@@ -111,6 +112,34 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
 function startRequiresWorktrees(options: StartOptions): boolean {
   const selectedRoles = options.roles?.length ? options.roles : ['planner', 'implementer', 'reviewer', 'tester'];
   return selectedRoles.includes('implementer') || Boolean(options.plannerWorktree && selectedRoles.includes('planner'));
+}
+
+async function assertCurrentPaneIsNotActiveLead(options: StartOptions, runner: CommandRunner): Promise<void> {
+  const env = options.env ?? process.env;
+  if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
+    return;
+  }
+
+  const runs = await listRunsForInvocation(options.cwd, options.configPath, runner, false);
+  for (const run of runs) {
+    let state: RunState;
+    try {
+      state = await readRunState(join(run.canonical_run_dir, 'state.json'));
+    } catch {
+      continue;
+    }
+    if (state.status !== 'active') {
+      continue;
+    }
+    if (state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
+      continue;
+    }
+    const verified = await verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
+    if (!verified) {
+      continue;
+    }
+    throw new Error(`Current pane is already the lead for active pi-herd run ${state.run_id} (${state.run_slug}).\nUse /herd status or pi-herd status to inspect it. Complete or abandon the run with pi-herd cleanup --complete or pi-herd cleanup --abandon before starting another run from this pane.`);
+  }
 }
 
 /** Format the human-readable result for `pi-herd start`. */
