@@ -51,6 +51,40 @@ describe('pi extension /herd argument mapping', () => {
     });
   });
 
+  it('preserves apostrophes and unmatched quote characters in send message text', () => {
+    expect(buildHerdCommand('send reviewer don\'t forget tests')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'don\'t forget tests'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+    expect(buildHerdCommand('send reviewer don\'t forget "tests --run run-1')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'don\'t forget "tests', '--run', 'run-1'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
+  it('parses quoted trailing run selectors without parsing send message text', () => {
+    expect(buildHerdCommand('send reviewer don\'t forget tests --run "run one"')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'don\'t forget tests', '--run', 'run one'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
+  it('keeps non-trailing run-looking text in send messages', () => {
+    expect(buildHerdCommand('send reviewer please mention --run run-1 in docs today')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please mention --run run-1 in docs today'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+    expect(buildHerdCommand('send reviewer please mention --run "unfinished')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please mention --run "unfinished'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
   it('rejects send commands that only provide a trailing run selector without message text', () => {
     expect(() => buildHerdCommand('send reviewer --run run-1')).toThrow('Message must be a non-empty string');
   });

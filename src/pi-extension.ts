@@ -105,12 +105,17 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
 }
 
 export function buildHerdCommand(args: string): HerdCommand | null {
-  const tokens = tokenizeWithSpans(args);
-  const subcommand = tokens[0]?.value;
+  const leadingTokens = tokenizeWithSpans(args, 1);
+  const subcommand = leadingTokens[0]?.value;
   if (!subcommand || subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
     return null;
   }
 
+  if (subcommand === 'send') {
+    return buildHerdSendCommand(args);
+  }
+
+  const tokens = tokenizeWithSpans(args);
   if (subcommand === 'status' || subcommand === 'brief' || subcommand === 'collect') {
     const run = parseOptionalRun(tokens.slice(1), `/herd ${subcommand} [--run RUN]`);
     return {
@@ -120,38 +125,61 @@ export function buildHerdCommand(args: string): HerdCommand | null {
     };
   }
 
-  if (subcommand === 'send') {
-    return buildHerdSendCommand(args, tokens);
-  }
-
   throw new Error(`Unknown /herd command: ${subcommand}\n${HERD_USAGE}`);
 }
 
-export function buildHerdSendCommand(args: string, tokens = tokenizeWithSpans(args)): HerdCommand {
+export function buildHerdSendCommand(args: string, tokens = tokenizeWithSpans(args, 2)): HerdCommand {
   const role = tokens[1]?.value;
   if (!role || role === '--help' || role === '-h') {
     throw new Error(`Usage: /herd send <role> <message> [--run RUN]`);
   }
 
-  let run: string | undefined;
-  let messageEnd = args.length;
-  const last = tokens[tokens.length - 1];
-  const secondLast = tokens[tokens.length - 2];
-  if (tokens.length >= 4 && secondLast?.value === '--run' && last?.value) {
-    run = last.value;
-    messageEnd = secondLast.start;
-  }
-
-  const message = args.slice(tokens[1].end, messageEnd).trim();
+  const trailingRun = parseTrailingSendRun(args, tokens[1].end);
+  const message = args.slice(tokens[1].end, trailingRun.messageEnd).trim();
   if (!message) {
     throw new Error('Message must be a non-empty string.');
   }
 
   const cliArgs = ['lead', 'send', role, message];
-  if (run) {
-    cliArgs.push('--run', run);
+  if (trailingRun.run) {
+    cliArgs.push('--run', trailingRun.run);
   }
   return { cliArgs, displayName: '/herd send', timeoutMs: SEND_COMMAND_TIMEOUT_MS };
+}
+
+function parseTrailingSendRun(args: string, roleEnd: number): { run?: string; messageEnd: number } {
+  const trimmed = args.slice(0, trimEndIndex(args));
+  const patterns: Array<{ regex: RegExp; quoted: boolean }> = [
+    { regex: /(?:^|\s)--run\s+"((?:\\.|[^"\\])*)"$/, quoted: true },
+    { regex: /(?:^|\s)--run\s+'((?:\\.|[^'\\])*)'$/, quoted: true },
+    { regex: /(?:^|\s)--run\s+([^\s'"]\S*)$/, quoted: false }
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.regex.exec(trimmed);
+    if (!match || match.index < roleEnd) {
+      continue;
+    }
+    const value = pattern.quoted ? unescapeQuotedToken(match[1] ?? '') : match[1] ?? '';
+    if (!value) {
+      throw new Error(`--run requires a value.\nUsage: /herd send <role> <message> [--run RUN]`);
+    }
+    return { run: value, messageEnd: match.index };
+  }
+
+  return { messageEnd: args.length };
+}
+
+function trimEndIndex(value: string): number {
+  let index = value.length;
+  while (index > 0 && /\s/.test(value[index - 1] ?? '')) {
+    index -= 1;
+  }
+  return index;
+}
+
+function unescapeQuotedToken(value: string): string {
+  return value.replace(/\\([\s\S])/g, '$1');
 }
 
 export function parseOptionalRun(tokens: TokenSpan[], usage: string): string | undefined {
@@ -181,11 +209,11 @@ export interface TokenSpan {
   end: number;
 }
 
-export function tokenizeWithSpans(input: string): TokenSpan[] {
+export function tokenizeWithSpans(input: string, maxTokens = Number.POSITIVE_INFINITY): TokenSpan[] {
   const tokens: TokenSpan[] = [];
   let index = 0;
 
-  while (index < input.length) {
+  while (index < input.length && tokens.length < maxTokens) {
     while (index < input.length && /\s/.test(input[index] ?? '')) {
       index += 1;
     }
