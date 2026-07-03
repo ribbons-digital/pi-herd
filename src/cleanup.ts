@@ -192,11 +192,16 @@ async function removeRoleWorktree(state: RunState, record: RoleRecord, runner: C
     }
   }
   if (!removed) {
-    await git(runner, `remove ${record.role} worktree`, ['worktree', 'remove', ...(force ? ['--force'] : []), record.worktree_path], state.repo_root);
-    actions.push(`Removed ${record.role} git worktree ${record.worktree_path}.`);
+    try {
+      await git(runner, `remove ${record.role} worktree`, ['worktree', 'remove', ...(force ? ['--force'] : []), record.worktree_path], state.repo_root);
+      actions.push(`Removed ${record.role} git worktree ${record.worktree_path}.`);
+      removed = true;
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : String(error));
+    }
   }
 
-  return { actions, warnings, removed: true };
+  return { actions, warnings, removed };
 }
 
 async function formatMergeDecision(

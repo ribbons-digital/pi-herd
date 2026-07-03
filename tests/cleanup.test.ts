@@ -257,6 +257,24 @@ describe('merge-plan and cleanup commands', () => {
     expect(runner.calls).toContain('git stash push --all --message pi-herd reviewer cleanup backup 2026-07-01T12-00-00-forced-removal');
     expect(runner.calls).toContain(`git worktree remove --force ${state.roles.reviewer!.worktree_path}`);
   });
+
+  it('reports preserved dirty work when forced worktree removal fails', async () => {
+    const runner = new RecordingRunner({
+      'git status --porcelain --untracked-files=all --ignored=matching': okText('!! .env\n'),
+      'git worktree remove --force DIR/.worktrees/pi-herd/2026-07-01T12-00-00-forced-removal-failure/reviewer': { exitCode: 1, stdout: '', stderr: 'remove failed\n' }
+    });
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Forced removal failure', now: NOW, runner });
+    await materializeRole(state, 'reviewer', 'git');
+    await writeJsonAtomic(statePath, state);
+
+    const result = await cleanupRun({ cwd: dir, run: state.run_id, removeWorktrees: true, force: true, runner, now: NOW });
+
+    expect(result.text).toContain('Saved reviewer backup ref');
+    expect(result.text).toContain('Saved reviewer dirty work stash stash123');
+    expect(result.text).toContain('Could not remove reviewer worktree');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.reviewer?.worktree_status).toBe('materialized');
+  });
 });
 
 async function materializeRole(state: RunState, role: 'reviewer' | 'tester' | 'planner' | 'implementer', provider: 'git' | 'herdr'): Promise<void> {
