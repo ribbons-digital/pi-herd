@@ -53,15 +53,14 @@ pi-herd doctor --json
 
 ### Install as a Herdr plugin from GitHub
 
-When this repository is public, install it with Herdr:
+Install pi-herd with Herdr:
 
 ```bash
 herdr plugin install ribbons-digital/pi-herd
 ```
 
 Herdr runs the manifest build commands and registers the plugin actions.
-The repository must be public and tagged with the GitHub topic `herdr-plugin` to appear in the Herdr plugin marketplace.
-This repository already has the `herdr-plugin` topic, but it is currently private, so it will not appear in the public marketplace until its visibility changes to public.
+This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for the Herdr plugin marketplace.
 
 ### Link a local checkout as a Herdr plugin
 
@@ -535,9 +534,8 @@ A repository appears in the marketplace when all of these are true:
 - The repository has the GitHub topic `herdr-plugin`.
 - The repository contains a `herdr-plugin.toml` manifest at the root or in an installable subdirectory.
 
-This repository has a root `herdr-plugin.toml` and the `herdr-plugin` topic.
-It is currently private, so it will not appear in the public marketplace until the repository is made public.
-After the repository is public, the marketplace should pick it up automatically on its next refresh.
+This repository is public, has a root `herdr-plugin.toml`, and has the `herdr-plugin` topic.
+The marketplace should pick it up automatically on its next refresh.
 
 Install command for users:
 
