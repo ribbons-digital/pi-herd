@@ -1,5 +1,7 @@
 # pi-herd
 
+[![CI](https://github.com/ribbons-digital/pi-herd/actions/workflows/ci.yml/badge.svg)](https://github.com/ribbons-digital/pi-herd/actions/workflows/ci.yml)
+
 Visible Pi session orchestration with Herdr panes and git worktrees.
 
 pi-herd helps you coordinate multiple coding-agent sessions without hiding them inside one parent process.
