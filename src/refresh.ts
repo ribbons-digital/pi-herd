@@ -144,20 +144,16 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
 export async function diffRun(options: DiffOptions): Promise<CommandTextResult> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const implementationBranch = implementationBranchFor(resolved.state);
-  await assertRefExists(runner, resolved.state.repo_root, implementationBranch, 'implementation branch has not been created yet');
-  const range = `${resolved.state.base_ref}...${implementationBranch}`;
-  const stat = await git(runner, 'show implementation diff stat', ['diff', '--stat', range], resolved.state.repo_root);
-  const names = await git(runner, 'show implementation changed files', ['diff', '--name-status', range], resolved.state.repo_root);
+  const diff = await implementationDiff(runner, resolved.state);
   const lines = [
     `Diff for ${resolved.state.run_id}`,
-    `Range: ${range}`,
+    `Range: ${diff.range}`,
     '',
     '## Stat',
-    ...(stat.stdout.trim() ? stat.stdout.trimEnd().split(/\r?\n/) : ['No changes.']),
+    ...(diff.statLines.length ? diff.statLines : ['No changes.']),
     '',
     '## Files',
-    ...(names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : ['No changed files.'])
+    ...(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.'])
   ];
   return { state: resolved.state, text: `${formatBoundedLines(lines)}\n` };
 }
@@ -192,7 +188,21 @@ async function commitsAheadOfImplementation(
   return { count, lines: logResult.stdout.trim() ? logResult.stdout.trimEnd().split(/\r?\n/) : [`${count} commit(s)`] };
 }
 
-function implementationBranchFor(state: RunState): string {
+export async function implementationDiff(runner: CommandRunner, state: RunState): Promise<{ implementationBranch: string; range: string; statLines: string[]; nameStatusLines: string[] }> {
+  const implementationBranch = implementationBranchFor(state);
+  await assertRefExists(runner, state.repo_root, implementationBranch, 'implementation branch has not been created yet');
+  const range = `${state.base_ref}...${implementationBranch}`;
+  const stat = await git(runner, 'show implementation diff stat', ['diff', '--stat', range], state.repo_root);
+  const names = await git(runner, 'show implementation changed files', ['diff', '--name-status', range], state.repo_root);
+  return {
+    implementationBranch,
+    range,
+    statLines: stat.stdout.trim() ? stat.stdout.trimEnd().split(/\r?\n/) : [],
+    nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
+  };
+}
+
+export function implementationBranchFor(state: RunState): string {
   const branch = state.roles.implementer?.branch;
   if (!branch) {
     throw new Error('Implementation branch is unavailable because the implementer role is not selected.');
@@ -233,7 +243,7 @@ async function gitWorktreeAddExistingBranch(runner: CommandRunner, repoRoot: str
   await git(runner, `recreate ${branch} worktree`, ['worktree', 'add', path, branch], repoRoot);
 }
 
-async function assertExpectedRoleWorktree(
+export async function assertExpectedRoleWorktree(
   runner: CommandRunner,
   worktreePath: string,
   branch: string | undefined,
@@ -273,7 +283,7 @@ async function stashDirtyWorktree(runner: CommandRunner, worktreePath: string, r
   return result.stdout.trim();
 }
 
-async function git(runner: CommandRunner, label: string, args: string[], cwd: string) {
+export async function git(runner: CommandRunner, label: string, args: string[], cwd: string) {
   const result = await runner.run('git', args, { cwd });
   if (result.exitCode !== 0) {
     throw new Error(`Could not ${label}: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git failed'}`);
@@ -290,12 +300,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function backupRefFor(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
+export async function backupRefFor(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
   const head = await git(runner, 'resolve reviewer/tester worktree HEAD for backup ref', ['rev-parse', '--short=12', 'HEAD'], worktreePath);
   return `refs/pi-herd/backup/${role}/${runId}/${head.stdout.trim()}-${randomUUID()}`;
 }
 
-function formatBoundedLines(lines: string[]): string {
+export function formatBoundedLines(lines: string[]): string {
   const budget = OUTPUT_BUDGETS.terminalSummaryLines;
   if (lines.length <= budget) return lines.join('\n');
   return [...lines.slice(0, budget), `... truncated ${lines.length - budget} line(s) ...`].join('\n');

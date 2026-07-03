@@ -18,6 +18,7 @@ H1 Herdr client reliability hardening is complete.
 H2 run-resolution and state-write safety hardening is complete.
 Slice 6 status, wait, and collect is complete.
 Slice 7 refresh, diff, and review/test flow is complete.
+Slice 8 cleanup and merge planning is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -50,6 +51,11 @@ pi-herd collect
 pi-herd refresh reviewer
 pi-herd refresh tester --force
 pi-herd diff
+pi-herd merge-plan
+pi-herd merge-plan --json --run latest
+pi-herd cleanup --complete
+pi-herd cleanup --abandon
+pi-herd cleanup --remove-worktrees --force
 pi-herd lead status
 pi-herd lead send tester "Run the approved smoke test."
 pi-herd lead collect
@@ -111,6 +117,16 @@ It never marks the run itself completed or abandoned.
 `pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
 Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed; forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
 `pi-herd diff` prints a bounded `base_ref...implementation_branch` stat and changed-file summary.
+`pi-herd merge-plan` writes `MERGE_DECISION.md` with provenance, bounded implementation diff context, role verdict context, reviewer and tester excerpts, warnings, and manual merge next steps.
+It never merges, pushes, or changes run state.
+Use `--json` for machine-readable output.
+`pi-herd cleanup` is report-only by default.
+Pass `--complete` or `--abandon` to close the run lifecycle, `--close-panes` to close worker panes, and `--remove-worktrees` to remove role worktrees.
+`--complete` and `--abandon` are mutually exclusive.
+Cleanup never closes the lead pane and never deletes branches.
+Closing worker panes or removing worktrees refuses working roles unless `--force` is passed; dirty worktree removal is also refused unless forced, and forced worktree removal saves recovery refs and dirty-work stashes where needed.
+Use `--json` for machine-readable cleanup output.
+Explicit `--run` selectors for merge planning and cleanup can inspect completed, abandoned, or failed runs after they leave active-run resolution.
 Repeated-pass artifacts must be fresh relative to the role's latest activity timestamp, so stale `REVIEW.md` or `TEST_REPORT.md` files do not count as complete.
 Generated reviewer and tester prompt templates describe this refresh flow, but `pi-herd init` does not overwrite existing prompt files unless `--force` is passed.
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.

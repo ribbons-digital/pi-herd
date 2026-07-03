@@ -9,6 +9,7 @@ import { formatStartText, startRun } from './start.js';
 import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
 import { collectRun, statusRun, waitRun } from './status.js';
 import { diffRun, refreshRole } from './refresh.js';
+import { cleanupRun, mergePlanRun } from './cleanup.js';
 
 const HELP = `pi-herd
 
@@ -24,21 +25,25 @@ Usage:
   pi-herd collect [--json] [--run RUN] [--config PATH]
   pi-herd refresh <reviewer|tester> [--force] [--run RUN] [--config PATH]
   pi-herd diff [--run RUN] [--config PATH]
+  pi-herd merge-plan [--json] [--run RUN] [--config PATH]
+  pi-herd cleanup [--complete|--abandon] [--close-panes] [--remove-worktrees] [--force] [--json] [--run RUN] [--config PATH]
   pi-herd lead <status|brief|collect|send> [args] [--run RUN] [--config PATH]
   pi-herd --help
 
 Commands:
-  doctor  Check the local environment and pi-herd config.
-  init    Create .pi-herd config, run directory, prompts, and ignore entries.
-  run     Create and manage orchestration run state.
-  start   Create or bind lead, launch visible sessions, and activate planner.
-  send    Send a prompt to a selected role pane, activating reviewer/tester if needed.
-  status  Evaluate role activity and required artifacts without writing state.
-  wait    Wait for working roles to resolve and persist role verdicts.
-  collect Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
-  refresh Refresh reviewer/tester worktrees from the implementation branch.
-  diff    Show implementation branch changes against the run base ref.
-  lead    Lead-session shortcuts for status, brief, collect, and send.
+  doctor     Check the local environment and pi-herd config.
+  init       Create .pi-herd config, run directory, prompts, and ignore entries.
+  run        Create and manage orchestration run state.
+  start      Create or bind lead, launch visible sessions, and activate planner.
+  send       Send a prompt to a selected role pane, activating reviewer/tester if needed.
+  status     Evaluate role activity and required artifacts without writing state.
+  wait       Wait for working roles to resolve and persist role verdicts.
+  collect    Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
+  refresh    Refresh reviewer/tester worktrees from the implementation branch.
+  diff       Show implementation branch changes against the run base ref.
+  merge-plan Write MERGE_DECISION.md with manual merge context.
+  cleanup    Report or apply safe run cleanup actions.
+  lead       Lead-session shortcuts for status, brief, collect, and send.
 `;
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()): Promise<number> {
@@ -251,6 +256,62 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
       const result = await diffRun({ cwd, configPath: values.config, run: values.run, runner: nodeCommandRunner });
       process.stdout.write(result.text);
       return 0;
+    }
+
+    if (command === 'merge-plan') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          json: { type: 'boolean', default: false },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd merge-plan [--json] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await mergePlanRun({ cwd, configPath: values.config, run: values.run, json: values.json, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return result.exitCode;
+    }
+
+    if (command === 'cleanup') {
+      const { values } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          complete: { type: 'boolean', default: false },
+          abandon: { type: 'boolean', default: false },
+          'close-panes': { type: 'boolean', default: false },
+          'remove-worktrees': { type: 'boolean', default: false },
+          force: { type: 'boolean', default: false },
+          json: { type: 'boolean', default: false },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: false
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd cleanup [--complete|--abandon] [--close-panes] [--remove-worktrees] [--force] [--json] [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      const result = await cleanupRun({
+        cwd,
+        configPath: values.config,
+        run: values.run,
+        complete: values.complete,
+        abandon: values.abandon,
+        closePanes: values['close-panes'],
+        removeWorktrees: values['remove-worktrees'],
+        force: values.force,
+        json: values.json,
+        runner: nodeCommandRunner
+      });
+      process.stdout.write(result.text);
+      return result.exitCode;
     }
 
     if (command === 'lead') {

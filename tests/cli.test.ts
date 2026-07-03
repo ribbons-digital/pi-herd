@@ -4,6 +4,15 @@ import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const cleanupMocks = vi.hoisted(() => ({
+  cleanupRun: vi.fn(),
+  mergePlanRun: vi.fn()
+}));
+
+vi.mock('../src/cleanup.js', () => cleanupMocks);
+
+import { cleanupRun, mergePlanRun, type LifecycleCommandResult } from '../src/cleanup.js';
 import { main, parseSendArgs } from '../src/cli.js';
 
 const execFileAsync = promisify(execFile);
@@ -11,6 +20,7 @@ const execFileAsync = promisify(execFile);
 describe('cli main', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('returns an exit code instead of throwing for parse errors', async () => {
@@ -26,6 +36,53 @@ describe('cli main', () => {
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd run create');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd refresh <reviewer|tester>');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd diff');
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd merge-plan');
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd cleanup');
+  });
+
+  it('routes cleanup through the top-level CLI parser', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(cleanupRun).mockResolvedValue(commandResult('cleanup ok\n'));
+
+    await expect(main(['cleanup', '--run', 'run-1', '--complete', '--close-panes', '--remove-worktrees', '--force', '--json'])).resolves.toBe(0);
+
+    expect(cleanupRun).toHaveBeenCalledWith(expect.objectContaining({
+      run: 'run-1',
+      complete: true,
+      abandon: false,
+      closePanes: true,
+      removeWorktrees: true,
+      force: true,
+      json: true
+    }));
+    expect(stdout.mock.calls.flat().join('')).toContain('cleanup ok');
+  });
+
+  it('routes cleanup abandon through the top-level CLI parser', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(cleanupRun).mockResolvedValue(commandResult('cleanup abandoned\n'));
+
+    await expect(main(['cleanup', '--run', 'run-1', '--abandon'])).resolves.toBe(0);
+
+    expect(cleanupRun).toHaveBeenCalledWith(expect.objectContaining({
+      run: 'run-1',
+      complete: false,
+      abandon: true
+    }));
+    expect(stdout.mock.calls.flat().join('')).toContain('cleanup abandoned');
+  });
+
+  it('routes merge-plan through the top-level CLI parser', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(mergePlanRun).mockResolvedValue(commandResult('merge plan ok\n'));
+
+    await expect(main(['merge-plan', '--run', 'run-1', '--json'])).resolves.toBe(0);
+
+    expect(mergePlanRun).toHaveBeenCalledWith(expect.objectContaining({
+      run: 'run-1',
+      json: true
+    }));
+    expect(stdout.mock.calls.flat().join('')).toContain('merge plan ok');
   });
 
   it('creates a run from the CLI', async () => {
@@ -72,3 +129,12 @@ describe('cli main', () => {
     expect(parsed.config).toBeUndefined();
   });
 });
+
+function commandResult(text: string): LifecycleCommandResult {
+  return {
+    state: {} as LifecycleCommandResult['state'],
+    snapshot: {} as LifecycleCommandResult['snapshot'],
+    text,
+    exitCode: 0
+  };
+}

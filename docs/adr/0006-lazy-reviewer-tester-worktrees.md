@@ -9,4 +9,5 @@ The first `pi-herd send reviewer ...` or `pi-herd send tester ...` activation ma
 `pi-herd refresh reviewer` and `pi-herd refresh tester` materialize pending role worktrees, recreate missing stored role worktrees when their branches still exist, or reset existing role worktrees to the implementation branch between passes.
 Refresh refuses dirty paths, committed role-branch changes, unexpected paths, wrong branches, and working roles unless `--force` is passed.
 Forced refresh saves a backup ref, stashes dirty work when needed, resets the role worktree to the implementation branch, and cleans untracked files.
+`pi-herd cleanup --remove-worktrees` removes role worktrees only when explicitly requested, refuses dirty or working roles unless forced, and preserves branch refs rather than deleting role branches.
 We chose this to preserve Codex-like worktree isolation while avoiding unnecessary worktree creation for staged roles that may never run.

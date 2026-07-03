@@ -70,6 +70,10 @@ export function paneGet(runner: CommandRunner, cwd: string, paneId: string): Pro
   return runner.run('herdr', ['pane', 'get', paneId], { cwd, timeoutMs: HERDR_LAUNCH_TIMEOUT_MS });
 }
 
+export function paneClose(runner: CommandRunner, cwd: string, paneId: string): Promise<CommandResult> {
+  return runner.run('herdr', ['pane', 'close', paneId], { cwd, timeoutMs: HERDR_LAUNCH_TIMEOUT_MS });
+}
+
 export function paneSendText(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<CommandResult> {
   return runner.run('herdr', ['pane', 'send-text', paneId, message], { cwd, timeoutMs: HERDR_PROMPT_TIMEOUT_MS });
 }
@@ -80,6 +84,10 @@ export function paneSendEnter(runner: CommandRunner, cwd: string, paneId: string
 
 export function waitAgentStatus(runner: CommandRunner, cwd: string, paneId: string, status: 'idle' | 'working' | 'blocked' | 'done' | 'unknown' = 'idle', timeoutMs = HERDR_READY_WAIT_TIMEOUT_MS): Promise<CommandResult> {
   return runner.run('herdr', ['wait', 'agent-status', paneId, '--status', status, '--timeout', String(timeoutMs)], { cwd, timeoutMs: HERDR_READY_RUNNER_TIMEOUT_MS });
+}
+
+export function worktreeRemove(runner: CommandRunner, cwd: string, options: { workspaceId: string; force?: boolean }): Promise<CommandResult> {
+  return runner.run('herdr', ['worktree', 'remove', '--workspace', options.workspaceId, ...(options.force ? ['--force'] : [])], { cwd, timeoutMs: HERDR_WORKTREE_CREATE_TIMEOUT_MS });
 }
 
 export function worktreeCreate(runner: CommandRunner, cwd: string, options: { repoRoot: string; branch: string; baseRef: string; path: string; label: string }): Promise<CommandResult> {
