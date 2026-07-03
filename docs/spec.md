@@ -598,10 +598,14 @@ It provides one slash command, `/herd`, with lead-oriented subcommands:
 `/herd collect` is the read-only lead collection helper and does not write `FINAL_SUMMARY.md`.
 Top-level `pi-herd collect` remains the state-writing terminal command for final collection.
 For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
+If the `/herd send` message is wrapped in one matching outer quote pair, the extension strips that pair before forwarding the message, while unmatched quotes and non-quote backslashes are preserved.
+Dash-prefixed message text is preserved directly and does not use the terminal CLI's `--` sentinel.
 The extension resolves the CLI through `PI_HERD_CLI`, sibling `dist/cli.js` for symlinked development installs, or `pi-herd` on `PATH`.
 `PI_HERD_CLI` may point to a CLI executable or a CLI JavaScript file.
 When `HERDR_BIN_PATH` is absolute, the extension prepends its directory to the child CLI `PATH`.
+The extension caps child stdout and stderr capture at 12,000 characters per stream and bounds surfaced output before notification or print-mode output.
 `/herd help`, `/herd --help`, and `/herd -h` print usage without invoking the CLI.
+Unrecognized `/herd` subcommands fail with usage instead of invoking the CLI.
 The extension does not register agent-callable tools.
 Destructive commands such as cleanup, merge, and worktree removal are not exposed through the first shipped extension.
 The extension does not own orchestration state or become the runtime.

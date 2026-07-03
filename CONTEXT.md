@@ -29,7 +29,8 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 **Pi extension command**:
 A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `status`, `brief`, `collect`, and `send` subcommands that map to the existing `pi-herd lead` command family.
-`/herd collect` stays read-only, and `/herd send` parses `--run` only as a trailing selector so message text is preserved.
+`/herd collect` stays read-only.
+`/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 It does not own orchestration state and does not register agent-callable tools.
 _Avoid_: treating the extension as the runtime or exposing destructive cleanup and merge actions through it
 
@@ -238,5 +239,6 @@ Developer: What does the optional Pi extension expose first?
 Domain expert: It registers one `/herd` slash command for lead-session shortcuts: `status`, `brief`, read-only `collect`, and `send`.
 It maps to existing `pi-herd lead` helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I send a prompt that starts with a dash?
-Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.
-For `/herd send`, put `--run RUN` only at the end when selecting a run, because earlier run-looking text remains part of the message.
+Domain expert: For terminal `pi-herd send`, put `--` after the role, then write the dash-prefixed prompt as literal message text.
+For `/herd send`, write dash-prefixed text directly because only a final `--run RUN` is treated as a selector.
+Quote the `/herd send` message when literal text should end with run-looking content, because one matching outer quote pair is stripped before delivery.

@@ -20,7 +20,7 @@ Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`,
 Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 Slice 8 added `pi-herd merge-plan`, `pi-herd cleanup`, `MERGE_DECISION.md`, provider-aware safe worktree removal, worker-pane cleanup, and explicit completed or abandoned lifecycle closure without automatic merging or branch deletion.
 Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contract, exposed doctor/start usage/status/collect/report-only cleanup actions, added a fail-closed action wrapper for repository-targeting actions, and documented plugin development.
-Slice 10 added the optional Pi extension slash command, mapped `/herd` subcommands to existing lead helpers, documented extension installation, and kept agent-callable tools out of scope.
+Slice 10 added the optional Pi extension slash command, mapped `/herd` subcommands to existing lead helpers, documented extension installation, added safe send-message parsing and bounded output, and kept agent-callable tools out of scope.
 
 ## Files to approve
 

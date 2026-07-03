@@ -420,7 +420,9 @@ Implemented notes:
 - `PI_HERD_CLI` may point to a CLI executable or a CLI JavaScript file.
 - The extension prepends the absolute `HERDR_BIN_PATH` directory to the child CLI `PATH`.
 - `/herd send` parses `--run` only as a trailing selector so run-looking text inside the message is preserved.
-- Command output is bounded before it is shown through Pi notifications or print-mode stdout.
+- `/herd send` strips one matching outer quote pair from message text, preserves unquoted messages, and preserves dash-prefixed message text without a `--` sentinel.
+- Unknown `/herd` subcommands fail with usage instead of invoking the CLI.
+- Child stdout and stderr capture is capped in memory, and surfaced output is bounded before it is shown through Pi notifications or print-mode stdout.
 - Extension contract probes confirmed command args are delivered as a string, `ctx.cwd` is the session cwd, print mode has no UI but still exposes a notify no-op, and Herdr/Pi env is inherited by child processes.
 
 Out of scope:

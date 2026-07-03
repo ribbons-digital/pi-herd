@@ -189,7 +189,10 @@ The extension registers one slash command, `/herd`, for lead-session shortcuts:
 `/herd collect` maps to read-only `pi-herd lead collect`.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
-Run `/herd help` to print the extension usage.
+One matching outer quote pair around the `/herd send` message is stripped before delivery, so `/herd send reviewer "please review"` sends `please review`.
+Dash-prefixed `/herd send` message text is preserved directly and does not need the terminal CLI's `--` sentinel.
+Child stdout and stderr capture is capped at 12,000 characters per stream, and displayed output is also bounded.
+Run `/herd help` to print the extension usage; unknown `/herd` subcommands fail with usage instead of invoking the CLI.
 The extension does not register agent-callable tools and does not own orchestration state.
 
 Build before installing the extension:
