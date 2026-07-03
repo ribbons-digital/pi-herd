@@ -1,216 +1,512 @@
 # pi-herd
 
-Visible Pi session orchestration with Herdr and git worktrees.
+Visible Pi session orchestration with Herdr panes and git worktrees.
 
-pi-herd is a Herdr-first orchestration layer for running multiple visible coding-agent sessions as isolated, steerable workers.
-It is Pi-first, but the core model is harness-neutral so future harnesses can be supported.
+pi-herd helps you coordinate multiple coding-agent sessions without hiding them inside one parent process.
+It creates visible lead and worker sessions in Herdr, keeps workers in isolated git worktrees, and stores run state and artifacts in your repository.
 
-## Status
+pi-herd is Pi-first today.
+The orchestration model is intentionally harness-neutral so other coding-agent runtimes can be added later.
 
-Design approved.
-Slice 0 capability discovery is complete.
-Slice 1 CLI foundation is complete.
-Slice 2 run state and artifact model is complete.
-Slice 3 worktree orchestration is complete.
-Slice 4 Herdr pane and session launch is complete.
-Slice 5 messaging and lead commands are complete.
-H1 Herdr client reliability hardening is complete.
-H2 run-resolution and state-write safety hardening is complete.
-Slice 6 status, wait, and collect is complete.
-Slice 7 refresh, diff, and review/test flow is complete.
-Slice 8 cleanup and merge planning is complete.
-Slice 9 Herdr plugin packaging is complete.
-Slice 10 optional Pi extension is implemented on the current branch.
-Implementation continues as ordered GitHub issues and pull requests.
+## What you get
 
-## Docs
+- A lead session that stays in control.
+- Visible worker sessions for planning, implementation, review, and testing.
+- Git worktree isolation for source-changing roles.
+- Durable run artifacts under `.pi-herd/runs/`.
+- Read-only status and brief commands for steering a run without polluting context.
+- Collection and merge-preparation commands that write clear handoff artifacts.
+- A Herdr plugin manifest for common Herdr actions.
+- An optional Pi slash-command extension for `/herd ...` shortcuts.
 
-- [Product spec](docs/spec.md)
-- [Slice plan](docs/slices.md)
-- [Approval plan](docs/approval-plan.md)
-- [Capability report](docs/capabilities/herdr-pi-capability-report.md)
-- [Domain language](CONTEXT.md)
-- [ADRs](docs/adr/)
+## Requirements
 
-## CLI commands
+Install these tools first:
+
+- Git.
+- Node.js.
+- pnpm.
+- Herdr 0.7.1 or newer.
+- Pi, with the Herdr Pi integration installed.
+
+After installing or linking the CLI, check your environment from a project checkout:
 
 ```bash
-pi-herd init
 pi-herd doctor
-pi-herd doctor --json
-pi-herd run create "replace legacy auth refresh flow"
-pi-herd run create "plan auth refresh" --role planner --base-ref main --json
-pi-herd run create "implement auth refresh" --with-worktrees
-pi-herd run list
-pi-herd run list --all --json
-pi-herd start "replace legacy auth refresh flow"
-pi-herd send implementer "Implement the approved plan."
-pi-herd send reviewer -- "--check the implementation branch"
-pi-herd status
-pi-herd status --json
-pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
-pi-herd collect
-pi-herd refresh reviewer
-pi-herd refresh tester --force
-pi-herd diff
-pi-herd merge-plan
-pi-herd merge-plan --json --run latest
-pi-herd cleanup --complete
-pi-herd cleanup --abandon
-pi-herd cleanup --remove-worktrees --force
-pi-herd lead status
-pi-herd lead send tester "Run the approved smoke test."
-pi-herd lead collect
-pi-herd lead brief
 ```
 
-`pi-herd init` creates `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates under `.pi-herd/prompts/`, and safe ignore entries.
-It does not overwrite existing config or prompts unless `--force` is passed.
-
-`pi-herd doctor` checks git, git worktree support, Pi, Herdr, Herdr server reachability, Herdr Pi integration status, and the local config when present.
-Warnings do not make the command fail, but hard failures such as invalid config or missing git repo do.
-
-`pi-herd run create` creates a canonical run directory with `REQUEST.md`, `state.json`, `logs/`, and `inbox/`.
-By default it creates pending role records for `planner`, `implementer`, `reviewer`, and `tester`.
-It must run inside a git repository and fails if base ref inference cannot resolve a branch or commit.
-`pi-herd start` uses the same git repository and base-ref requirements because it creates a run before launching sessions.
-Pass `--role` one or more times to limit the selected roles, `--base-ref` to override the detected branch or commit, `--json` for the saved state, or `--config` for a custom config path.
-Configured `paths.runs_dir` values must be repository-relative, remain inside the repository root, and not traverse symlinks.
-Pass `--with-worktrees` to materialize the implementation worktree while leaving reviewer and tester worktrees pending.
-Worktree creation requires a clean repository outside the configured runs directory and `.worktrees`, refuses existing target paths or branches, uses Herdr first, and falls back to `git worktree add` only when Herdr creation exits nonzero or Herdr cannot be spawned.
-If Herdr creation times out or exits successfully but returns missing, unusable, or mismatched metadata, pi-herd fails clearly instead of attempting git fallback against the same target.
-Pass `--planner-worktree` to also materialize a planner worktree; it implies `--with-worktrees`.
-Created worktrees use `.worktrees/pi-herd/{run_id}/{role}` and are listed in text output with their branch and provider.
-If worktree materialization fails after the run directory is created, the saved run state is marked `failed` and is not selected as active.
-It does not create panes or worker sessions.
-
-`pi-herd run list` lists active runs by default.
-It must run inside the repository or one of its git worktrees.
-Use `--all` to include completed, failed, and abandoned runs, or `--json` for machine-readable output.
-Run discovery works from the main checkout and from role worktrees when git can identify the shared common directory.
-
-`pi-herd start` creates the run artifacts, checks that the repository is clean outside ignored pi-herd paths before materializing worktrees, materializes the implementer worktree when selected, binds the current Pi/Herdr pane as lead when verified, or creates a lead workspace and session when needed.
-It accepts repeated `--role` flags, `--base-ref`, `--planner-worktree`, `--json`, and `--config`.
-It launches and activates the planner with an initial kickoff prompt after a bounded Herdr idle wait.
-If readiness cannot be confirmed, it prints a warning and sends the kickoff anyway.
-It launches the implementer as a staged session in the implementation worktree when the implementer role is selected.
-Reviewer and tester remain staged slots with pending worktrees until first activation.
-Launch metadata and pane/session refs are persisted after each successful step so partial launch failures leave recoverable state.
-
-`pi-herd send` sends a prompt to a selected role pane using Herdr pane text submission.
-`--run` and `--config` may appear before or after message text while option parsing is active; use `--` before dash-prefixed message text so it is treated literally.
-When `--run` is omitted, send and lead helpers first try a verified current Herdr/Pi pane binding and otherwise use the single active run fallback.
-They must run inside the repository or one of its git worktrees so pi-herd can locate the canonical run state.
-Before sending to an existing pane, pi-herd validates the saved pane id with Herdr.
-If Herdr clearly reports that the pane is missing, pi-herd relaunches the role session safely before sending; ambiguous validation failures stop without clearing saved pane state.
-When reviewer or tester is selected but not launched yet, the first send materializes that role worktree from the implementation branch, launches the session, waits briefly for idle readiness, then sends the prompt.
-If readiness cannot be confirmed, it prints a warning and sends anyway.
-Sending marks the role `working` and records `last_activity_at` through a locked state update, but does not infer completion.
-Prompt text, including multi-line text, is delivered as one `pane send-text` payload followed by Enter.
-If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
-`pi-herd lead send` performs the same send with a lead-pane guard.
-`pi-herd status` evaluates role activity and required artifacts without writing run state.
-`pi-herd wait` polls working or blocked roles until they resolve to `done`, `incomplete`, or `blocked`, then persists role verdicts through locked state updates.
-If a stored blocked role reports working again, `wait` keeps polling rather than treating the stale blocked state as resolved.
-Use `--timeout-ms`, `--poll-interval-ms`, and `--json` to tune wait behavior and output.
-`wait` and `collect` return exit code 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
-`pi-herd collect` evaluates roles, persists role verdicts, collects bounded pane logs under `logs/`, and writes `FINAL_SUMMARY.md` with provenance and artifact excerpts.
-It never marks the run itself completed or abandoned.
-`pi-herd refresh reviewer` and `pi-herd refresh tester` materialize or refresh artifact-only role worktrees from the implementation branch between passes.
-Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed; forced refresh saves a backup ref, stashes dirty work when needed, resets to the implementation branch, and cleans untracked files.
-`pi-herd diff` prints a bounded `base_ref...implementation_branch` stat and changed-file summary.
-`pi-herd merge-plan` writes `MERGE_DECISION.md` with provenance, bounded implementation diff context, role verdict context, reviewer and tester excerpts, warnings, and manual merge next steps.
-It never merges, pushes, or changes run state.
-Use `--json` for machine-readable output.
-`pi-herd cleanup` is report-only by default.
-Pass `--complete` or `--abandon` to close the run lifecycle, `--close-panes` to close worker panes, and `--remove-worktrees` to remove role worktrees.
-`--complete` and `--abandon` are mutually exclusive.
-Cleanup never closes the lead pane and never deletes branches.
-Closing worker panes or removing worktrees refuses working roles unless `--force` is passed; dirty worktree removal is also refused unless forced, and forced worktree removal saves recovery refs and dirty-work stashes where needed.
-Use `--json` for machine-readable cleanup output.
-Explicit `--run` selectors for merge planning and cleanup can inspect completed, abandoned, or failed runs after they leave active-run resolution.
-Repeated-pass artifacts must be fresh relative to the role's latest activity timestamp, so stale `REVIEW.md` or `TEST_REPORT.md` files do not count as complete.
-Generated reviewer and tester prompt templates describe this refresh flow, but `pi-herd init` does not overwrite existing prompt files unless `--force` is passed.
-`pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
-`lead collect` prints a read-only artifact and inbox inventory.
-They do not infer worker completion or write `FINAL_SUMMARY.md`; use top-level `pi-herd collect` for final collection.
-
-## Herdr plugin development
-
-The repository includes a Herdr plugin manifest at `herdr-plugin.toml`.
-The plugin id is `ribbons-digital.pi-herd`.
-It exposes actions for `doctor`, `start`, `status`, `collect`, and report-only `cleanup`.
-
-Build locally before linking:
+If you are running from an uninstalled checkout, use the built CLI directly:
 
 ```bash
-sfw pnpm build
+node dist/cli.js doctor
+```
+
+Use JSON output when scripting:
+
+```bash
+pi-herd doctor --json
+```
+
+## Installation
+
+### Install as a Herdr plugin from GitHub
+
+When this repository is public, install it with Herdr:
+
+```bash
+herdr plugin install ribbons-digital/pi-herd
+```
+
+Herdr runs the manifest build commands and registers the plugin actions.
+The repository must be public and tagged with the GitHub topic `herdr-plugin` to appear in the Herdr plugin marketplace.
+This repository already has the `herdr-plugin` topic, but it is currently private, so it will not appear in the public marketplace until its visibility changes to public.
+
+### Link a local checkout as a Herdr plugin
+
+Clone the repository, install dependencies, build it, then link it:
+
+```bash
+git clone https://github.com/ribbons-digital/pi-herd.git
+cd pi-herd
+pnpm install --frozen-lockfile
+pnpm build
 herdr plugin link .
 herdr plugin action list --plugin ribbons-digital.pi-herd
 ```
 
-Invoke actions with either the qualified action id or the local action id plus `--plugin`:
+Run a plugin action:
 
 ```bash
 herdr plugin action invoke ribbons-digital.pi-herd.doctor
 herdr plugin action invoke status --plugin ribbons-digital.pi-herd
 ```
 
-Invoke repository-targeting actions from a focused project pane or workspace.
-For those actions, the wrapper resolves the target project directory from Herdr plugin context or pane metadata and fails closed if it cannot find one.
-Herdr records action stdout and stderr in plugin logs:
+Plugin logs are available through Herdr:
 
 ```bash
 herdr plugin log list --plugin ribbons-digital.pi-herd
 ```
 
+### Use the CLI directly from a checkout
+
+For local CLI use from this repository:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm dev -- doctor
+```
+
+You can also run the built CLI with Node:
+
+```bash
+node dist/cli.js doctor
+```
+
+## Quick start
+
+Run these commands from the git repository you want pi-herd to orchestrate.
+
+Initialize pi-herd files:
+
+```bash
+pi-herd init
+```
+
+Check that Git, Herdr, Pi, and configuration are usable:
+
+```bash
+pi-herd doctor
+```
+
+Start a visible run:
+
+```bash
+pi-herd start "implement the approved auth refresh plan"
+```
+
+Inspect the run:
+
+```bash
+pi-herd status
+pi-herd lead brief
+```
+
+Send work to a role:
+
+```bash
+pi-herd send implementer "Implement the approved plan."
+pi-herd send reviewer "Review the implementation branch."
+pi-herd send tester "Run the smoke tests and write TEST_REPORT.md."
+```
+
+Wait for working roles to settle:
+
+```bash
+pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
+```
+
+Collect role verdicts, pane logs, and artifact excerpts:
+
+```bash
+pi-herd collect
+```
+
+Prepare merge context:
+
+```bash
+pi-herd diff
+pi-herd merge-plan
+```
+
+Close a completed run after you are done:
+
+```bash
+pi-herd cleanup --complete --close-panes --remove-worktrees
+```
+
+## Core concepts
+
+### Lead session
+
+The lead session is the user-facing session that coordinates a run.
+It owns final decisions and sends prompts to worker roles.
+
+When `pi-herd start` runs inside a detectable Pi and Herdr pane, pi-herd tries to bind that pane as the lead.
+Otherwise, pi-herd creates a lead session.
+
+### Worker sessions
+
+Worker sessions are visible Herdr panes with focused roles.
+The default roles are `planner`, `implementer`, `reviewer`, and `tester`.
+
+Workers write artifacts and source changes instead of coordinating hidden subagents directly.
+Reviewer and tester sessions are activated lazily when first used.
+
+### Runs
+
+A run is one orchestration container for one user goal.
+A run can include multiple passes of implementation, review, testing, collection, and cleanup.
+
+Run state and artifacts live under:
+
+```text
+.pi-herd/runs/{run_id}
+```
+
+Common artifacts include:
+
+- `REQUEST.md`
+- `state.json`
+- `PLAN.md`
+- `IMPLEMENTATION_NOTES.md`
+- `REVIEW.md`
+- `TEST_REPORT.md`
+- `FINAL_SUMMARY.md`
+- `MERGE_DECISION.md`
+- lead inbox files under `inbox/`
+- bounded pane logs under `logs/`
+
+## Configuration
+
+`pi-herd init` creates a default config at `.pi-herd/config.yaml`:
+
+```yaml
+schema_version: 1
+harness:
+  default: pi
+  profiles:
+    pi:
+      command: pi
+paths:
+  runs_dir: .pi-herd/runs
+  prompts_dir: .pi-herd/prompts
+```
+
+Harness profiles can also set `provider`, `model`, per-role `models`, `thinking`, per-role `thinking`, and extra `args`.
+pi-herd passes these values through to the harness launch command and does not validate model availability.
+
+Configured `paths.runs_dir` must be repository-relative, stay inside the repository, and not traverse symlinks.
+Configured `paths.prompts_dir` must be a non-empty path.
+
+## Command guide
+
+### `pi-herd init`
+
+Create `.pi-herd/config.yaml`, `.pi-herd/runs/`, role prompt templates, and safe ignore entries.
+
+```bash
+pi-herd init
+pi-herd init --force
+```
+
+Existing config and prompts are not overwritten unless `--force` is passed.
+
+### `pi-herd doctor`
+
+Check local requirements and configuration.
+
+```bash
+pi-herd doctor
+pi-herd doctor --json
+pi-herd doctor --config .pi-herd/config.yaml
+```
+
+Warnings do not fail the command.
+Hard failures include invalid config, missing Git, or running outside a Git repository.
+
+### `pi-herd run create`
+
+Create `REQUEST.md`, `state.json`, `logs/`, `inbox/`, and selected role records without launching sessions unless worktree flags are used.
+
+```bash
+pi-herd run create "replace legacy auth refresh flow"
+pi-herd run create "implement auth refresh" --with-worktrees
+pi-herd run create "plan auth refresh" --role planner --base-ref main --json
+pi-herd run create "plan auth refresh" --planner-worktree
+```
+
+Useful flags:
+
+- `--role ROLE` selects one role and can be repeated.
+- `--base-ref REF` overrides base branch or commit detection.
+- `--with-worktrees` creates the implementation worktree.
+- `--planner-worktree` also creates a planner worktree and implies `--with-worktrees`.
+- `--json` prints machine-readable state.
+- `--config PATH` uses a custom config path.
+
+Worktree creation requires a clean repository outside pi-herd-managed paths.
+Existing target paths and branches are refused.
+Created worktrees use `.worktrees/pi-herd/{run_id}/{role}`.
+Herdr worktree creation is preferred, with raw Git fallback only when Herdr cannot be spawned or exits nonzero.
+If worktree materialization fails after the run directory is created, the saved run state is marked `failed`.
+
+### `pi-herd run list`
+
+List runs for the current repository.
+
+```bash
+pi-herd run list
+pi-herd run list --all
+pi-herd run list --all --json
+```
+
+By default, only active runs are listed.
+Use `--all` to include completed, abandoned, and failed runs.
+Run discovery works from the main checkout and from role worktrees when Git can identify the shared common directory.
+
+### Run selection
+
+Commands that target an existing run accept `--run RUN`.
+`RUN` can be a `run_id`, a `run_slug`, or `latest`.
+
+When `--run` is omitted, pi-herd first tries a verified current Herdr/Pi pane binding and then falls back to the single active run.
+If multiple active runs are visible, pi-herd refuses to guess and asks for `--run`.
+Explicit `--run` selectors for `merge-plan` and `cleanup` can also inspect completed, abandoned, or failed runs.
+
+### `pi-herd start`
+
+Create a run, bind or create the lead session, materialize selected worktrees, and launch visible sessions.
+
+```bash
+pi-herd start "replace legacy auth refresh flow"
+pi-herd start "replace legacy auth refresh flow" --role planner --role implementer
+pi-herd start "replace legacy auth refresh flow" --planner-worktree
+pi-herd start "replace legacy auth refresh flow" --base-ref main --json
+```
+
+The planner receives an initial kickoff prompt.
+The implementer launches as a staged session when selected.
+Reviewer and tester remain staged until first activation.
+
+### `pi-herd send`
+
+Send a prompt to a role pane.
+
+```bash
+pi-herd send implementer "Implement the approved plan."
+pi-herd send reviewer "Review the implementation branch." --run 2026-07-01T12-00-00-auth-refresh
+pi-herd send tester -- "--focus smoke tests and report blockers"
+```
+
+Use `--` before dash-prefixed message text when using the terminal CLI.
+`--run` and `--config` may appear before or after message text while option parsing is active.
+
+Sending marks the target role as `working` and updates activity timestamps.
+It does not infer completion.
+Prompt text, including multi-line text, is delivered as one Herdr `pane send-text` payload followed by Enter.
+If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
+
+If reviewer or tester has not launched yet, first send materializes or refreshes that role worktree, launches the role session, waits briefly for readiness, and then sends the prompt.
+
+### `pi-herd lead ...`
+
+Lead commands are shortcuts intended for the lead session.
+
+```bash
+pi-herd lead status
+pi-herd lead brief
+pi-herd lead collect
+pi-herd lead send reviewer "Please review the latest pass."
+```
+
+`lead status`, `lead brief`, and `lead collect` are read-only helpers.
+`lead collect` prints an artifact and inbox inventory and does not write `FINAL_SUMMARY.md`.
+Use top-level `pi-herd collect` for final collection.
+
+### `pi-herd status`
+
+Evaluate role activity and required artifacts without writing state.
+
+```bash
+pi-herd status
+pi-herd status --json
+pi-herd status --run latest
+```
+
+A role is done only when its activity signal has stopped and its required artifact is present, non-empty, and fresh enough for the current pass.
+Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
+
+### `pi-herd wait`
+
+Poll working or blocked roles until they resolve.
+
+```bash
+pi-herd wait
+pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000
+pi-herd wait --json
+```
+
+Exit codes:
+
+- `0` means all evaluated roles are done.
+- `2` means wait timed out.
+- `3` means at least one role is incomplete, blocked, failed, or still working.
+
+`wait` persists resolved role verdicts.
+
+### `pi-herd collect`
+
+Persist role verdicts, collect bounded pane logs, and write `FINAL_SUMMARY.md`.
+
+```bash
+pi-herd collect
+pi-herd collect --json
+pi-herd collect --run latest
+```
+
+`collect` does not mark the run completed or abandoned.
+Use `cleanup` for run lifecycle closure.
+
+### `pi-herd refresh`
+
+Materialize or refresh reviewer and tester worktrees from the implementation branch.
+
+```bash
+pi-herd refresh reviewer
+pi-herd refresh tester
+pi-herd refresh reviewer --force
+```
+
+Refresh refuses dirty role worktrees, committed role-branch changes, or a working role unless `--force` is passed.
+Forced refresh saves recovery refs and dirty-work stashes where needed.
+
+### `pi-herd diff`
+
+Show a bounded implementation diff summary.
+
+```bash
+pi-herd diff
+pi-herd diff --run latest
+```
+
+The diff uses the run base ref against the implementation branch.
+
+### `pi-herd merge-plan`
+
+Write `MERGE_DECISION.md` with merge context.
+
+```bash
+pi-herd merge-plan
+pi-herd merge-plan --json
+pi-herd merge-plan --run latest
+```
+
+`merge-plan` does not merge, push, or change run state.
+It records diff context, role verdicts, reviewer and tester excerpts, warnings, and manual next steps.
+
+### `pi-herd cleanup`
+
+Report or apply safe run cleanup operations.
+
+```bash
+pi-herd cleanup
+pi-herd cleanup --complete
+pi-herd cleanup --abandon
+pi-herd cleanup --close-panes
+pi-herd cleanup --remove-worktrees
+pi-herd cleanup --complete --close-panes --remove-worktrees
+```
+
+Important safety rules:
+
+- Cleanup is report-only by default.
+- `--complete` and `--abandon` are mutually exclusive.
+- Cleanup never closes the lead pane.
+- Cleanup never deletes branches.
+- Closing worker panes or removing worktrees refuses working roles unless `--force` is passed.
+- Dirty worktree removal is refused unless `--force` is passed.
+- Forced worktree removal saves recovery refs and dirty-work stashes where needed.
+
+## Herdr plugin actions
+
+The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
+
+Available actions:
+
+- `doctor`
+- `start`
+- `status`
+- `collect`
+- `cleanup`
+
+Repository-targeting actions resolve the project directory from Herdr plugin context or pane metadata.
+They fail closed when no target project can be found.
+
+The `collect` action writes run state, logs, and `FINAL_SUMMARY.md`, just like `pi-herd collect`.
+The `cleanup` action is report-only and does not pass destructive cleanup flags.
+
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
-The Herdr-discovered `start` action therefore prints usage without resolving a target project or guessing a goal from context.
+For that reason, the Herdr-discovered `start` action prints usage instead of guessing a goal.
 Run `pi-herd start <goal>` directly from the project checkout when starting a run.
 
-The `collect` action is non-source-destructive, but it writes run state, logs, and `FINAL_SUMMARY.md` just like `pi-herd collect`.
-The `cleanup` action passes no destructive flags, so it only reports what cleanup would do.
-
-GitHub plugin installation runs the manifest build commands with bare `pnpm`.
-Local validation in this environment uses `sfw pnpm ...`.
-
-## Pi extension development
+## Optional Pi extension
 
 The repository builds an optional Pi extension at `dist/pi-extension.js`.
-The extension registers one slash command, `/herd`, for lead-session shortcuts:
+It registers one slash command, `/herd`.
+
+Available shortcuts:
 
 ```text
 /herd status [--run RUN]
 /herd brief [--run RUN]
 /herd collect [--run RUN]
 /herd send <role> <message> [--run RUN]
+/herd help
 ```
 
 `/herd collect` maps to read-only `pi-herd lead collect`.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
-For `/herd send`, a `--run` selector is parsed only when it appears at the end, so earlier `--run` text remains part of the message.
-One matching outer quote pair around the `/herd send` message is stripped before delivery, so `/herd send reviewer "please review"` sends `please review`.
-Dash-prefixed `/herd send` message text is preserved directly and does not need the terminal CLI's `--` sentinel.
-Child stdout and stderr capture is capped at 12,000 characters per stream, and displayed output is also bounded.
-Run `/herd help` to print the extension usage; unknown `/herd` subcommands fail with usage instead of invoking the CLI.
-The extension does not register agent-callable tools and does not own orchestration state.
 
-Build before installing the extension:
+For local use, build the project and symlink the extension:
 
 ```bash
-sfw pnpm build
-```
-
-For local development, prefer a symlink so the extension can find sibling `dist/cli.js`:
-
-```bash
+pnpm build
 mkdir -p ~/.pi/agent/extensions
 ln -sf "$PWD/dist/pi-extension.js" ~/.pi/agent/extensions/pi-herd.js
 ```
 
-If you copy the extension file instead of symlinking it, set `PI_HERD_CLI` to the CLI executable or CLI JavaScript file, or make `pi-herd` available on `PATH`.
-When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
-For example:
+If you copy the extension file instead of symlinking it, set `PI_HERD_CLI` to the CLI executable or JavaScript file, or make `pi-herd` available on `PATH`.
 
 ```bash
 export PI_HERD_CLI="$PWD/dist/cli.js"
@@ -218,16 +514,99 @@ export PI_HERD_CLI="$PWD/dist/cli.js"
 
 Reload Pi with `/reload` or start a new Pi session after installing the extension.
 
-## Local development
+Notes:
+
+- `/herd send` strips one matching outer quote pair from message text.
+- Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
+- A `--run` selector is parsed only when it appears at the end of `/herd send`.
+- Child output captured and displayed by the extension is bounded to 12,000 characters per stream.
+- When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
+- The extension does not register agent-callable tools.
+- The extension does not own orchestration state.
+
+## Marketplace checklist
+
+Herdr marketplace discovery is based on GitHub repository metadata.
+A repository appears in the marketplace when all of these are true:
+
+- The repository is public.
+- The repository has the GitHub topic `herdr-plugin`.
+- The repository contains a `herdr-plugin.toml` manifest at the root or in an installable subdirectory.
+
+This repository has a root `herdr-plugin.toml` and the `herdr-plugin` topic.
+It is currently private, so it will not appear in the public marketplace until the repository is made public.
+After the repository is public, the marketplace should pick it up automatically on its next refresh.
+
+Install command for users:
 
 ```bash
-sfw pnpm install
-sfw pnpm build
-sfw pnpm test
-sfw pnpm lint
-sfw pnpm dev -- doctor
+herdr plugin install ribbons-digital/pi-herd
+```
+
+## Troubleshooting
+
+### `pi-herd doctor` fails
+
+Run it from inside a Git repository.
+Confirm that `git`, `pi`, and `herdr` are available on `PATH`.
+Confirm that the Herdr server is running and that the Herdr Pi integration is installed.
+
+### A command cannot pick a run
+
+Use an explicit run selector:
+
+```bash
+pi-herd run list --all
+pi-herd status --run <run_id>
+```
+
+pi-herd refuses to guess when multiple active runs are available.
+
+### A role is incomplete
+
+Inspect the role artifact and pane log.
+Then re-prompt the role or refresh the reviewer or tester worktree before another pass.
+
+```bash
+pi-herd lead collect
+pi-herd send reviewer "Please update REVIEW.md for the latest implementation pass."
+pi-herd refresh tester
+```
+
+### Prompt text starts with a dash
+
+Use `--` before dash-prefixed terminal CLI message text:
+
+```bash
+pi-herd send reviewer -- "--focus error handling"
+```
+
+The Pi extension `/herd send` does not need this sentinel.
+
+### Cleanup refuses to remove a worktree
+
+The worktree may be dirty or the role may still be working.
+Inspect the worktree first.
+Use `--force` only when you accept the recovery refs and dirty-work stashes that pi-herd creates.
+
+## Trust and safety
+
+pi-herd launches processes, creates git worktrees, and can close worker panes or remove role worktrees when explicitly asked.
+Review commands before running destructive flags such as `--force`, `--abandon`, and `--remove-worktrees`.
+
+Herdr plugins are ordinary code that runs as your user.
+Install plugins only from repositories you trust.
+
+## Contributing
+
+For contributors working from a checkout:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+pnpm lint
 ```
 
 Use `pnpm` for package management.
-Do not use `npm`.
-After initial repository setup, work proceeds one issue per branch and one pull request per issue.
+Do not use npm for this repository.
