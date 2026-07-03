@@ -29,14 +29,16 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 **Pi extension command**:
 A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
-`/herd init`, `/herd doctor`, and `/herd start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
-`/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, shows partial-run recovery guidance on timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+The extension also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>`.
+`/herd init`, `/herd doctor`, `/herd start`, and `/herd-start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
+`/herd start` and `/herd-start` accept a simple goal, reject leading flag-like goals, use a longer timeout, show partial-run recovery guidance on timeout, and rely on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+`/herd-start` exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
 It does not own orchestration state and does not register agent-callable tools.
-_Avoid_: treating the extension as the runtime, implementing duplicate-run state checks inside the extension, or exposing destructive cleanup and merge actions through it
+_Avoid_: treating the extension as the runtime, implementing duplicate-run state checks inside the extension, exposing destructive cleanup and merge actions through it, or assuming prompt-template expansion can invoke extension commands
 
 **Harness**:
 The coding-agent runtime that pi-herd launches inside visible Herdr panes.
