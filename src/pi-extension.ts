@@ -44,7 +44,9 @@ export interface HerdCommand {
   cliArgs: string[];
   displayName: string;
   timeoutMs: number;
+  /** Present exit code 1 with stdout as a warning, used for diagnostic reports. */
   warnOnExitOneWithStdout?: boolean;
+  /** Extra recovery guidance shown when a long-running command times out. */
   timeoutHint?: string;
 }
 

@@ -30,7 +30,7 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
 `/herd init`, `/herd doctor`, and `/herd start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
-`/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+`/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, shows partial-run recovery guidance on timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout.
 `/herd collect` stays read-only.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
@@ -245,6 +245,7 @@ It maps operational subcommands to existing CLI helpers, keeps orchestration sta
 Developer: How should I start a run from Pi inside Herdr?
 Domain expert: Use `/herd start <goal>` for a simple goal.
 If you need advanced flags, use terminal `pi-herd start ...` instead.
+If the command times out, inspect `pi-herd run list` or `pi-herd status` before retrying because startup may have partially completed.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: For terminal `pi-herd send`, put `--` after the role, then write the dash-prefixed prompt as literal message text.
 For `/herd send`, write dash-prefixed text directly because only a final `--run RUN` is treated as a selector.

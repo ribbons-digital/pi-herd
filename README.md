@@ -198,6 +198,7 @@ The lead session is the user-facing session that coordinates a run.
 It owns final decisions and sends prompts to worker roles.
 
 When `pi-herd start` runs inside a detectable Pi and Herdr pane, pi-herd tries to bind that pane as the lead.
+If that verified pane is already the lead for another active run, pi-herd refuses to start a duplicate from that pane.
 Otherwise, pi-herd creates a lead session.
 
 ### Worker sessions
@@ -343,6 +344,8 @@ pi-herd start "replace legacy auth refresh flow" --base-ref main --json
 The planner receives an initial kickoff prompt.
 The implementer launches as a staged session when selected.
 Reviewer and tester remain staged until first activation.
+When started from a detectable Pi pane in Herdr, pi-herd checks active runs before creating artifacts.
+If the current verified pane is already the lead for an active run, start fails and leaves the duplicate run directory uncreated.
 
 ### `pi-herd send`
 
@@ -549,6 +552,7 @@ Reload Pi with `/reload` or start a new Pi session after installing the extensio
 Notes:
 
 - `/herd start` strips one matching outer quote pair from goal text and rejects leading flag-like goals so advanced flags stay in the terminal CLI.
+- If `/herd start` times out, the extension points you to `pi-herd run list`, `pi-herd status`, and cleanup because the run may have partially started.
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.
@@ -582,6 +586,11 @@ herdr plugin install ribbons-digital/pi-herd
 Run it from inside a Git repository.
 Confirm that `git`, `pi`, and `herdr` are available on `PATH`.
 Confirm that the Herdr server is running and that the Herdr Pi integration is installed.
+
+### Start refuses a duplicate lead pane
+
+The current Pi pane is already the verified lead for an active run.
+Inspect the existing run with `/herd status` or `pi-herd status`, then complete or abandon it with cleanup before starting another run from the same pane.
 
 ### A command cannot pick a run
 

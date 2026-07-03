@@ -41,7 +41,7 @@ export interface HerdrLaunchResult {
   metadata?: LaunchMetadata;
 }
 
-/** Create run artifacts, bind or create lead, launch planner, and stage selected workers. */
+/** Create run artifacts, bind or create lead, launch planner, and stage selected workers, refusing duplicate starts from an already-bound active lead pane. */
 export async function startRun(options: StartOptions): Promise<StartResult> {
   const runner = options.runner ?? nodeCommandRunner;
   await assertCurrentPaneIsNotActiveLead(options, runner);
