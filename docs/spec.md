@@ -613,10 +613,10 @@ The Herdr plugin exposes common actions:
 The plugin id is `ribbons-digital.pi-herd`.
 The plugin manifest and build commands use pnpm, not npm.
 The plugin action wrapper resolves the target project cwd from Herdr plugin context or Herdr pane metadata before invoking repository-targeting CLI commands.
-The wrapper fails closed when no target cwd can be resolved.
+Repository-targeting actions fail closed when no target cwd can be resolved.
 The `cleanup` action is report-only and does not pass destructive cleanup flags.
 The `collect` action may write run state, logs, and `FINAL_SUMMARY.md`.
-Herdr 0.7.1 action invocation does not pass arbitrary action arguments, so the `start` action prints usage unless explicit goal text is supplied to the wrapper directly.
+Herdr 0.7.1 action invocation does not pass arbitrary action arguments, so the Herdr-discovered `start` action prints usage without resolving a target project unless explicit goal text is supplied to the wrapper directly.
 Herdr records plugin action stdout and stderr in plugin logs.
 The plugin does not own orchestration state.
 

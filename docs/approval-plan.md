@@ -19,7 +19,7 @@ H2 added shared run resolution, verified current-pane targeting, run listing, ro
 Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`, including artifact validation, role verdict persistence, bounded pane-log collection, `FINAL_SUMMARY.md` generation, and non-closing collect semantics.
 Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 Slice 8 added `pi-herd merge-plan`, `pi-herd cleanup`, `MERGE_DECISION.md`, provider-aware safe worktree removal, worker-pane cleanup, and explicit completed or abandoned lifecycle closure without automatic merging or branch deletion.
-Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contract, exposed doctor/start/status/collect/report-only cleanup actions, added a fail-closed action wrapper, and documented plugin development.
+Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contract, exposed doctor/start usage/status/collect/report-only cleanup actions, added a fail-closed action wrapper for repository-targeting actions, and documented plugin development.
 
 ## Files to approve
 

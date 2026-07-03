@@ -380,9 +380,9 @@ Implemented notes:
 - The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
 - The manifest build commands use bare `pnpm install --frozen-lockfile` and `pnpm build` for Herdr plugin installation.
 - The manifest declares exactly five actions: `doctor`, `start`, `status`, `collect`, and `cleanup`.
-- The action wrapper resolves the target project cwd from Herdr plugin context or Herdr pane metadata before invoking the CLI.
-- The action wrapper fails closed when no target project cwd can be resolved.
-- Herdr 0.7.1 plugin action invocation does not pass arbitrary action arguments, so the `start` action prints usage unless explicit goal text is passed to the wrapper directly.
+- The action wrapper resolves the target project cwd from Herdr plugin context or Herdr pane metadata before invoking repository-targeting CLI commands.
+- Repository-targeting actions fail closed when no target project cwd can be resolved.
+- Herdr 0.7.1 plugin action invocation does not pass arbitrary action arguments, so the Herdr-discovered `start` action prints usage without resolving a target project unless explicit goal text is passed to the wrapper directly.
 - Plugin invocation does not provide `PI_CODING_AGENT=true` in the verified probe, so plugin actions do not assume Pi lead binding survives invocation.
 - The `cleanup` action is report-only and rejects destructive cleanup flags.
 - The `collect` action is documented as state and artifact writing.
