@@ -536,7 +536,8 @@ Cleanup never closes the lead pane and never deletes branches.
 Worktree removal is provider-aware, using Herdr workspace removal when Herdr metadata is available and git worktree removal otherwise.
 If a stored role worktree path is already missing, cleanup reports the stale path and clears that worktree state.
 Dirty or working roles are refused for destructive cleanup unless `--force` is passed; forced cleanup saves recovery refs and dirty-work stashes where needed.
-Lifecycle changes happen last so earlier cleanup failures leave the run retryable.
+Transient git worktree removal failures become non-fatal warnings so cleanup continues with the remaining role records and any lifecycle update, while dirty or unexpected-worktree errors remain fatal.
+Lifecycle changes happen last so fatal cleanup failures leave the run retryable.
 
 ## collect and brief
 

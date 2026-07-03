@@ -349,6 +349,7 @@ Implemented notes:
 - `cleanup --remove-worktrees` removes role worktrees through Herdr workspace removal when provider metadata is available, with git worktree removal as fallback.
 - Missing stored role worktree paths are reported and cleared from run state.
 - Worktree removal refuses dirty or working roles unless forced, and forced removal saves recovery refs and dirty-work stashes where needed.
+- Transient git worktree removal failures become non-fatal warnings while dirty or unexpected-worktree errors remain fatal, so cleanup continues with the remaining role records and any lifecycle update.
 - Cleanup never deletes role branches.
 - `--complete` and `--abandon` are mutually exclusive.
 - `merge-plan` and `cleanup` support JSON output and explicit selection of non-active runs.

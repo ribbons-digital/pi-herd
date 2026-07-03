@@ -36,6 +36,7 @@ Refresh sets the role source ref to the implementation branch and preserves role
 Slice 8 `merge-plan` writes `MERGE_DECISION.md` without changing run state.
 Slice 8 `cleanup` is report-only by default, can close worker panes, can remove role worktrees, and can mark a run `completed` or `abandoned` only when explicit flags are passed.
 Cleanup refuses working panes or worktrees and dirty worktree removal unless forced, never closes the lead pane, never deletes branches, and applies lifecycle changes after pane or worktree cleanup succeeds.
+Transient git worktree removal failures become non-fatal warnings so cleanup continues with the remaining role records and any lifecycle update, while dirty or unexpected-worktree errors remain fatal.
 After cleanup marks a run completed or abandoned, the run is excluded from implicit active-run resolution but remains selectable explicitly by cleanup and merge planning commands.
 
 Run state writes use atomic JSON replacement.
