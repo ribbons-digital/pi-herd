@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 9 Herdr plugin packaging plus H1 and H2 hardening complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 10 optional Pi extension plus H1 and H2 hardening complete on the current branch.
 
 ## Review provenance
 
@@ -20,6 +20,7 @@ Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`,
 Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 Slice 8 added `pi-herd merge-plan`, `pi-herd cleanup`, `MERGE_DECISION.md`, provider-aware safe worktree removal, worker-pane cleanup, and explicit completed or abandoned lifecycle closure without automatic merging or branch deletion.
 Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contract, exposed doctor/start usage/status/collect/report-only cleanup actions, added a fail-closed action wrapper for repository-targeting actions, and documented plugin development.
+Slice 10 added the optional Pi extension slash command, mapped `/herd` subcommands to existing lead helpers, documented extension installation, and kept agent-callable tools out of scope.
 
 ## Files to approve
 
@@ -70,14 +71,14 @@ Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contra
 - [x] Slice 7: Refresh, diff, and review/test flow.
 - [x] Slice 8: Cleanup and merge planning.
 - [x] Slice 9: Herdr plugin packaging.
-- [ ] Slice 10: Optional Pi extension.
+- [x] Slice 10: Optional Pi extension.
 
 ## After Slice 9
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
-- [ ] Implement Slice 10 optional Pi extension on top of the Herdr plugin packaging.
+- [x] Implement Slice 10 optional Pi extension on top of the Herdr plugin packaging.
 
 ## Slice 6 implementation guardrails
 

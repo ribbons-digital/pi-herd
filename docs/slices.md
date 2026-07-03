@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 9 plus H1 and H2 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 10 plus H1 and H2 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -398,7 +398,9 @@ Out of scope:
 
 Goal: Make lead-session UX smooth from inside Pi.
 
-Deliverable: `/herd status`, `/herd send`, `/herd collect`, `/herd brief`, and optional safe tools.
+Deliverable: `/herd status`, `/herd send`, `/herd collect`, and `/herd brief` without agent-callable tools.
+
+Status: Implemented on the current branch.
 
 Scope:
 
@@ -408,6 +410,18 @@ Scope:
 - No destructive agent-callable tools.
 - Extension docs.
 
+Implemented notes:
+
+- `src/pi-extension.ts` registers one Pi slash command, `/herd`.
+- `/herd status`, `/herd brief`, `/herd collect`, and `/herd send` dispatch to the existing `pi-herd lead` command family.
+- `/herd collect` maps to read-only `pi-herd lead collect`, not top-level `pi-herd collect`.
+- The extension registers no agent-callable tools.
+- The extension resolves the CLI from `PI_HERD_CLI`, sibling `dist/cli.js` for symlinked development installs, or `pi-herd` on `PATH`.
+- Command output is bounded before it is shown through Pi notifications or print-mode stdout.
+- Extension contract probes confirmed command args are delivered as a string, `ctx.cwd` is the session cwd, print mode has no UI but still exposes a notify no-op, and Herdr/Pi env is inherited by child processes.
+
 Out of scope:
 
 - Owning orchestration state in the extension.
+- Exposing destructive cleanup, merge, or worktree-removal actions.
+- Registering agent-callable tools.
