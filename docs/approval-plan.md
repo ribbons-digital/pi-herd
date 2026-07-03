@@ -39,6 +39,7 @@ Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contra
 ## Decisions captured
 
 - [ ] Use `ribbons-digital/pi-herd` as the GitHub repo and `pi-herd` as the CLI.
+- [ ] Use `ribbons-digital.pi-herd` as the Herdr plugin id.
 - [ ] Build a Herdr-first orchestrator instead of hidden subagents.
 - [ ] Keep the model Pi-first but harness-neutral.
 - [ ] Treat a run as one complete orchestration container for one user goal.
@@ -50,7 +51,7 @@ Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contra
 - [ ] Materialize the implementer worktree on `--with-worktrees` and the planner worktree only when explicitly requested.
 - [ ] Use isolated worktree views for reviewer and tester, materialized lazily when needed.
 - [ ] Treat harness idle as a signal, not completion by itself.
-- [ ] Use the Slice 0 Herdr and Pi capability contract for launch, prompt sending, lead binding, pane validation, readiness waits, and completion signals.
+- [ ] Use the verified Herdr and Pi capability contract for launch, prompt sending, lead binding, pane validation, readiness waits, completion signals, and plugin invocation.
 - [ ] Keep capability checks lightweight and avoid a heavy permission policy engine.
 - [ ] Use token-aware bounded output defaults from day one.
 - [ ] Use Memory Lane for continuity and do not create `HANDOFF.md`.

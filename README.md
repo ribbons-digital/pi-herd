@@ -155,6 +155,14 @@ herdr plugin action invoke ribbons-digital.pi-herd.doctor
 herdr plugin action invoke status --plugin ribbons-digital.pi-herd
 ```
 
+Invoke from a focused project pane or workspace.
+The action wrapper resolves the target project directory from Herdr plugin context or pane metadata and fails closed if it cannot find one.
+Herdr records action stdout and stderr in plugin logs:
+
+```bash
+herdr plugin log list --plugin ribbons-digital.pi-herd
+```
+
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
 The plugin `start` action therefore prints usage instead of guessing a goal from context.
 Run `pi-herd start <goal>` directly from the project checkout when starting a run.

@@ -617,6 +617,7 @@ The wrapper fails closed when no target cwd can be resolved.
 The `cleanup` action is report-only and does not pass destructive cleanup flags.
 The `collect` action may write run state, logs, and `FINAL_SUMMARY.md`.
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments, so the `start` action prints usage unless explicit goal text is supplied to the wrapper directly.
+Herdr records plugin action stdout and stderr in plugin logs.
 The plugin does not own orchestration state.
 
 ## Development workflow

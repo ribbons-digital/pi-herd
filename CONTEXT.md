@@ -19,6 +19,12 @@ The plugin identifier used by Herdr for this product.
 Use `ribbons-digital.pi-herd`.
 _Avoid_: `fireplace.pi-herd`
 
+**Herdr plugin action**:
+A Herdr-discovered action from `herdr-plugin.toml` that wraps safe pi-herd CLI entry points from a focused project pane or workspace.
+Actions resolve the project directory from Herdr plugin context or pane metadata and fail closed when no target can be found.
+The first plugin actions are `doctor`, `start`, `status`, `collect`, and report-only `cleanup`.
+_Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action arguments
+
 **Harness**:
 The coding-agent runtime that pi-herd launches inside visible Herdr panes.
 Pi is the only MVP harness, but the domain model should allow future harnesses such as Hermes or Cursor.
@@ -157,6 +163,10 @@ _Avoid_: multiple workers operating in the same source worktree by default
 Developer: Should the repo and CLI both be called pi-herd?
 Domain expert: Yes.
 The repo is `ribbons-digital/pi-herd`, the CLI is `pi-herd`, and the Herdr plugin id is `ribbons-digital.pi-herd`.
+Developer: What does the Herdr plugin expose first?
+Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions.
+Those actions resolve the target project from Herdr plugin context or pane metadata, and they fail closed rather than guessing when no project directory is available.
+Because Herdr 0.7.1 plugin invocation does not pass arbitrary action arguments, the `start` action prints usage instead of inventing a goal.
 Developer: Should we publish it as unscoped `pi-herd`?
 Domain expert: No.
 That risks confusion with existing packages, so future publishing should use a Ribbons Digital scope.

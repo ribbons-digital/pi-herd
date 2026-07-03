@@ -1,13 +1,13 @@
 # Herdr and Pi Capability Report
 
-Status: Slice 0 discovery result.
+Status: Slice 0 discovery result, with Slice 9 plugin capability additions.
 
 Date: 2026-07-01.
 
 ## Summary
 
 The installed Herdr and Pi versions expose enough CLI surface to build pi-herd without guessing the first implementation contracts.
-Herdr provides workspace, worktree, tab, pane, agent, wait, and integration command families.
+Herdr provides workspace, worktree, tab, pane, agent, wait, integration, and plugin command families.
 Pi exposes the launch flags needed for provider, model, thinking, session naming, session ids, session directories, tool restrictions, and model listing.
 
 The primary implementation risk is not command availability.
@@ -386,3 +386,4 @@ If Herdr Pi integration is missing:
 - Slice 6 completion logic consumes Herdr activity signals, requires non-empty required artifacts before marking workers done, keeps `status` read-only, persists `wait` and top-level `collect` role verdicts through locked state updates, and writes `FINAL_SUMMARY.md` from top-level `collect`; Slice 7 adds freshness checks.
 - Slice 7 repeated-pass logic treats artifacts older than role activity as stale, warns when reviewer or tester worktrees contain source changes, refreshes reviewer and tester worktrees from the implementation branch with forced-refresh backup refs and dirty stashes, and reports implementation diffs with a bounded merge-base range.
 - Slice 8 cleanup closes worker panes with `herdr pane close` (skipping the lead pane) and removes role worktrees with `herdr worktree remove --workspace` using the stored linked-worktree workspace id when Herdr provider metadata is available, falling back to raw `git worktree remove` otherwise; it never closes the lead pane and never deletes role branches.
+- Slice 9 plugin packaging should use the Herdr plugin manifest contract, resolve target project directories from plugin context or pane metadata, fail closed when no target is available, avoid relying on Pi lead binding in plugin invocation, expose `doctor`, `start`, `status`, `collect`, and report-only `cleanup`, and print usage for `start` until Herdr can pass goal text.
