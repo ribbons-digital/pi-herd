@@ -1,6 +1,6 @@
 # pi-herd Approval Plan
 
-Status: Design approved, with Slice 0 capability discovery through Slice 8 cleanup and merge planning plus H1 and H2 hardening complete on the current branch.
+Status: Design approved, with Slice 0 capability discovery through Slice 9 Herdr plugin packaging plus H1 and H2 hardening complete on the current branch.
 
 ## Review provenance
 
@@ -19,6 +19,7 @@ H2 added shared run resolution, verified current-pane targeting, run listing, ro
 Slice 6 added `pi-herd status`, `pi-herd wait`, and top-level `pi-herd collect`, including artifact validation, role verdict persistence, bounded pane-log collection, `FINAL_SUMMARY.md` generation, and non-closing collect semantics.
 Slice 7 added `pi-herd refresh reviewer/tester`, `pi-herd diff`, forced-refresh backup refs and dirty stashes, repeated-pass artifact freshness, dirty artifact-only role warnings, and repeated-pass prompt guidance.
 Slice 8 added `pi-herd merge-plan`, `pi-herd cleanup`, `MERGE_DECISION.md`, provider-aware safe worktree removal, worker-pane cleanup, and explicit completed or abandoned lifecycle closure without automatic merging or branch deletion.
+Slice 9 added the Herdr plugin manifest, verified the Herdr plugin action contract, exposed doctor/start/status/collect/report-only cleanup actions, added a fail-closed action wrapper, and documented plugin development.
 
 ## Files to approve
 
@@ -67,15 +68,15 @@ Slice 8 added `pi-herd merge-plan`, `pi-herd cleanup`, `MERGE_DECISION.md`, prov
 - [x] Slice 6: Status, wait, and collect.
 - [x] Slice 7: Refresh, diff, and review/test flow.
 - [x] Slice 8: Cleanup and merge planning.
-- [ ] Slice 9: Herdr plugin packaging.
+- [x] Slice 9: Herdr plugin packaging.
 - [ ] Slice 10: Optional Pi extension.
 
-## After Slice 8
+## After Slice 9
 
 - [ ] Continue with one branch and one PR per issue.
 - [ ] Recheck Herdr or Pi command behavior if either tool version changes.
 - [ ] Live-probe Herdr multi-line `pane send-text` behavior before changing the current single-payload prompt delivery shape.
-- [ ] Implement Slice 9 Herdr plugin packaging on top of cleanup and merge planning.
+- [ ] Implement Slice 10 optional Pi extension on top of the Herdr plugin packaging.
 
 ## Slice 6 implementation guardrails
 

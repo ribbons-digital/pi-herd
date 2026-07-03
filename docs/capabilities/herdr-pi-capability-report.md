@@ -194,6 +194,56 @@ Implementation contract:
 - `pi-herd doctor` should check `herdr integration status` and warn if Pi integration is missing or outdated.
 - The Pi integration should be treated as the preferred source of status metadata when available.
 
+### Plugin
+
+Verified command family:
+
+```text
+herdr plugin install <owner>/<repo>[/subdir...] [--ref REF] [--yes]
+herdr plugin uninstall <plugin_id|owner/repo[/subdir...]>
+herdr plugin link <path> [--disabled]
+herdr plugin list [--plugin ID] [--json]
+herdr plugin config-dir <plugin_id>
+herdr plugin unlink <plugin_id>
+herdr plugin enable <plugin_id>
+herdr plugin disable <plugin_id>
+herdr plugin action <list|invoke>
+herdr plugin log list [--plugin ID] [--limit N]
+herdr plugin pane <open|focus|close>
+herdr plugin action list [--plugin ID]
+herdr plugin action invoke <action_id> [--plugin ID]
+```
+
+Manifest contract from Herdr documentation:
+
+- A plugin is a directory containing `herdr-plugin.toml`.
+- The required top-level fields are `id`, `name`, `version`, and `min_herdr_version`.
+- Command values are argv arrays and are not interpreted through a shell.
+- Build commands run during GitHub plugin install and do not receive runtime plugin context.
+- Runtime commands run with the plugin directory as their working directory.
+- Runtime commands receive plugin env such as `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PLUGIN_ACTION_ID`, and `HERDR_BIN_PATH`.
+
+Live probe result:
+
+- A temporary local plugin linked successfully with `herdr plugin link <path>`.
+- `herdr plugin action list --plugin <id>` returned the declared action metadata.
+- `herdr plugin action invoke <qualified-action-id>` launched the action asynchronously and recorded stdout and stderr in `herdr plugin log list`.
+- `herdr plugin action invoke <qualified-action-id> extra` failed with `unknown option: extra`, so Herdr 0.7.1 action invocation does not expose arbitrary action arguments through the CLI.
+- The action runtime working directory was the plugin root.
+- The runtime env included `HERDR_ENV=1`, `HERDR_PLUGIN_ID`, `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_CONTEXT_JSON`, `HERDR_PLUGIN_ACTION_ID`, `HERDR_BIN_PATH`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and `HERDR_PANE_ID`.
+- The runtime env did not include `PI_CODING_AGENT` in the probe, so plugin actions must not assume Pi lead binding survives invocation.
+- The context JSON included `workspace_id`, `workspace_label`, `workspace_cwd`, `tab_id`, `tab_label`, `focused_pane_id`, `focused_pane_cwd`, `focused_pane_agent`, `focused_pane_status`, `invocation_source`, and `correlation_id`.
+- `herdr pane current --pane <focused_pane_id>` returned JSON with `result.pane.cwd` and `result.pane.foreground_cwd`, so the plugin wrapper can use it as a fallback when context cwd fields are missing.
+
+Implementation contract:
+
+- Herdr plugin actions for pi-herd must resolve the target project cwd from verified plugin context or Herdr pane metadata before invoking repository-targeting CLI commands.
+- Plugin actions must fail closed when no target project cwd can be resolved.
+- Plugin actions must not rely on `PI_CODING_AGENT=true` being present.
+- Pane-based active-run binding is not guaranteed under plugin invocation because the probe did not include `PI_CODING_AGENT=true`, so commands should preserve the existing explicit `--run` and single-active-run fallback behavior rather than guessing.
+- Herdr 0.7.1 action invocation does not provide arbitrary action args, so actions that need user input, such as `start <goal>`, should print usage instead of guessing from context.
+- The plugin wrapper should prefer `HERDR_BIN_PATH` when it needs to call Herdr itself.
+
 ## Pi command surface
 
 Verified Pi version:

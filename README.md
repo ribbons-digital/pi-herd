@@ -18,7 +18,8 @@ H1 Herdr client reliability hardening is complete.
 H2 run-resolution and state-write safety hardening is complete.
 Slice 6 status, wait, and collect is complete.
 Slice 7 refresh, diff, and review/test flow is complete.
-Slice 8 cleanup and merge planning is implemented on the current branch.
+Slice 8 cleanup and merge planning is complete.
+Slice 9 Herdr plugin packaging is implemented on the current branch.
 Implementation continues as ordered GitHub issues and pull requests.
 
 ## Docs
@@ -132,6 +133,37 @@ Generated reviewer and tester prompt templates describe this refresh flow, but `
 `pi-herd lead status`, `pi-herd lead brief`, and `pi-herd lead collect` are bounded, state-based lead helpers.
 `lead collect` prints a read-only artifact and inbox inventory.
 They do not infer worker completion or write `FINAL_SUMMARY.md`; use top-level `pi-herd collect` for final collection.
+
+## Herdr plugin development
+
+The repository includes a Herdr plugin manifest at `herdr-plugin.toml`.
+The plugin id is `ribbons-digital.pi-herd`.
+It exposes actions for `doctor`, `start`, `status`, `collect`, and report-only `cleanup`.
+
+Build locally before linking:
+
+```bash
+sfw pnpm build
+herdr plugin link .
+herdr plugin action list --plugin ribbons-digital.pi-herd
+```
+
+Invoke actions with either the qualified action id or the local action id plus `--plugin`:
+
+```bash
+herdr plugin action invoke ribbons-digital.pi-herd.doctor
+herdr plugin action invoke status --plugin ribbons-digital.pi-herd
+```
+
+Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
+The plugin `start` action therefore prints usage instead of guessing a goal from context.
+Run `pi-herd start <goal>` directly from the project checkout when starting a run.
+
+The `collect` action is non-source-destructive, but it writes run state, logs, and `FINAL_SUMMARY.md` just like `pi-herd collect`.
+The `cleanup` action passes no destructive flags, so it only reports what cleanup would do.
+
+GitHub plugin installation runs the manifest build commands with bare `pnpm`.
+Local validation in this environment uses `sfw pnpm ...`.
 
 ## Local development
 
