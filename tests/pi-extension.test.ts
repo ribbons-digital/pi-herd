@@ -270,14 +270,14 @@ describe('pi extension command handler', () => {
     });
   });
 
-  it('shows doctor checks-failed reports as warnings without throwing', async () => {
-    const runner = fakeRunner({ exitCode: 1, stdout: 'doctor report\n', stderr: '' });
+  it('shows doctor checks-failed reports and stderr as warnings without throwing', async () => {
+    const runner = fakeRunner({ exitCode: 1, stdout: 'doctor report\n', stderr: 'doctor warning\n' });
     const ctx = fakeContext();
     const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
 
     await handler('doctor', ctx);
 
-    expect(ctx.ui?.notify).toHaveBeenCalledWith('doctor report', 'warning');
+    expect(ctx.ui?.notify).toHaveBeenCalledWith('doctor warning\ndoctor report', 'warning');
   });
 
   it('treats doctor stderr-only failures as hard failures', async () => {

@@ -112,7 +112,8 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
     }
 
     if (command.warnOnExitOneWithStdout && result.exitCode === 1 && result.stdout.trim() && !result.timedOut && !result.error) {
-      presentOutput(ctx, boundOutput(result.stdout.trim()), 'warning');
+      const warning = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n');
+      presentOutput(ctx, boundOutput(warning), 'warning');
       return;
     }
 

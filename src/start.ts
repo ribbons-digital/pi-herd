@@ -122,7 +122,12 @@ async function assertCurrentPaneIsNotActiveLead(options: StartOptions, runner: C
 
   const runs = await listRunsForInvocation(options.cwd, options.configPath, runner, false);
   for (const run of runs) {
-    const state = await readRunState(join(run.canonical_run_dir, 'state.json'));
+    let state: RunState;
+    try {
+      state = await readRunState(join(run.canonical_run_dir, 'state.json'));
+    } catch {
+      continue;
+    }
     if (state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
       continue;
     }
