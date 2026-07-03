@@ -125,7 +125,7 @@ Check that Git, Herdr, Pi, and configuration are usable:
 /herd doctor
 ```
 
-If diagnostics find setup issues, `/herd doctor` shows the report as a warning so you can fix it without leaving the Pi prompt.
+If diagnostics find setup issues, `/herd doctor` shows the report and any warning text as a warning so you can fix it without leaving the Pi prompt.
 
 Start a visible run:
 
@@ -529,7 +529,7 @@ Available shortcuts:
 `/herd init`, `/herd doctor`, and `/herd start` map to the top-level CLI commands.
 `/herd start` accepts a simple goal and uses a longer timeout because startup can create worktrees, panes, sessions, and kickoff prompts.
 Use terminal `pi-herd start ...` for advanced start flags.
-`/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout.
+`/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 

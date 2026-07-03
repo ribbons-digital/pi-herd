@@ -31,7 +31,7 @@ A Pi slash command registered by the optional pi-herd extension for lead-session
 The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
 `/herd init`, `/herd doctor`, and `/herd start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
 `/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, shows partial-run recovery guidance on timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
-`/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout.
+`/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
