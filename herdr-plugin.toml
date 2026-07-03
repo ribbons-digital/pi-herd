@@ -14,7 +14,7 @@ command = ["pnpm", "build"]
 [[actions]]
 id = "doctor"
 title = "pi-herd doctor"
-contexts = ["global", "workspace", "tab", "pane"]
+contexts = ["workspace", "tab", "pane"]
 command = ["node", "dist/herdr-plugin-action.js", "doctor"]
 
 [[actions]]

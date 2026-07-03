@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { delimiter, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { main as cliMain } from './cli.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
@@ -175,9 +175,9 @@ export function applyHerdrBinPath(env: PluginRuntimeEnv): void {
   if (!env.HERDR_BIN_PATH) return;
   const herdrDir = dirname(env.HERDR_BIN_PATH);
   const currentPath = process.env.PATH ?? '';
-  const parts = currentPath.split(':').filter(Boolean);
+  const parts = currentPath.split(delimiter).filter(Boolean);
   if (parts.includes(herdrDir)) return;
-  process.env.PATH = [herdrDir, currentPath].filter(Boolean).join(':');
+  process.env.PATH = [herdrDir, currentPath].filter(Boolean).join(delimiter);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

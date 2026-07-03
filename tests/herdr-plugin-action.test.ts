@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyHerdrBinPath,
@@ -23,6 +23,7 @@ describe('Herdr plugin manifest', () => {
     expect(manifest).toContain('min_herdr_version = "0.7.1"');
     expect(manifest).toContain('command = ["pnpm", "install", "--frozen-lockfile"]');
     expect(manifest).toContain('command = ["pnpm", "build"]');
+    expect(manifest).not.toContain('"global"');
 
     const actionIds = Array.from(manifest.matchAll(/^id = "([a-z-]+)"$/gm), (match) => match[1]).filter((id) => id !== 'ribbons-digital.pi-herd');
     expect(actionIds).toEqual(['doctor', 'start', 'status', 'collect', 'cleanup']);
@@ -92,9 +93,9 @@ describe('Herdr plugin action wrapper', () => {
   it('adds HERDR_BIN_PATH directory to PATH for child Herdr lookups', () => {
     const originalPath = process.env.PATH;
     try {
-      process.env.PATH = '/usr/bin';
+      process.env.PATH = ['/usr/bin', '/bin'].join(delimiter);
       applyHerdrBinPath({ HERDR_BIN_PATH: '/opt/herdr/bin/herdr' });
-      expect(process.env.PATH).toBe('/opt/herdr/bin:/usr/bin');
+      expect(process.env.PATH).toBe(['/opt/herdr/bin', '/usr/bin', '/bin'].join(delimiter));
     } finally {
       process.env.PATH = originalPath;
     }
