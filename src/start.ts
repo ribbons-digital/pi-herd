@@ -128,6 +128,9 @@ async function assertCurrentPaneIsNotActiveLead(options: StartOptions, runner: C
     } catch {
       continue;
     }
+    if (state.status !== 'active') {
+      continue;
+    }
     if (state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
       continue;
     }
