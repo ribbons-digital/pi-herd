@@ -28,12 +28,15 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 
 **Pi extension command**:
 A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
-The first command is `/herd`, with `status`, `brief`, `collect`, `send`, and `help` subcommands that map to the existing `pi-herd lead` command family or local usage text.
+The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
+`/herd init`, `/herd doctor`, and `/herd start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
+`/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+`/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout.
 `/herd collect` stays read-only.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
 It does not own orchestration state and does not register agent-callable tools.
-_Avoid_: treating the extension as the runtime or exposing destructive cleanup and merge actions through it
+_Avoid_: treating the extension as the runtime, implementing duplicate-run state checks inside the extension, or exposing destructive cleanup and merge actions through it
 
 **Harness**:
 The coding-agent runtime that pi-herd launches inside visible Herdr panes.
@@ -237,8 +240,11 @@ Domain expert: No.
 Without explicit flags it only reports cleanup candidates.
 It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to mutate anything, and it never closes the lead pane or deletes branches.
 Developer: What does the optional Pi extension expose first?
-Domain expert: It registers one `/herd` slash command for lead-session shortcuts: `status`, `brief`, read-only `collect`, `send`, and `help`.
-It maps operational subcommands to existing `pi-herd lead` helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
+Domain expert: It registers one `/herd` slash command for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, `send`, and `help`.
+It maps operational subcommands to existing CLI helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
+Developer: How should I start a run from Pi inside Herdr?
+Domain expert: Use `/herd start <goal>` for a simple goal.
+If you need advanced flags, use terminal `pi-herd start ...` instead.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: For terminal `pi-herd send`, put `--` after the role, then write the dash-prefixed prompt as literal message text.
 For `/herd send`, write dash-prefixed text directly because only a final `--run RUN` is treated as a selector.

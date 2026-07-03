@@ -28,6 +28,12 @@ describe('pi extension /herd argument mapping', () => {
     expect(buildHerdCommand('--help')).toBeNull();
   });
 
+  it('maps init, doctor, and start to top-level CLI commands', () => {
+    expect(buildHerdCommand('init')).toEqual({ cliArgs: ['init'], displayName: '/herd init', timeoutMs: 30_000, warnOnExitOneWithStdout: false });
+    expect(buildHerdCommand('doctor')).toEqual({ cliArgs: ['doctor'], displayName: '/herd doctor', timeoutMs: 30_000, warnOnExitOneWithStdout: true });
+    expect(buildHerdCommand('start implement X')).toMatchObject({ cliArgs: ['start', 'implement X'], displayName: '/herd start', timeoutMs: 300_000 });
+  });
+
   it('maps read-oriented lead commands to existing pi-herd lead commands', () => {
     expect(buildHerdCommand('status')).toEqual({ cliArgs: ['lead', 'status'], displayName: '/herd status', timeoutMs: 30_000 });
     expect(buildHerdCommand('brief --run run-1')).toEqual({ cliArgs: ['lead', 'brief', '--run', 'run-1'], displayName: '/herd brief', timeoutMs: 30_000 });
@@ -36,6 +42,12 @@ describe('pi extension /herd argument mapping', () => {
 
   it('rejects unknown args for non-send subcommands', () => {
     expect(() => buildHerdCommand('status --json')).toThrow('Unknown argument');
+    expect(() => buildHerdCommand('doctor --json')).toThrow('Unknown argument');
+  });
+
+  it('rejects start without a goal or with leading flag-like usage', () => {
+    expect(() => buildHerdCommand('start')).toThrow('Usage: /herd start <goal>');
+    expect(() => buildHerdCommand('start --role planner')).toThrow('For advanced flags');
   });
 
   it('rejects unrecognized subcommands', () => {
@@ -243,6 +255,40 @@ describe('pi extension command handler', () => {
     expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('/herd status'), 'info');
   });
 
+  it('uses the longer activation timeout for start commands and preserves Herdr/Pi env', async () => {
+    const runner = fakeRunner({ exitCode: 0, stdout: 'started\n', stderr: '' });
+    const ctx = fakeContext();
+    const env = { PI_HERD_CLI: '/opt/bin/pi-herd', HERDR_ENV: '1', HERDR_PANE_ID: 'pane-1', PI_CODING_AGENT: 'true', HERDR_BIN_PATH: '/opt/herdr/bin/herdr', PATH: '/usr/bin' };
+    const handler = createHerdCommandHandler({ runner, env, moduleUrl: 'file:///missing.js' });
+
+    await handler('start implement X', ctx);
+
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['start', 'implement X'], {
+      cwd: '/tmp/project',
+      timeoutMs: 300_000,
+      env: { ...env, PATH: `/opt/herdr/bin${delimiter}/usr/bin` }
+    });
+  });
+
+  it('shows doctor checks-failed reports as warnings without throwing', async () => {
+    const runner = fakeRunner({ exitCode: 1, stdout: 'doctor report\n', stderr: '' });
+    const ctx = fakeContext();
+    const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await handler('doctor', ctx);
+
+    expect(ctx.ui?.notify).toHaveBeenCalledWith('doctor report', 'warning');
+  });
+
+  it('treats doctor stderr-only failures as hard failures', async () => {
+    const runner = fakeRunner({ exitCode: 1, stdout: '', stderr: 'crashed' });
+    const ctx = fakeContext();
+    const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await expect(handler('doctor', ctx)).rejects.toThrow('/herd doctor failed with exit code 1');
+    expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('crashed'), 'error');
+  });
+
   it('reports send timeout using the send timeout budget', async () => {
     const runner = fakeRunner({ exitCode: null, stdout: '', stderr: '', timedOut: true });
     const ctx = fakeContext();
@@ -250,6 +296,15 @@ describe('pi extension command handler', () => {
 
     await expect(handler('send reviewer please review', ctx)).rejects.toThrow('/herd send timed out after 300000ms.');
     expect(ctx.ui?.notify).toHaveBeenCalledWith('/herd send timed out after 300000ms.', 'error');
+  });
+
+  it('reports start timeout with partial-run recovery guidance', async () => {
+    const runner = fakeRunner({ exitCode: null, stdout: '', stderr: '', timedOut: true });
+    const ctx = fakeContext();
+    const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await expect(handler('start implement X', ctx)).rejects.toThrow('The run may have partially started');
+    expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('pi-herd run list'), 'error');
   });
 
   it('notifies and throws on CLI failure', async () => {
@@ -303,7 +358,7 @@ describe('pi extension output bounding', () => {
   });
 });
 
-function fakeRunner(result: { exitCode: number | null; stdout: string; stderr: string; timedOut?: boolean }): CommandRunner & { run: ReturnType<typeof vi.fn> } {
+function fakeRunner(result: { exitCode: number | null; stdout: string; stderr: string; timedOut?: boolean; error?: NodeJS.ErrnoException }): CommandRunner & { run: ReturnType<typeof vi.fn> } {
   return {
     run: vi.fn().mockResolvedValue(result)
   };
