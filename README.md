@@ -24,7 +24,7 @@ The image above is an illustration of the layout and artifact flow.
 - Read-only status and brief commands for steering a run without polluting context.
 - Collection and merge-preparation commands that write clear handoff artifacts.
 - A Herdr plugin manifest for common Herdr actions.
-- An optional Pi slash-command extension for `/herd ...` shortcuts.
+- An optional Pi slash-command extension for `/herd ...` shortcuts and `/herd-start`.
 
 ## Requirements
 
