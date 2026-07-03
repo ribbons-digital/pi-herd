@@ -15,6 +15,7 @@ export interface PiCommandOptions {
 
 export interface PiCommandContext {
   cwd: string;
+  mode?: 'tui' | 'rpc' | 'json' | 'print';
   hasUI?: boolean;
   ui?: {
     notify?(message: string, level?: 'info' | 'warning' | 'error'): void;
@@ -401,8 +402,10 @@ export function presentOutput(ctx: PiCommandContext, message: string, level: 'in
     ctx.ui.notify(message, level);
     return;
   }
-  const stream = level === 'error' ? process.stderr : process.stdout;
-  stream.write(`${message}\n`);
+  if (ctx.mode === 'print') {
+    const stream = level === 'error' ? process.stderr : process.stdout;
+    stream.write(`${message}\n`);
+  }
 }
 
 function appendCapturedOutput(current: string, chunk: string): string {

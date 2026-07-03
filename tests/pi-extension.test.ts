@@ -10,6 +10,7 @@ import {
   boundOutput,
   createHerdCommandHandler,
   nodeCommandRunner,
+  presentOutput,
   resolveHerdCli,
   tokenizeWithSpans,
   type CommandRunner,
@@ -251,6 +252,30 @@ describe('pi extension command handler', () => {
 describe('pi extension output bounding', () => {
   it('truncates long output', () => {
     expect(boundOutput('abcdef', 3)).toBe('abc\n\n[Output truncated to 3 characters.]');
+  });
+
+  it('writes raw output only in print mode without UI', () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    presentOutput({ cwd: '/tmp/project', hasUI: false, mode: 'json' }, 'json-output', 'info');
+    presentOutput({ cwd: '/tmp/project', hasUI: false, mode: 'print' }, 'print-output', 'info');
+    presentOutput({ cwd: '/tmp/project', hasUI: false, mode: 'print' }, 'print-error', 'error');
+
+    expect(stdout).toHaveBeenCalledTimes(1);
+    expect(stdout).toHaveBeenCalledWith('print-output\n');
+    expect(stderr).toHaveBeenCalledTimes(1);
+    expect(stderr).toHaveBeenCalledWith('print-error\n');
+  });
+
+  it('notifies when UI is available in RPC-style contexts', () => {
+    const notify = vi.fn();
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    presentOutput({ cwd: '/tmp/project', hasUI: true, mode: 'rpc', ui: { notify } }, 'rpc-output', 'info');
+
+    expect(notify).toHaveBeenCalledWith('rpc-output', 'info');
+    expect(stdout).not.toHaveBeenCalled();
   });
 
   it('caps child stdout and stderr captured in memory', async () => {
