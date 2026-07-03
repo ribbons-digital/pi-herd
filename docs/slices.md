@@ -347,8 +347,11 @@ Implemented notes:
 - `pi-herd cleanup` is report-only by default and mutates only when explicit action flags are passed.
 - `cleanup --close-panes` closes worker panes but never closes the lead pane.
 - `cleanup --remove-worktrees` removes role worktrees through Herdr workspace removal when provider metadata is available, with git worktree removal as fallback.
+- Missing stored role worktree paths are reported and cleared from run state.
 - Worktree removal refuses dirty or working roles unless forced, and forced removal saves recovery refs and dirty-work stashes where needed.
 - Cleanup never deletes role branches.
+- `--complete` and `--abandon` are mutually exclusive.
+- `merge-plan` and `cleanup` support JSON output and explicit selection of non-active runs.
 - Lifecycle changes happen last with `--complete` or `--abandon`, so earlier cleanup failures leave the run retryable.
 
 Out of scope:

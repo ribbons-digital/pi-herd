@@ -2,7 +2,8 @@
 
 Each run has a lifecycle status and a canonical `state.json` under its run directory.
 Implicit active-run resolution only considers active runs.
-State and messaging command selectors currently resolve among active runs, while `pi-herd run list --all` can inspect non-active runs.
+State and messaging command selectors resolve among active runs, while cleanup and merge planning can explicitly select completed, abandoned, and failed runs for post-run inspection.
+`pi-herd run list --all` can inspect non-active runs.
 A run can be marked `failed` when creation or orchestration fails after the run directory exists.
 We chose this because pi-herd must support multiple parallel runs without guessing the target when commands omit `--run`.
 
@@ -32,6 +33,10 @@ Slice 6 uses the locked update path for `wait` and top-level `collect` role verd
 Top-level `collect` writes `logs/` pane captures and `FINAL_SUMMARY.md`, but it does not change the run lifecycle status to `completed` or `abandoned`.
 Slice 7 refresh updates reviewer or tester worktree metadata through locked state updates after materializing, recreating, or refreshing the role worktree.
 Refresh sets the role source ref to the implementation branch and preserves role pane/session refs without changing the run lifecycle.
+Slice 8 `merge-plan` writes `MERGE_DECISION.md` without changing run state.
+Slice 8 `cleanup` is report-only by default, can close worker panes, can remove role worktrees, and can mark a run `completed` or `abandoned` only when explicit flags are passed.
+Cleanup refuses working panes or worktrees and dirty worktree removal unless forced, never closes the lead pane, never deletes branches, and applies lifecycle changes after pane or worktree cleanup succeeds.
+After cleanup marks a run completed or abandoned, the run is excluded from implicit active-run resolution but remains selectable explicitly by cleanup and merge planning commands.
 
 Run state writes use atomic JSON replacement.
 Read-modify-write commands lock, re-read, mutate only owned fields synchronously, increment `state_revision` when a write is needed, and then atomically replace the JSON file.

@@ -213,8 +213,11 @@ pi-herd send reviewer -- "--audit the implementation branch"
 pi-herd lead collect --run <run_id|slug|latest>
 pi-herd refresh reviewer --run <run_id|slug|latest>
 pi-herd diff --run <run_id|slug|latest>
+pi-herd merge-plan --run <run_id|slug|latest>
+pi-herd cleanup --run <run_id|slug|latest>
 ```
 
+For cleanup and merge planning, explicit `--run` selectors may resolve completed, abandoned, and failed runs as well as active runs.
 When `--run` is omitted, resolution order is:
 
 1. Use a verified current Herdr/Pi pane binding when available.
@@ -524,10 +527,14 @@ It validates saved pane ids before delivery, relaunches only when Herdr clearly 
 `merge-plan` prepares safe merge instructions.
 It writes `MERGE_DECISION.md` with provenance, bounded diff context, role verdict context, reviewer and tester excerpts, warnings, and manual next steps.
 It does not merge automatically and does not write run state.
+It accepts `--json`, `--run`, and `--config`.
 `cleanup` is report-only by default.
 It can close worker panes with `--close-panes`, remove role worktrees with `--remove-worktrees`, and mark runs completed or abandoned with `--complete` or `--abandon`.
+`--complete` and `--abandon` are mutually exclusive.
+Cleanup accepts `--json`, `--run`, and `--config`.
 Cleanup never closes the lead pane and never deletes branches.
 Worktree removal is provider-aware, using Herdr workspace removal when Herdr metadata is available and git worktree removal otherwise.
+If a stored role worktree path is already missing, cleanup reports the stale path and clears that worktree state.
 Dirty or working roles are refused for destructive cleanup unless `--force` is passed; forced cleanup saves recovery refs and dirty-work stashes where needed.
 Lifecycle changes happen last so earlier cleanup failures leave the run retryable.
 

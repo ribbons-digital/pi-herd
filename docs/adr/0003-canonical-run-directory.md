@@ -11,4 +11,5 @@ Slice 4 may launch lead, planner, and implementer sessions while still pointing 
 The planner kickoff asks for `PLAN.md` in the canonical run directory, not inside a worker worktree.
 Slice 6 top-level `collect` writes bounded pane logs under `logs/` and generates `FINAL_SUMMARY.md` from role verdicts, artifact excerpts, and provenance.
 Slice 7 repeated-pass validation treats a canonical artifact as stale when it is older than the role's latest activity timestamp.
-Future slices add worker artifacts such as `IMPLEMENTATION_NOTES.md`, `REVIEW.md`, `TEST_REPORT.md`, and `MERGE_DECISION.md` as their roles run.
+Slice 8 `merge-plan` writes `MERGE_DECISION.md` in the canonical run directory with provenance, diff context, role verdict context, artifact excerpts, warnings, and manual merge steps.
+Worker artifacts such as `IMPLEMENTATION_NOTES.md`, `REVIEW.md`, and `TEST_REPORT.md` also live in this directory as their roles run.

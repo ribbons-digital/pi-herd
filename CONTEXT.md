@@ -76,6 +76,17 @@ The generated run-level summary at `FINAL_SUMMARY.md` in the canonical run direc
 Top-level `pi-herd collect` writes this file from role verdicts, artifacts, pane-log collection results, and provenance, but `pi-herd lead collect` remains a read-only inventory helper.
 _Avoid_: expecting `lead collect` to close a run or write the final summary
 
+**Merge decision**:
+The generated merge-preparation artifact at `MERGE_DECISION.md` in the canonical run directory.
+`pi-herd merge-plan` writes this file with provenance, diff context, role verdict context, reviewer and tester excerpts, warnings, and manual next steps, but it never merges, pushes, or changes run state.
+_Avoid_: treating merge planning as merge execution
+
+**Cleanup action**:
+An explicit run lifecycle or resource cleanup operation requested with `pi-herd cleanup` flags.
+By default cleanup is report-only; it closes worker panes, removes role worktrees, or marks the run completed or abandoned only when requested.
+Cleanup never closes the lead pane and never deletes branches.
+_Avoid_: assuming cleanup is destructive unless an explicit action flag is passed
+
 **Staged worker**:
 A worker session slot whose pane may exist but whose task prompt has not been activated yet.
 Reviewer and tester worktrees may be materialized lazily when the role is activated or refreshed, so staged status can show `worktree: pending` without being broken.
@@ -198,5 +209,12 @@ Developer: What do the top-level status, wait, and collect commands do now?
 Domain expert: `pi-herd status` evaluates roles without writing state, `pi-herd wait` polls working or blocked roles and persists resolved role verdicts, and `pi-herd collect` persists verdicts, saves bounded pane logs, and writes `FINAL_SUMMARY.md` without closing the run lifecycle.
 Developer: How do repeated reviewer and tester passes get fresh source?
 Domain expert: The lead can run `pi-herd refresh reviewer` or `pi-herd refresh tester` to refresh the artifact-only role worktree from the implementation branch, while stale artifacts stop old `REVIEW.md` or `TEST_REPORT.md` files from counting as completion.
+Developer: What does `pi-herd merge-plan` do?
+Domain expert: It writes `MERGE_DECISION.md` with the implementation diff range, role verdict context, artifact excerpts, warnings, and manual merge next steps.
+It does not merge or change run state.
+Developer: Is `pi-herd cleanup` destructive by default?
+Domain expert: No.
+Without explicit flags it only reports cleanup candidates.
+It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to mutate anything, and it never closes the lead pane or deletes branches.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: Put `--` after the role, then write the dash-prefixed prompt as literal message text.
