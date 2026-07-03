@@ -81,6 +81,10 @@ export async function cleanupRun(options: CleanupOptions): Promise<LifecycleComm
     }
     for (const record of roleEntries(resolved.state)) {
       if (!record.herdr_pane_id) continue;
+      if (record.herdr_pane_id === resolved.state.lead_binding.herdr_pane_id) {
+        warnings.push(`Skipped ${record.role} pane ${record.herdr_pane_id} because it matches the lead pane.`);
+        continue;
+      }
       const pane = await paneGet(runner, resolved.state.repo_root, record.herdr_pane_id);
       if (pane.exitCode !== 0) {
         warnings.push(`Could not verify ${record.role} pane ${record.herdr_pane_id}: ${describeFailure(pane, 'pane get failed')}`);
@@ -135,7 +139,9 @@ export async function cleanupRun(options: CleanupOptions): Promise<LifecycleComm
     actions.push(`Marked run ${nextStatus}.`);
   }
 
-  return formatCleanupResult(state, snapshot, actions, warnings, options, 'applied');
+  const finalSnapshot = await buildSnapshot(state, runner, options.now ?? new Date(), true);
+  const finalWarnings = Array.from(new Set([...warnings, ...finalSnapshot.warnings]));
+  return formatCleanupResult(state, finalSnapshot, actions, finalWarnings, options, 'applied');
 }
 
 async function removeRoleWorktree(state: RunState, record: RoleRecord, runner: CommandRunner, force: boolean): Promise<{ actions: string[]; warnings: string[]; removed: boolean }> {

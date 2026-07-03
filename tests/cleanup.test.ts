@@ -111,6 +111,21 @@ describe('merge-plan and cleanup commands', () => {
     expect(saved.roles.planner?.herdr_pane_id).toBeNull();
   });
 
+  it('does not close a duplicated lead pane id on a role record', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Duplicate lead pane', now: NOW, runner });
+    state.lead_binding.herdr_pane_id = 'lead-pane';
+    state.roles.planner!.herdr_pane_id = 'lead-pane';
+    await writeJsonAtomic(statePath, state);
+
+    const result = await cleanupRun({ cwd: dir, run: state.run_id, closePanes: true, runner, now: NOW });
+
+    expect(result.text).toContain('Skipped planner pane lead-pane because it matches the lead pane.');
+    expect(runner.calls).not.toContain('herdr pane close lead-pane');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.herdr_pane_id).toBe('lead-pane');
+  });
+
   it('rejects conflicting lifecycle flags', async () => {
     const runner = new RecordingRunner();
     const { state } = await createRun({ cwd: dir, goal: 'Conflicting cleanup', now: NOW, runner });
@@ -126,6 +141,20 @@ describe('merge-plan and cleanup commands', () => {
 
     expect(result.state.status).toBe('abandoned');
     expect(result.text).toContain('Marked run abandoned.');
+  });
+
+  it('returns a refreshed JSON snapshot after cleanup mutations', async () => {
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'JSON cleanup', now: NOW, runner });
+    state.roles.planner!.herdr_pane_id = 'planner-pane';
+    await writeJsonAtomic(statePath, state);
+
+    const result = await cleanupRun({ cwd: dir, run: state.run_id, closePanes: true, complete: true, json: true, runner, now: NOW });
+    const json = JSON.parse(result.text);
+
+    expect(json.status).toBe('completed');
+    expect(json.snapshot.status).toBe('completed');
+    expect(json.snapshot.roles.find((role: { role: string }) => role.role === 'planner')?.pane_id).toBeNull();
   });
 
   it('writes a merge plan for an explicitly selected completed run', async () => {
