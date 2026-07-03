@@ -10,6 +10,11 @@ It creates visible lead and worker sessions in Herdr, keeps workers in isolated 
 pi-herd is Pi-first today.
 The orchestration model is intentionally harness-neutral so other coding-agent runtimes can be added later.
 
+![Illustration of pi-herd running in Herdr with a lead session and visible worker panes.](assets/pi-herd-running.svg)
+
+The running view keeps the lead, planner, implementer, reviewer, and tester visible as normal Herdr panes.
+The image above is an illustration of the layout and artifact flow.
+
 ## What you get
 
 - A lead session that stays in control.
