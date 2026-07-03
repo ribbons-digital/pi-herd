@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { OUTPUT_BUDGETS } from './defaults.js';
 import { describeFailure, paneClose, paneGet, worktreeRemove } from './herdr.js';
-import { backupRefFor, dirtyPaths, formatBoundedLines, git, implementationDiff, assertExpectedRoleWorktree } from './refresh.js';
+import { backupRefFor, formatBoundedLines, git, implementationDiff, assertExpectedRoleWorktree } from './refresh.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 import { buildSnapshot, type RunSnapshot } from './status.js';
 import { assertNoSymlinkPathComponents, roleWorktreePath } from './worktree.js';
@@ -159,7 +159,7 @@ async function removeRoleWorktree(state: RunState, record: RoleRecord, runner: C
     return { actions, warnings, removed: true };
   }
 
-  const dirty = await dirtyPaths(runner, record.worktree_path);
+  const dirty = await cleanupDirtyPaths(runner, record.worktree_path);
   if (dirty.length && !force) {
     throw new Error(`Refusing to remove dirty ${record.role} worktree. Dirty paths:\n${formatBoundedLines(dirty)}\nRe-run with --force to preserve and remove it.`);
   }
@@ -168,7 +168,7 @@ async function removeRoleWorktree(state: RunState, record: RoleRecord, runner: C
     await git(runner, `save ${record.role} worktree cleanup backup ref`, ['update-ref', backupRef, 'HEAD'], record.worktree_path);
     actions.push(`Saved ${record.role} backup ref ${backupRef}.`);
     if (dirty.length) {
-      await git(runner, `stash dirty ${record.role} worktree before removal`, ['stash', 'push', '--include-untracked', '--message', `pi-herd ${record.role} cleanup backup ${state.run_id}`], record.worktree_path);
+      await git(runner, `stash dirty ${record.role} worktree before removal`, ['stash', 'push', '--all', '--message', `pi-herd ${record.role} cleanup backup ${state.run_id}`], record.worktree_path);
       const stash = await git(runner, `resolve ${record.role} cleanup stash`, ['rev-parse', '--verify', 'refs/stash'], record.worktree_path);
       actions.push(`Saved ${record.role} dirty work stash ${stash.stdout.trim()} (refs/stash).`);
     }
@@ -254,6 +254,11 @@ async function formatMergeDecision(
     ''
   ];
   return `${lines.join('\n')}\n`;
+}
+
+async function cleanupDirtyPaths(runner: CommandRunner, worktreePath: string): Promise<string[]> {
+  const result = await git(runner, 'check cleanup worktree status', ['status', '--porcelain', '--untracked-files=all', '--ignored=matching'], worktreePath);
+  return result.stdout.trim() ? result.stdout.trimEnd().split(/\r?\n/) : [];
 }
 
 function formatMergePlanText(state: RunState, snapshot: RunSnapshot, path: string): string {

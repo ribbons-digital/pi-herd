@@ -181,7 +181,7 @@ describe('merge-plan and cleanup commands', () => {
 
   it('refuses dirty worktree removal unless forced', async () => {
     const runner = new RecordingRunner({
-      'git status --porcelain --untracked-files=all': okText(' M src/file.ts\n')
+      'git status --porcelain --untracked-files=all --ignored=matching': okText(' M src/file.ts\n')
     });
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Dirty removal', now: NOW, runner });
     await materializeRole(state, 'reviewer', 'git');
@@ -238,7 +238,7 @@ describe('merge-plan and cleanup commands', () => {
 
   it('preserves dirty work before forced worktree removal', async () => {
     const runner = new RecordingRunner({
-      'git status --porcelain --untracked-files=all': okText(' M src/file.ts\n')
+      'git status --porcelain --untracked-files=all --ignored=matching': okText('!! .env\n')
     });
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Forced removal', now: NOW, runner });
     await materializeRole(state, 'reviewer', 'git');
@@ -248,6 +248,7 @@ describe('merge-plan and cleanup commands', () => {
 
     expect(result.text).toContain('Saved reviewer backup ref');
     expect(result.text).toContain('Saved reviewer dirty work stash stash123');
+    expect(runner.calls).toContain('git stash push --all --message pi-herd reviewer cleanup backup 2026-07-01T12-00-00-forced-removal');
     expect(runner.calls).toContain(`git worktree remove --force ${state.roles.reviewer!.worktree_path}`);
   });
 });
