@@ -124,7 +124,7 @@ Use `--json` for machine-readable output.
 Pass `--complete` or `--abandon` to close the run lifecycle, `--close-panes` to close worker panes, and `--remove-worktrees` to remove role worktrees.
 `--complete` and `--abandon` are mutually exclusive.
 Cleanup never closes the lead pane and never deletes branches.
-Worktree removal refuses dirty or working roles unless `--force` is passed; forced removal saves recovery refs and dirty-work stashes where needed.
+Closing worker panes or removing worktrees refuses working roles unless `--force` is passed; dirty worktree removal is also refused unless forced, and forced worktree removal saves recovery refs and dirty-work stashes where needed.
 Use `--json` for machine-readable cleanup output.
 Explicit `--run` selectors for merge planning and cleanup can inspect completed, abandoned, or failed runs after they leave active-run resolution.
 Repeated-pass artifacts must be fresh relative to the role's latest activity timestamp, so stale `REVIEW.md` or `TEST_REPORT.md` files do not count as complete.
