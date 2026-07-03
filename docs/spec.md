@@ -1,6 +1,6 @@
 # pi-herd Product Spec
 
-Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, and Slice 7 refresh/diff flow implemented on the current branch.
+Status: Reviewed draft with Slice 5 messaging, lead commands, H1 Herdr client reliability hardening, H2 run-resolution and state-write safety hardening, Slice 6 status/wait/collect, Slice 7 refresh/diff flow, and Slice 8 cleanup/merge planning implemented on the current branch.
 
 pi-herd is visible session orchestration for coding-agent work in Herdr.
 It is Pi-first, but the core model is harness-neutral so future harnesses such as Hermes or Cursor can be added without rewriting the product language.
@@ -76,7 +76,8 @@ A run has a lifecycle status:
 - `failed`: creation or orchestration failed and should not be implicitly selected.
 
 Implicit active-run resolution only considers active runs.
-Explicit `--run` selectors for state and messaging commands currently resolve among active runs.
+Explicit `--run` selectors for most state and messaging commands resolve among active runs.
+Cleanup and merge planning commands may explicitly select completed, abandoned, and failed runs for post-run inspection or cleanup.
 `pi-herd run list --all` can inspect completed, abandoned, and failed runs.
 `--run latest` is allowed only as an explicit selector.
 pi-herd must never silently choose the newest run when multiple active runs exist.
@@ -521,7 +522,14 @@ It validates saved pane ids before delivery, relaunches only when Herdr clearly 
 `diff` accepts `--run` and `--config`.
 `wait` and `collect` return 0 when all evaluated roles are cleanly done, 2 when wait times out, and 3 when any role is incomplete, blocked, failed, or still working.
 `merge-plan` prepares safe merge instructions.
-It does not merge automatically.
+It writes `MERGE_DECISION.md` with provenance, bounded diff context, role verdict context, reviewer and tester excerpts, warnings, and manual next steps.
+It does not merge automatically and does not write run state.
+`cleanup` is report-only by default.
+It can close worker panes with `--close-panes`, remove role worktrees with `--remove-worktrees`, and mark runs completed or abandoned with `--complete` or `--abandon`.
+Cleanup never closes the lead pane and never deletes branches.
+Worktree removal is provider-aware, using Herdr workspace removal when Herdr metadata is available and git worktree removal otherwise.
+Dirty or working roles are refused for destructive cleanup unless `--force` is passed; forced cleanup saves recovery refs and dirty-work stashes where needed.
+Lifecycle changes happen last so earlier cleanup failures leave the run retryable.
 
 ## collect and brief
 

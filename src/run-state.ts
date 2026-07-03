@@ -204,6 +204,7 @@ export interface ResolveRunContextOptions {
   configPath?: string;
   env?: NodeJS.ProcessEnv;
   runner?: CommandRunner;
+  includeAllForExplicitRun?: boolean;
 }
 
 export interface ResolvedRunContext {
@@ -237,7 +238,8 @@ export async function resolveRunContext(options: ResolveRunContextOptions): Prom
   const activeRuns = await listRunsForInvocation(options.cwd, options.configPath, runner, false);
   let summary: ActiveRunSummary;
   if (options.run) {
-    summary = selectRunFromSummaries(activeRuns, options.run);
+    const runs = options.includeAllForExplicitRun ? await listRunsForInvocation(options.cwd, options.configPath, runner, true) : activeRuns;
+    summary = selectRunFromSummaries(runs, options.run, options.includeAllForExplicitRun ? 'runs' : 'active runs');
   } else {
     const paneMatch = await resolveRunByCurrentPane(options, activeRuns, runner);
     summary = paneMatch ?? selectRunFromSummaries(activeRuns);
@@ -269,20 +271,20 @@ export async function listRunsForInvocation(cwd: string, configPath?: string, ru
 }
 
 /** Select an explicit run, latest run, or the single visible active run from summaries. */
-export function selectRunFromSummaries(runs: ActiveRunSummary[], selector?: string): ActiveRunSummary {
+export function selectRunFromSummaries(runs: ActiveRunSummary[], selector?: string, noun = 'active runs'): ActiveRunSummary {
   if (selector) {
     if (selector === 'latest') {
       const latest = runs.at(-1);
-      if (!latest) throw new Error('No active runs found.');
+      if (!latest) throw new Error(`No ${noun} found.`);
       return latest;
     }
     const matches = runs.filter((run) => run.run_id === selector || run.run_slug === selector);
     if (matches.length === 1) return matches[0];
     if (matches.length > 1) throw new Error(`Run selector '${selector}' is ambiguous. Pass a run_id.\n${formatRunChoices(matches)}`);
-    throw new Error(`No active run matched '${selector}'.`);
+    throw new Error(`No ${noun.slice(0, -1)} matched '${selector}'.`);
   }
   if (runs.length === 1) return runs[0];
-  if (!runs.length) throw new Error('No active runs found.');
+  if (!runs.length) throw new Error(`No ${noun} found.`);
   throw new Error(`Multiple active runs found. Pass --run <run_id|slug>.\n${formatRunChoices(runs)}`);
 }
 

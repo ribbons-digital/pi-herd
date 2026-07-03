@@ -1,6 +1,6 @@
 # pi-herd Slice Plan
 
-Status: Design approved, with Slice 0 through Slice 7 plus H1 and H2 implemented on the current branch.
+Status: Design approved, with Slice 0 through Slice 8 plus H1 and H2 implemented on the current branch.
 
 Each remaining slice has one clear deliverable and should be implemented from its GitHub issue.
 Each slice should be implemented on a branch and merged by pull request.
@@ -328,6 +328,8 @@ Goal: Safely close runs and prepare merge decisions without auto-merging.
 
 Deliverable: `pi-herd cleanup` and `pi-herd merge-plan` work with dirty-worktree checks and `MERGE_DECISION.md`.
 
+Status: Implemented on the current branch.
+
 Scope:
 
 - Close panes where safe.
@@ -338,9 +340,21 @@ Scope:
 - Print reviewer verdict and tester status as context without enforcing a CI policy engine.
 - Mark runs completed or abandoned when appropriate.
 
+Implemented notes:
+
+- `pi-herd merge-plan` writes `MERGE_DECISION.md` with provenance, bounded diff context, role verdict context, reviewer and tester excerpts, warnings, and manual next steps.
+- `merge-plan` is read-only for run state and never merges, pushes, or changes lifecycle status.
+- `pi-herd cleanup` is report-only by default and mutates only when explicit action flags are passed.
+- `cleanup --close-panes` closes worker panes but never closes the lead pane.
+- `cleanup --remove-worktrees` removes role worktrees through Herdr workspace removal when provider metadata is available, with git worktree removal as fallback.
+- Worktree removal refuses dirty or working roles unless forced, and forced removal saves recovery refs and dirty-work stashes where needed.
+- Cleanup never deletes role branches.
+- Lifecycle changes happen last with `--complete` or `--abandon`, so earlier cleanup failures leave the run retryable.
+
 Out of scope:
 
 - Actual automatic merge.
+- Branch deletion.
 
 ## Slice 9: Herdr plugin packaging
 

@@ -154,7 +154,7 @@ export async function collectRun(options: StatusCommandOptions): Promise<StatusC
   };
 }
 
-async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, probeSignals: boolean): Promise<RunSnapshot> {
+export async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, probeSignals: boolean): Promise<RunSnapshot> {
   const roles: RoleSnapshot[] = [];
   const warnings: string[] = [];
   for (const record of roleEntries(state)) {
