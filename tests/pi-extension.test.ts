@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
+import piHerdExtension, {
   buildHerdCliEnv,
   buildHerdCommand,
+  buildHerdStartAliasCommand,
   boundOutput,
   createHerdCommandHandler,
+  createHerdStartAliasHandler,
   nodeCommandRunner,
   presentOutput,
   resolveHerdCli,
@@ -48,6 +50,16 @@ describe('pi extension /herd argument mapping', () => {
   it('rejects start without a goal or with leading flag-like usage', () => {
     expect(() => buildHerdCommand('start')).toThrow('Usage: /herd start <goal>');
     expect(() => buildHerdCommand('start --role planner')).toThrow('For advanced flags');
+  });
+
+  it('maps the /herd-start alias to the existing top-level start path', () => {
+    expect(buildHerdStartAliasCommand('implement X')).toMatchObject({ cliArgs: ['start', 'implement X'], displayName: '/herd-start', timeoutMs: 300_000 });
+    expect(buildHerdStartAliasCommand('"implement X"')).toMatchObject({ cliArgs: ['start', 'implement X'], displayName: '/herd-start' });
+  });
+
+  it('rejects /herd-start without a goal or with leading flag-like usage', () => {
+    expect(() => buildHerdStartAliasCommand('')).toThrow('Usage: /herd-start <goal>');
+    expect(() => buildHerdStartAliasCommand('--role planner')).toThrow('For advanced flags');
   });
 
   it('rejects unrecognized subcommands', () => {
@@ -207,6 +219,17 @@ describe('pi extension CLI resolution', () => {
   });
 });
 
+describe('pi extension registration', () => {
+  it('registers /herd and /herd-start commands', () => {
+    const registerCommand = vi.fn();
+
+    piHerdExtension({ registerCommand });
+
+    expect(registerCommand).toHaveBeenCalledWith('herd', expect.objectContaining({ description: 'Lead-session pi-herd shortcuts' }));
+    expect(registerCommand).toHaveBeenCalledWith('herd-start', expect.objectContaining({ description: expect.stringContaining('Start a pi-herd run') }));
+  });
+});
+
 describe('pi extension command handler', () => {
   it('invokes the resolved CLI from ctx.cwd and notifies bounded stdout', async () => {
     const runner = fakeRunner({ exitCode: 0, stdout: 'ok\n', stderr: '' });
@@ -268,6 +291,17 @@ describe('pi extension command handler', () => {
       timeoutMs: 300_000,
       env: { ...env, PATH: `/opt/herdr/bin${delimiter}/usr/bin` }
     });
+  });
+
+  it('runs /herd-start through the same CLI-backed start path', async () => {
+    const runner = fakeRunner({ exitCode: 0, stdout: 'started\n', stderr: '' });
+    const ctx = fakeContext();
+    const handler = createHerdStartAliasHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
+
+    await handler('implement X', ctx);
+
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['start', 'implement X'], { cwd: '/tmp/project', timeoutMs: 300_000, env: { PI_HERD_CLI: '/opt/bin/pi-herd' } });
+    expect(ctx.ui?.notify).toHaveBeenCalledWith('started', 'info');
   });
 
   it('shows doctor checks-failed reports and stderr as warnings without throwing', async () => {

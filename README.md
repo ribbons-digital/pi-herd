@@ -24,7 +24,7 @@ The image above is an illustration of the layout and artifact flow.
 - Read-only status and brief commands for steering a run without polluting context.
 - Collection and merge-preparation commands that write clear handoff artifacts.
 - A Herdr plugin manifest for common Herdr actions.
-- An optional Pi slash-command extension for `/herd ...` shortcuts.
+- An optional Pi slash-command extension for `/herd ...` shortcuts and `/herd-start`.
 
 ## Requirements
 
@@ -133,7 +133,14 @@ Start a visible run:
 /herd start implement the approved auth refresh plan
 ```
 
-`/herd start` accepts a simple goal and may take a few minutes while it creates run artifacts, worktrees, panes, sessions, and the planner kickoff.
+You can also use the prompt-native alias:
+
+```text
+/herd-start implement the approved auth refresh plan
+```
+
+Both entrypoints use the same CLI-backed start path.
+They accept a simple goal and may take a few minutes while they create run artifacts, worktrees, panes, sessions, and the planner kickoff.
 Use terminal `pi-herd start ...` for advanced flags such as role selection or custom base refs.
 If the current pane already leads an active run, pi-herd refuses to start a duplicate from that pane and points you to status or cleanup commands.
 
@@ -511,7 +518,7 @@ Run `pi-herd start <goal>` directly from the project checkout when starting a ru
 ## Optional Pi extension
 
 The repository builds an optional Pi extension at `dist/pi-extension.js`.
-It registers one slash command, `/herd`.
+It registers `/herd` plus a prompt-native `/herd-start` alias.
 
 Available shortcuts:
 
@@ -519,6 +526,7 @@ Available shortcuts:
 /herd init
 /herd doctor
 /herd start <goal>
+/herd-start <goal>
 /herd status [--run RUN]
 /herd brief [--run RUN]
 /herd collect [--run RUN]
@@ -526,8 +534,10 @@ Available shortcuts:
 /herd help
 ```
 
-`/herd init`, `/herd doctor`, and `/herd start` map to the top-level CLI commands.
-`/herd start` accepts a simple goal and uses a longer timeout because startup can create worktrees, panes, sessions, and kickoff prompts.
+`/herd init`, `/herd doctor`, `/herd start`, and `/herd-start` map to the top-level CLI commands.
+`/herd-start <goal>` is an explicit alias for `/herd start <goal>` so users can start a run from slash completion without relying on natural-language interception.
+The alias exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
+`/herd start` and `/herd-start` accept a simple goal and use a longer timeout because startup can create worktrees, panes, sessions, and kickoff prompts.
 Use terminal `pi-herd start ...` for advanced start flags.
 `/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
@@ -551,8 +561,8 @@ Reload Pi with `/reload` or start a new Pi session after installing the extensio
 
 Notes:
 
-- `/herd start` strips one matching outer quote pair from goal text and rejects leading flag-like goals so advanced flags stay in the terminal CLI.
-- If `/herd start` times out, the extension points you to `pi-herd run list`, `pi-herd status`, and cleanup because the run may have partially started.
+- `/herd start` and `/herd-start` strip one matching outer quote pair from goal text and reject leading flag-like goals so advanced flags stay in the terminal CLI.
+- If `/herd start` or `/herd-start` times out, the extension points you to `pi-herd run list`, `pi-herd status`, and cleanup because the run may have partially started.
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.

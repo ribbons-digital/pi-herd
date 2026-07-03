@@ -66,13 +66,14 @@ export const HERD_USAGE = `Usage:
   /herd init
   /herd doctor
   /herd start <goal>
+  /herd-start <goal>
   /herd status [--run RUN]
   /herd brief [--run RUN]
   /herd collect [--run RUN]
   /herd send <role> <message> [--run RUN]
 
 Notes:
-  /herd start accepts a simple goal. Use terminal pi-herd start for advanced flags.
+  /herd start and /herd-start accept a simple goal. Use terminal pi-herd start for advanced flags.
   /herd collect maps to read-only pi-herd lead collect.
   pi-herd collect remains a terminal command for writing FINAL_SUMMARY.md.`;
 
@@ -86,6 +87,10 @@ export default function piHerdExtension(pi: PiExtensionApi): void {
     },
     handler: createHerdCommandHandler()
   });
+  pi.registerCommand('herd-start', {
+    description: 'Start a pi-herd run from a prompt-native slash command',
+    handler: createHerdStartAliasHandler()
+  });
 }
 
 export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}): PiCommandOptions['handler'] {
@@ -95,32 +100,41 @@ export function createHerdCommandHandler(options: HerdCommandHandlerOptions = {}
       presentOutput(ctx, HERD_USAGE, 'info');
       return;
     }
-
-    const env = buildHerdCliEnv(options.env ?? process.env);
-    const resolution = resolveHerdCli({ env, moduleUrl: options.moduleUrl });
-    const runner = options.runner ?? nodeCommandRunner;
-    const result = await runner.run(resolution.command, [...resolution.argsPrefix, ...command.cliArgs], {
-      cwd: ctx.cwd,
-      timeoutMs: command.timeoutMs,
-      env
-    });
-
-    if (result.exitCode === 0) {
-      const text = result.stdout.trim() || `${command.displayName} completed.`;
-      presentOutput(ctx, boundOutput(text), 'info');
-      return;
-    }
-
-    if (command.warnOnExitOneWithStdout && result.exitCode === 1 && result.stdout.trim() && !result.timedOut && !result.error) {
-      const warning = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n');
-      presentOutput(ctx, boundOutput(warning), 'warning');
-      return;
-    }
-
-    const failure = formatCommandFailure(command.displayName, result, command.timeoutMs, command.timeoutHint);
-    presentOutput(ctx, failure, 'error');
-    throw new Error(failure);
+    await runHerdCommand(command, ctx, options);
   };
+}
+
+export function createHerdStartAliasHandler(options: HerdCommandHandlerOptions = {}): PiCommandOptions['handler'] {
+  return async (args, ctx) => {
+    await runHerdCommand(buildHerdStartAliasCommand(args), ctx, options);
+  };
+}
+
+async function runHerdCommand(command: HerdCommand, ctx: PiCommandContext, options: HerdCommandHandlerOptions): Promise<void> {
+  const env = buildHerdCliEnv(options.env ?? process.env);
+  const resolution = resolveHerdCli({ env, moduleUrl: options.moduleUrl });
+  const runner = options.runner ?? nodeCommandRunner;
+  const result = await runner.run(resolution.command, [...resolution.argsPrefix, ...command.cliArgs], {
+    cwd: ctx.cwd,
+    timeoutMs: command.timeoutMs,
+    env
+  });
+
+  if (result.exitCode === 0) {
+    const text = result.stdout.trim() || `${command.displayName} completed.`;
+    presentOutput(ctx, boundOutput(text), 'info');
+    return;
+  }
+
+  if (command.warnOnExitOneWithStdout && result.exitCode === 1 && result.stdout.trim() && !result.timedOut && !result.error) {
+    const warning = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n');
+    presentOutput(ctx, boundOutput(warning), 'warning');
+    return;
+  }
+
+  const failure = formatCommandFailure(command.displayName, result, command.timeoutMs, command.timeoutHint);
+  presentOutput(ctx, failure, 'error');
+  throw new Error(failure);
 }
 
 export function buildHerdCommand(args: string): HerdCommand | null {
@@ -162,17 +176,25 @@ export function buildHerdCommand(args: string): HerdCommand | null {
 
 export function buildHerdStartCommand(args: string, tokens = tokenizeWithSpans(args, 1)): HerdCommand {
   const startToken = tokens[0];
-  const rawGoal = args.slice(startToken?.end ?? 0).trim();
+  return buildStartCommandFromGoal(args.slice(startToken?.end ?? 0), '/herd start', 'Usage: /herd start <goal>');
+}
+
+export function buildHerdStartAliasCommand(args: string): HerdCommand {
+  return buildStartCommandFromGoal(args, '/herd-start', 'Usage: /herd-start <goal>');
+}
+
+function buildStartCommandFromGoal(rawGoalInput: string, displayName: string, usage: string): HerdCommand {
+  const rawGoal = rawGoalInput.trim();
   if (!rawGoal) {
-    throw new Error(`Usage: /herd start <goal>`);
+    throw new Error(usage);
   }
   const goal = stripMatchingOuterQuotes(rawGoal);
   if (goal.startsWith('-')) {
-    throw new Error(`Usage: /herd start <goal>\nFor advanced flags, run terminal command: pi-herd start ...`);
+    throw new Error(`${usage}\nFor advanced flags, run terminal command: pi-herd start ...`);
   }
   return {
     cliArgs: ['start', goal],
-    displayName: '/herd start',
+    displayName,
     timeoutMs: START_COMMAND_TIMEOUT_MS,
     timeoutHint: 'The run may have partially started. Check with pi-herd run list, pi-herd status, or clean up with pi-herd cleanup.'
   };

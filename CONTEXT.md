@@ -27,16 +27,18 @@ The Herdr-discovered `start` action prints usage because Herdr 0.7.1 does not pa
 _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action arguments
 
 **Pi extension command**:
-A Pi slash command registered by the optional pi-herd extension for lead-session convenience.
+Pi slash commands registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
-`/herd init`, `/herd doctor`, and `/herd start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
-`/herd start` accepts a simple goal, rejects leading flag-like goals, uses a longer timeout, shows partial-run recovery guidance on timeout, and relies on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+The extension also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>`.
+`/herd init`, `/herd doctor`, `/herd start`, and `/herd-start` map to top-level `pi-herd` commands, while `status`, `brief`, `collect`, and `send` map to the existing `pi-herd lead` command family.
+`/herd start` and `/herd-start` accept a simple goal, reject leading flag-like goals, use a longer timeout, show partial-run recovery guidance on timeout, and rely on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
+`/herd-start` exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
 It does not own orchestration state and does not register agent-callable tools.
-_Avoid_: treating the extension as the runtime, implementing duplicate-run state checks inside the extension, or exposing destructive cleanup and merge actions through it
+_Avoid_: treating the extension as the runtime, implementing duplicate-run state checks inside the extension, exposing destructive cleanup and merge actions through it, or assuming prompt-template expansion can invoke extension commands
 
 **Harness**:
 The coding-agent runtime that pi-herd launches inside visible Herdr panes.
@@ -240,12 +242,13 @@ Domain expert: No.
 Without explicit flags it only reports cleanup candidates.
 It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to mutate anything, and it never closes the lead pane or deletes branches.
 Developer: What does the optional Pi extension expose first?
-Domain expert: It registers one `/herd` slash command for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, `send`, and `help`.
+Domain expert: It registers `/herd` for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, `send`, and `help`.
+It also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>` because Pi prompt templates do not re-dispatch expanded slash commands.
 It maps operational subcommands to existing CLI helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I start a run from Pi inside Herdr?
-Domain expert: Use `/herd start <goal>` for a simple goal.
+Domain expert: Use `/herd start <goal>` or `/herd-start <goal>` for a simple goal.
 If you need advanced flags, use terminal `pi-herd start ...` instead.
-If the command times out, inspect `pi-herd run list` or `pi-herd status` before retrying because startup may have partially completed.
+If either command times out, inspect `pi-herd run list` or `pi-herd status` before retrying because startup may have partially completed.
 Developer: How should I send a prompt that starts with a dash?
 Domain expert: For terminal `pi-herd send`, put `--` after the role, then write the dash-prefixed prompt as literal message text.
 For `/herd send`, write dash-prefixed text directly because only a final `--run RUN` is treated as a selector.
