@@ -32,6 +32,7 @@ export interface RunPluginActionOptions {
 }
 
 interface HerdrPluginContext {
+  focused_pane_id?: unknown;
   focused_pane_cwd?: unknown;
   workspace_cwd?: unknown;
   cwd?: unknown;
@@ -141,7 +142,7 @@ export async function resolvePluginTargetCwd(options: ResolveTargetCwdOptions): 
   const fromContext = cwdFromPluginContext(options.env.HERDR_PLUGIN_CONTEXT_JSON, options.pluginRoot);
   if (fromContext) return fromContext;
 
-  const fromHerdr = await cwdFromHerdrPane(options);
+  const fromHerdr = await cwdFromHerdrPane(options, paneIdFromPluginContext(options.env.HERDR_PLUGIN_CONTEXT_JSON));
   if (fromHerdr) return fromHerdr;
 
   throw new Error('Could not determine a target project directory from Herdr plugin context. Focus a project pane and retry, or run pi-herd directly from the project checkout.');
@@ -168,15 +169,11 @@ export function cwdFromPluginContext(contextJson: string | undefined, basePath =
   );
 }
 
-async function cwdFromHerdrPane(options: ResolveTargetCwdOptions): Promise<string | null> {
+async function cwdFromHerdrPane(options: ResolveTargetCwdOptions, contextPaneId: string | null): Promise<string | null> {
+  const paneId = stringValue(options.env.HERDR_PANE_ID) ?? contextPaneId;
+  if (!paneId) return null;
   const herdr = options.env.HERDR_BIN_PATH || 'herdr';
-  const args = ['pane', 'current'];
-  if (options.env.HERDR_PANE_ID) {
-    args.push('--pane', options.env.HERDR_PANE_ID);
-  } else {
-    args.push('--current');
-  }
-  const result = await options.runner.run(herdr, args, { cwd: options.pluginRoot, timeoutMs: PANE_LOOKUP_TIMEOUT_MS });
+  const result = await options.runner.run(herdr, ['pane', 'current', '--pane', paneId], { cwd: options.pluginRoot, timeoutMs: PANE_LOOKUP_TIMEOUT_MS });
   if (result.exitCode !== 0 || !result.stdout.trim()) return null;
   try {
     const parsed = JSON.parse(result.stdout) as { result?: { pane?: { foreground_cwd?: unknown; cwd?: unknown } } };
@@ -184,6 +181,22 @@ async function cwdFromHerdrPane(options: ResolveTargetCwdOptions): Promise<strin
   } catch {
     return null;
   }
+}
+
+function paneIdFromPluginContext(contextJson: string | undefined): string | null {
+  if (!contextJson) return null;
+  try {
+    const context = JSON.parse(contextJson) as HerdrPluginContext;
+    return stringValue(context.focused_pane_id);
+  } catch {
+    return null;
+  }
+}
+
+function stringValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
 function firstPath(basePath: string, ...values: unknown[]): string | null {
@@ -197,7 +210,7 @@ function firstPath(basePath: string, ...values: unknown[]): string | null {
 }
 
 export function applyHerdrBinPath(env: PluginRuntimeEnv): void {
-  if (!env.HERDR_BIN_PATH) return;
+  if (!env.HERDR_BIN_PATH || !isAbsolute(env.HERDR_BIN_PATH)) return;
   const herdrDir = dirname(env.HERDR_BIN_PATH);
   const currentPath = process.env.PATH ?? '';
   const parts = currentPath.split(delimiter).filter(Boolean);

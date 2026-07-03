@@ -73,7 +73,7 @@ describe('Herdr plugin action wrapper', () => {
     expect(cwdFromPluginContext(context, '/tmp/plugin-root')).toBe('/tmp/plugin-root/relative-project');
   });
 
-  it('resolves target cwd from Herdr pane metadata when context lacks cwd fields', async () => {
+  it('resolves target cwd from Herdr pane metadata when env provides a pane id', async () => {
     const runner = fakeRunner(JSON.stringify({
       result: {
         pane: {
@@ -92,7 +92,19 @@ describe('Herdr plugin action wrapper', () => {
     expect(runner.run).toHaveBeenCalledWith('/opt/herdr/bin/herdr', ['pane', 'current', '--pane', 'w1:p2'], { cwd: '/tmp/plugin-root', timeoutMs: 5_000 });
   });
 
-  it('fails closed when no target cwd can be found', async () => {
+  it('resolves target cwd from Herdr pane metadata when context provides a pane id', async () => {
+    const runner = fakeRunner(JSON.stringify({ result: { pane: { cwd: '/tmp/project-from-context-pane' } } }));
+
+    await expect(resolvePluginTargetCwd({
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p3' }) },
+      pluginRoot: '/tmp/plugin-root',
+      runner
+    })).resolves.toBe('/tmp/project-from-context-pane');
+
+    expect(runner.run).toHaveBeenCalledWith('herdr', ['pane', 'current', '--pane', 'w1:p3'], { cwd: '/tmp/plugin-root', timeoutMs: 5_000 });
+  });
+
+  it('fails closed without querying current pane when no specific pane id is available', async () => {
     const runner = fakeRunner('', 1);
 
     await expect(resolvePluginTargetCwd({
@@ -100,6 +112,8 @@ describe('Herdr plugin action wrapper', () => {
       pluginRoot: '/tmp/plugin-root',
       runner
     })).rejects.toThrow('Could not determine a target project directory');
+
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
   it('fails closed when explicit Herdr pane lookup fails', async () => {
@@ -145,12 +159,21 @@ describe('Herdr plugin action wrapper', () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it('adds HERDR_BIN_PATH directory to PATH for child Herdr lookups', () => {
+  it('adds absolute HERDR_BIN_PATH directory to PATH for child Herdr lookups', () => {
     vi.stubEnv('PATH', ['/usr/bin', '/bin'].join(delimiter));
 
     applyHerdrBinPath({ HERDR_BIN_PATH: '/opt/herdr/bin/herdr' });
 
     expect(process.env.PATH).toBe(['/opt/herdr/bin', '/usr/bin', '/bin'].join(delimiter));
+  });
+
+  it('does not add relative HERDR_BIN_PATH directories to PATH', () => {
+    vi.stubEnv('PATH', ['/usr/bin', '/bin'].join(delimiter));
+
+    applyHerdrBinPath({ HERDR_BIN_PATH: 'herdr' });
+    applyHerdrBinPath({ HERDR_BIN_PATH: './bin/herdr' });
+
+    expect(process.env.PATH).toBe(['/usr/bin', '/bin'].join(delimiter));
   });
 
   it('dispatches to the CLI with resolved cwd and propagates the exit code', async () => {
