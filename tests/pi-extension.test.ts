@@ -9,6 +9,7 @@ import {
   buildHerdCommand,
   boundOutput,
   createHerdCommandHandler,
+  nodeCommandRunner,
   resolveHerdCli,
   tokenizeWithSpans,
   type CommandRunner,
@@ -36,6 +37,10 @@ describe('pi extension /herd argument mapping', () => {
     expect(() => buildHerdCommand('status --json')).toThrow('Unknown argument');
   });
 
+  it('rejects unrecognized subcommands', () => {
+    expect(() => buildHerdCommand('foobar')).toThrow('Unknown /herd command: foobar');
+  });
+
   it('maps send while preserving message text as one CLI argument', () => {
     expect(buildHerdCommand('send reviewer please review --run run-1')).toEqual({
       cliArgs: ['lead', 'send', 'reviewer', 'please review', '--run', 'run-1'],
@@ -47,6 +52,19 @@ describe('pi extension /herd argument mapping', () => {
   it('allows dash-prefixed send message text', () => {
     expect(buildHerdCommand('send tester --focus flaky tests')).toEqual({
       cliArgs: ['lead', 'send', 'tester', '--focus flaky tests'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
+  it('strips one matching outer quote pair from send message text', () => {
+    expect(buildHerdCommand('send reviewer "please review"')).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please review'],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+    expect(buildHerdCommand("send reviewer 'please review' --run run-1")).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', 'please review', '--run', 'run-1'],
       displayName: '/herd send',
       timeoutMs: 300_000
     });
@@ -220,6 +238,17 @@ describe('pi extension command handler', () => {
 describe('pi extension output bounding', () => {
   it('truncates long output', () => {
     expect(boundOutput('abcdef', 3)).toBe('abc\n\n[Output truncated to 3 characters.]');
+  });
+
+  it('caps child stdout and stderr captured in memory', async () => {
+    const result = await nodeCommandRunner.run(process.execPath, [
+      '-e',
+      'process.stdout.write("x".repeat(13000)); process.stderr.write("y".repeat(13000));'
+    ], { timeoutMs: 5_000 });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toHaveLength(12_000);
+    expect(result.stderr).toHaveLength(12_000);
   });
 });
 

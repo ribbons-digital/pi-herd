@@ -54,6 +54,7 @@ export interface HerdCommandHandlerOptions {
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const SEND_COMMAND_TIMEOUT_MS = 300_000;
 const MAX_NOTIFY_CHARS = 12_000;
+const MAX_CAPTURE_CHARS = MAX_NOTIFY_CHARS;
 
 export const HERD_USAGE = `Usage:
   /herd status [--run RUN]
@@ -137,10 +138,11 @@ export function buildHerdSendCommand(args: string, tokens = tokenizeWithSpans(ar
   }
 
   const trailingRun = parseTrailingSendRun(args, tokens[1].end);
-  const message = args.slice(tokens[1].end, trailingRun.messageEnd).trim();
-  if (!message) {
+  const rawMessage = args.slice(tokens[1].end, trailingRun.messageEnd).trim();
+  if (!rawMessage) {
     throw new Error('Message must be a non-empty string.');
   }
+  const message = stripMatchingOuterQuotes(rawMessage);
 
   const cliArgs = ['lead', 'send', role, message];
   if (trailingRun.run) {
@@ -182,6 +184,17 @@ function trimEndIndex(value: string): number {
 
 function unescapeQuotedToken(value: string): string {
   return value.replace(/\\([\s\S])/g, '$1');
+}
+
+function stripMatchingOuterQuotes(value: string): string {
+  if (value.length < 2) {
+    return value;
+  }
+  const quote = value[0];
+  if ((quote !== '"' && quote !== "'") || value[value.length - 1] !== quote) {
+    return value;
+  }
+  return unescapeQuotedToken(value.slice(1, -1));
 }
 
 export function parseOptionalRun(tokens: TokenSpan[], usage: string): string | undefined {
@@ -343,6 +356,14 @@ export function presentOutput(ctx: PiCommandContext, message: string, level: 'in
   stream.write(`${message}\n`);
 }
 
+function appendCapturedOutput(current: string, chunk: string): string {
+  if (current.length >= MAX_CAPTURE_CHARS) {
+    return current;
+  }
+  const next = current + chunk;
+  return next.length > MAX_CAPTURE_CHARS ? next.slice(0, MAX_CAPTURE_CHARS) : next;
+}
+
 export const nodeCommandRunner: CommandRunner = {
   run(command, args, options) {
     return new Promise((resolve) => {
@@ -389,10 +410,10 @@ export const nodeCommandRunner: CommandRunner = {
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
       child.stdout?.on('data', (chunk) => {
-        stdout += chunk;
+        stdout = appendCapturedOutput(stdout, String(chunk));
       });
       child.stderr?.on('data', (chunk) => {
-        stderr += chunk;
+        stderr = appendCapturedOutput(stderr, String(chunk));
       });
       child.on('error', (error: NodeJS.ErrnoException) => {
         finish({ exitCode: null, stdout, stderr, error });
