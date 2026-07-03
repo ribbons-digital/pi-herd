@@ -12,7 +12,7 @@ const cleanupMocks = vi.hoisted(() => ({
 
 vi.mock('../src/cleanup.js', () => cleanupMocks);
 
-import { cleanupRun, mergePlanRun } from '../src/cleanup.js';
+import { cleanupRun, mergePlanRun, type LifecycleCommandResult } from '../src/cleanup.js';
 import { main, parseSendArgs } from '../src/cli.js';
 
 const execFileAsync = promisify(execFile);
@@ -42,17 +42,14 @@ describe('cli main', () => {
 
   it('routes cleanup through the top-level CLI parser', async () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    vi.mocked(cleanupRun).mockResolvedValue({
-      state: null,
-      snapshot: null,
-      text: 'cleanup ok\n',
-      exitCode: 0
-    } as never);
+    vi.mocked(cleanupRun).mockResolvedValue(commandResult('cleanup ok\n'));
 
-    await expect(main(['cleanup', '--run', 'run-1', '--close-panes', '--remove-worktrees', '--force', '--json'])).resolves.toBe(0);
+    await expect(main(['cleanup', '--run', 'run-1', '--complete', '--close-panes', '--remove-worktrees', '--force', '--json'])).resolves.toBe(0);
 
     expect(cleanupRun).toHaveBeenCalledWith(expect.objectContaining({
       run: 'run-1',
+      complete: true,
+      abandon: false,
       closePanes: true,
       removeWorktrees: true,
       force: true,
@@ -61,14 +58,23 @@ describe('cli main', () => {
     expect(stdout.mock.calls.flat().join('')).toContain('cleanup ok');
   });
 
+  it('routes cleanup abandon through the top-level CLI parser', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(cleanupRun).mockResolvedValue(commandResult('cleanup abandoned\n'));
+
+    await expect(main(['cleanup', '--run', 'run-1', '--abandon'])).resolves.toBe(0);
+
+    expect(cleanupRun).toHaveBeenCalledWith(expect.objectContaining({
+      run: 'run-1',
+      complete: false,
+      abandon: true
+    }));
+    expect(stdout.mock.calls.flat().join('')).toContain('cleanup abandoned');
+  });
+
   it('routes merge-plan through the top-level CLI parser', async () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    vi.mocked(mergePlanRun).mockResolvedValue({
-      state: null,
-      snapshot: null,
-      text: 'merge plan ok\n',
-      exitCode: 0
-    } as never);
+    vi.mocked(mergePlanRun).mockResolvedValue(commandResult('merge plan ok\n'));
 
     await expect(main(['merge-plan', '--run', 'run-1', '--json'])).resolves.toBe(0);
 
@@ -123,3 +129,12 @@ describe('cli main', () => {
     expect(parsed.config).toBeUndefined();
   });
 });
+
+function commandResult(text: string): LifecycleCommandResult {
+  return {
+    state: {} as LifecycleCommandResult['state'],
+    snapshot: {} as LifecycleCommandResult['snapshot'],
+    text,
+    exitCode: 0
+  };
+}
