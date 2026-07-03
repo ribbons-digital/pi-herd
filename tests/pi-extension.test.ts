@@ -71,6 +71,19 @@ describe('pi extension /herd argument mapping', () => {
     });
   });
 
+  it('preserves backslashes in quoted send message text', () => {
+    expect(buildHerdCommand(String.raw`send reviewer "C:\tmp\logs and regex \d+\s"`)).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', String.raw`C:\tmp\logs and regex \d+\s`],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+    expect(buildHerdCommand(String.raw`send reviewer "please \"review\" C:\tmp"`)).toEqual({
+      cliArgs: ['lead', 'send', 'reviewer', String.raw`please "review" C:\tmp`],
+      displayName: '/herd send',
+      timeoutMs: 300_000
+    });
+  });
+
   it('keeps run-looking text inside matching outer message quotes', () => {
     expect(buildHerdCommand('send reviewer "please mention --run run-1"')).toEqual({
       cliArgs: ['lead', 'send', 'reviewer', 'please mention --run run-1'],

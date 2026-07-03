@@ -244,7 +244,24 @@ function stripMatchingOuterQuotes(value: string): string {
   if ((quote !== '"' && quote !== "'") || value[value.length - 1] !== quote) {
     return value;
   }
-  return unescapeQuotedToken(value.slice(1, -1));
+  return unescapeMatchingMessageQuote(value.slice(1, -1), quote);
+}
+
+function unescapeMatchingMessageQuote(value: string, quote: string): string {
+  let result = '';
+  let index = 0;
+  while (index < value.length) {
+    const char = value[index] ?? '';
+    const next = value[index + 1];
+    if (char === '\\' && next === quote) {
+      result += quote;
+      index += 2;
+      continue;
+    }
+    result += char;
+    index += 1;
+  }
+  return result;
 }
 
 export function parseOptionalRun(tokens: TokenSpan[], usage: string): string | undefined {
