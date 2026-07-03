@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse as parseToml } from 'smol-toml';
 import {
   applyHerdrBinPath,
   buildPluginCliArgs,
@@ -13,23 +14,46 @@ import type { CommandRunner } from '../src/command-runner.js';
 
 const repoRoot = process.cwd();
 
+interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  min_herdr_version: string;
+  build: Array<{ command: string[] }>;
+  actions: Array<{ id: string; title: string; contexts: string[]; command: string[] }>;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
 describe('Herdr plugin manifest', () => {
   it('declares the expected metadata, pnpm build commands, and actions', async () => {
-    const manifest = await readFile(join(repoRoot, 'herdr-plugin.toml'), 'utf8');
+    const manifestText = await readFile(join(repoRoot, 'herdr-plugin.toml'), 'utf8');
+    const manifest = parseToml(manifestText) as unknown as PluginManifest;
 
-    expect(manifest).toContain('id = "ribbons-digital.pi-herd"');
-    expect(manifest).toContain('name = "pi-herd"');
-    expect(manifest).toContain('version = "0.1.0"');
-    expect(manifest).toContain('min_herdr_version = "0.7.1"');
-    expect(manifest).toContain('command = ["pnpm", "install", "--frozen-lockfile"]');
-    expect(manifest).toContain('command = ["pnpm", "build"]');
-    expect(manifest).not.toContain('"global"');
+    expect(manifest.id).toBe('ribbons-digital.pi-herd');
+    expect(manifest.name).toBe('pi-herd');
+    expect(manifest.version).toBe('0.1.0');
+    expect(manifest.min_herdr_version).toBe('0.7.1');
+    expect(manifest.build.map((entry) => entry.command)).toEqual([
+      ['pnpm', 'install', '--frozen-lockfile'],
+      ['pnpm', 'build']
+    ]);
 
-    const actionIds = Array.from(manifest.matchAll(/^id = "([a-z-]+)"$/gm), (match) => match[1]).filter((id) => id !== 'ribbons-digital.pi-herd');
-    expect(actionIds).toEqual(['doctor', 'start', 'status', 'collect', 'cleanup']);
-    for (const action of actionIds) {
-      expect(manifest).toContain(`command = ["node", "dist/herdr-plugin-action.js", "${action}"]`);
+    expect(manifest.actions.map((action) => action.id)).toEqual(['doctor', 'start', 'status', 'collect', 'cleanup']);
+    for (const action of manifest.actions) {
+      expect(action.contexts).toEqual(['workspace', 'tab', 'pane']);
+      expect(action.command.slice(0, 2)).toEqual(['node', 'dist/herdr-plugin-action.js']);
     }
+    expect(Object.fromEntries(manifest.actions.map((action) => [action.id, action.command[2]]))).toEqual({
+      doctor: 'doctor',
+      start: 'start-help',
+      status: 'status',
+      collect: 'collect',
+      cleanup: 'cleanup'
+    });
   });
 });
 
@@ -40,7 +64,13 @@ describe('Herdr plugin action wrapper', () => {
       workspace_cwd: '/tmp/project-workspace'
     });
 
-    expect(cwdFromPluginContext(context)).toBe('/tmp/project-focused');
+    expect(cwdFromPluginContext(context, '/tmp/plugin-root')).toBe('/tmp/project-focused');
+  });
+
+  it('resolves relative context cwd values against plugin root', () => {
+    const context = JSON.stringify({ focused_pane_cwd: 'relative-project' });
+
+    expect(cwdFromPluginContext(context, '/tmp/plugin-root')).toBe('/tmp/plugin-root/relative-project');
   });
 
   it('resolves target cwd from Herdr pane metadata when context lacks cwd fields', async () => {
@@ -59,7 +89,7 @@ describe('Herdr plugin action wrapper', () => {
       runner
     })).resolves.toBe('/tmp/project-from-pane');
 
-    expect(runner.run).toHaveBeenCalledWith('/opt/herdr/bin/herdr', ['pane', 'current', '--pane', 'w1:p2'], { cwd: '/tmp/plugin-root' });
+    expect(runner.run).toHaveBeenCalledWith('/opt/herdr/bin/herdr', ['pane', 'current', '--pane', 'w1:p2'], { cwd: '/tmp/plugin-root', timeoutMs: 5_000 });
   });
 
   it('fails closed when no target cwd can be found', async () => {
@@ -72,7 +102,20 @@ describe('Herdr plugin action wrapper', () => {
     })).rejects.toThrow('Could not determine a target project directory');
   });
 
-  it('builds safe CLI args for status, collect, and report-only cleanup', () => {
+  it('fails closed when explicit Herdr pane lookup fails', async () => {
+    const runner = fakeRunner('not json');
+
+    await expect(resolvePluginTargetCwd({
+      env: { HERDR_PANE_ID: 'w1:p2' },
+      pluginRoot: '/tmp/plugin-root',
+      runner
+    })).rejects.toThrow('Could not determine a target project directory');
+
+    expect(runner.run).toHaveBeenCalledWith('herdr', ['pane', 'current', '--pane', 'w1:p2'], { cwd: '/tmp/plugin-root', timeoutMs: 5_000 });
+  });
+
+  it('builds safe CLI args for doctor, status, collect, and report-only cleanup', () => {
+    expect(buildPluginCliArgs('doctor', ['--json', '--config', 'herd.yaml'])).toEqual(['doctor', '--json', '--config', 'herd.yaml']);
     expect(buildPluginCliArgs('status', ['--run', 'run-1'])).toEqual(['status', '--run', 'run-1']);
     expect(buildPluginCliArgs('collect', ['--config', 'herd.yaml'])).toEqual(['collect', '--config', 'herd.yaml']);
     expect(buildPluginCliArgs('cleanup', ['--run', 'run-1'])).toEqual(['cleanup', '--run', 'run-1']);
@@ -84,21 +127,30 @@ describe('Herdr plugin action wrapper', () => {
     expect(() => buildPluginCliArgs('cleanup', ['--force'])).toThrow('report-only');
   });
 
-  it('requires explicit start goal text and rejects start flags', () => {
+  it('requires explicit start goal text and rejects start flags for the direct wrapper path', () => {
     expect(() => buildPluginCliArgs('start', [])).toThrow('Usage: pi-herd plugin start <goal>');
     expect(() => buildPluginCliArgs('start', ['--base-ref', 'main'])).toThrow('only accepts goal text');
     expect(buildPluginCliArgs('start', ['ship', 'plugin'])).toEqual(['start', 'ship', 'plugin']);
   });
 
+  it('prints start usage through the Herdr action path without resolving a target cwd', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const main = vi.fn().mockResolvedValue(0);
+    const runner = fakeRunner('', 1);
+
+    await expect(runHerdrPluginAction({ argv: ['start-help'], env: {}, runner, main })).resolves.toBe(0);
+
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd start <goal>');
+    expect(main).not.toHaveBeenCalled();
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
   it('adds HERDR_BIN_PATH directory to PATH for child Herdr lookups', () => {
-    const originalPath = process.env.PATH;
-    try {
-      process.env.PATH = ['/usr/bin', '/bin'].join(delimiter);
-      applyHerdrBinPath({ HERDR_BIN_PATH: '/opt/herdr/bin/herdr' });
-      expect(process.env.PATH).toBe(['/opt/herdr/bin', '/usr/bin', '/bin'].join(delimiter));
-    } finally {
-      process.env.PATH = originalPath;
-    }
+    vi.stubEnv('PATH', ['/usr/bin', '/bin'].join(delimiter));
+
+    applyHerdrBinPath({ HERDR_BIN_PATH: '/opt/herdr/bin/herdr' });
+
+    expect(process.env.PATH).toBe(['/opt/herdr/bin', '/usr/bin', '/bin'].join(delimiter));
   });
 
   it('dispatches to the CLI with resolved cwd and propagates the exit code', async () => {

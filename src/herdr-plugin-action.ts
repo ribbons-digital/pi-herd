@@ -1,13 +1,17 @@
-import { delimiter, dirname, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { main as cliMain } from './cli.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 
 export const PLUGIN_ACTIONS = ['doctor', 'start', 'status', 'collect', 'cleanup'] as const;
 export type PluginAction = typeof PLUGIN_ACTIONS[number];
+type PluginEntrypointAction = PluginAction | 'start-help';
 
 const RUN_SELECTOR_OPTIONS = new Set(['--run', '--config']);
+const DOCTOR_VALUE_OPTIONS = new Set(['--config']);
+const DOCTOR_BOOLEAN_OPTIONS = new Set(['--json']);
 const CLEANUP_DESTRUCTIVE_OPTIONS = new Set(['--complete', '--abandon', '--close-panes', '--remove-worktrees', '--force']);
+const PANE_LOOKUP_TIMEOUT_MS = 5_000;
 
 export interface PluginRuntimeEnv {
   [key: string]: string | undefined;
@@ -46,7 +50,7 @@ export async function runHerdrPluginAction(options: RunPluginActionOptions): Pro
   const pluginRoot = resolve(options.pluginRoot ?? env.HERDR_PLUGIN_ROOT ?? process.cwd());
   const runner = options.runner ?? nodeCommandRunner;
   const main = options.main ?? cliMain;
-  const action = parsePluginAction(options.argv[0] ?? env.HERDR_PLUGIN_ACTION_ID);
+  const action = parsePluginEntrypointAction(options.argv[0] ?? env.HERDR_PLUGIN_ACTION_ID);
   if (!action) {
     process.stderr.write(`Unknown pi-herd plugin action: ${options.argv[0] ?? env.HERDR_PLUGIN_ACTION_ID ?? '(missing)'}\n`);
     return 1;
@@ -54,6 +58,10 @@ export async function runHerdrPluginAction(options: RunPluginActionOptions): Pro
 
   try {
     applyHerdrBinPath(env);
+    if (action === 'start-help') {
+      process.stdout.write(startUsageText());
+      return 0;
+    }
     const cliArgs = buildPluginCliArgs(action, options.argv.slice(1));
     const targetCwd = await resolvePluginTargetCwd({ env, pluginRoot, runner });
     return await main(cliArgs, targetCwd);
@@ -68,10 +76,14 @@ export function parsePluginAction(value: string | undefined): PluginAction | nul
   return PLUGIN_ACTIONS.includes(value as PluginAction) ? (value as PluginAction) : null;
 }
 
+function parsePluginEntrypointAction(value: string | undefined): PluginEntrypointAction | null {
+  if (value === 'start-help') return value;
+  return parsePluginAction(value);
+}
+
 export function buildPluginCliArgs(action: PluginAction, args: string[]): string[] {
   if (action === 'doctor') {
-    if (args.length) throw new Error('Usage: pi-herd plugin doctor');
-    return ['doctor'];
+    return ['doctor', ...parseDoctorArgs(args)];
   }
 
   if (action === 'start') {
@@ -97,11 +109,23 @@ export function buildPluginCliArgs(action: PluginAction, args: string[]): string
 }
 
 function parseRunSelectorArgs(args: string[]): string[] {
+  return parseSupportedArgs(args, RUN_SELECTOR_OPTIONS, new Set(), '--run and --config');
+}
+
+function parseDoctorArgs(args: string[]): string[] {
+  return parseSupportedArgs(args, DOCTOR_VALUE_OPTIONS, DOCTOR_BOOLEAN_OPTIONS, '--config and --json');
+}
+
+function parseSupportedArgs(args: string[], valueOptions: Set<string>, booleanOptions: Set<string>, supportedDescription: string): string[] {
   const parsed: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (!RUN_SELECTOR_OPTIONS.has(arg)) {
-      throw new Error(`Unsupported plugin action argument: ${arg}. Supported selector options are --run and --config.`);
+    if (booleanOptions.has(arg)) {
+      parsed.push(arg);
+      continue;
+    }
+    if (!valueOptions.has(arg)) {
+      throw new Error(`Unsupported plugin action argument: ${arg}. Supported options are ${supportedDescription}.`);
     }
     const value = args[index + 1];
     if (!value || value.startsWith('-')) {
@@ -114,7 +138,7 @@ function parseRunSelectorArgs(args: string[]): string[] {
 }
 
 export async function resolvePluginTargetCwd(options: ResolveTargetCwdOptions): Promise<string> {
-  const fromContext = cwdFromPluginContext(options.env.HERDR_PLUGIN_CONTEXT_JSON);
+  const fromContext = cwdFromPluginContext(options.env.HERDR_PLUGIN_CONTEXT_JSON, options.pluginRoot);
   if (fromContext) return fromContext;
 
   const fromHerdr = await cwdFromHerdrPane(options);
@@ -123,7 +147,7 @@ export async function resolvePluginTargetCwd(options: ResolveTargetCwdOptions): 
   throw new Error('Could not determine a target project directory from Herdr plugin context. Focus a project pane and retry, or run pi-herd directly from the project checkout.');
 }
 
-export function cwdFromPluginContext(contextJson: string | undefined): string | null {
+export function cwdFromPluginContext(contextJson: string | undefined, basePath = process.cwd()): string | null {
   if (!contextJson) return null;
   let context: HerdrPluginContext;
   try {
@@ -132,6 +156,7 @@ export function cwdFromPluginContext(contextJson: string | undefined): string | 
     return null;
   }
   return firstPath(
+    basePath,
     context.focused_pane_cwd,
     context.workspace_cwd,
     // These fallback shapes are accepted for forward compatibility with richer plugin contexts.
@@ -151,22 +176,22 @@ async function cwdFromHerdrPane(options: ResolveTargetCwdOptions): Promise<strin
   } else {
     args.push('--current');
   }
-  const result = await options.runner.run(herdr, args, { cwd: options.pluginRoot });
+  const result = await options.runner.run(herdr, args, { cwd: options.pluginRoot, timeoutMs: PANE_LOOKUP_TIMEOUT_MS });
   if (result.exitCode !== 0 || !result.stdout.trim()) return null;
   try {
     const parsed = JSON.parse(result.stdout) as { result?: { pane?: { foreground_cwd?: unknown; cwd?: unknown } } };
-    return firstPath(parsed.result?.pane?.foreground_cwd, parsed.result?.pane?.cwd);
+    return firstPath(options.pluginRoot, parsed.result?.pane?.foreground_cwd, parsed.result?.pane?.cwd);
   } catch {
     return null;
   }
 }
 
-function firstPath(...values: unknown[]): string | null {
+function firstPath(basePath: string, ...values: unknown[]): string | null {
   for (const value of values) {
     if (typeof value !== 'string') continue;
     const trimmed = value.trim();
     if (!trimmed) continue;
-    return resolve(trimmed);
+    return isAbsolute(trimmed) ? trimmed : resolve(basePath, trimmed);
   }
   return null;
 }
@@ -180,8 +205,15 @@ export function applyHerdrBinPath(env: PluginRuntimeEnv): void {
   process.env.PATH = [herdrDir, currentPath].filter(Boolean).join(delimiter);
 }
 
+function startUsageText(): string {
+  return 'Herdr 0.7.1 plugin actions do not pass goal text to actions. Run `pi-herd start <goal>` from the project checkout.\n';
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runHerdrPluginAction({ argv: process.argv.slice(2) }).then((exitCode) => {
     process.exitCode = exitCode;
+  }).catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
   });
 }

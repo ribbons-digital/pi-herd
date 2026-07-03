@@ -19,9 +19,9 @@ command = ["node", "dist/herdr-plugin-action.js", "doctor"]
 
 [[actions]]
 id = "start"
-title = "pi-herd start"
+title = "pi-herd start usage"
 contexts = ["workspace", "tab", "pane"]
-command = ["node", "dist/herdr-plugin-action.js", "start"]
+command = ["node", "dist/herdr-plugin-action.js", "start-help"]
 
 [[actions]]
 id = "status"
