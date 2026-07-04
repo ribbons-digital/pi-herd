@@ -64,7 +64,7 @@ Install pi-herd with Herdr:
 herdr plugin install ribbons-digital/pi-herd
 ```
 
-Herdr runs the manifest build commands and registers the plugin actions.
+Herdr runs the manifest build commands and registers the plugin actions and panes.
 This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for the Herdr plugin marketplace.
 
 ### Link a local checkout as a Herdr plugin
@@ -348,7 +348,8 @@ Commands that target an existing run accept `--run RUN`.
 `RUN` can be a `run_id`, a `run_slug`, or `latest`.
 
 When `--run` is omitted, pi-herd first tries a verified current Herdr/Pi pane binding and then falls back to the single active run.
-If multiple active runs are visible, pi-herd refuses to guess and asks for `--run`.
+Most commands refuse to guess when multiple active runs are visible and ask for `--run`.
+`pi-herd board` is the read-only exception: without an implicit run, it prints no-active or multiple-active guidance and exits successfully.
 Explicit `--run` selectors for `merge-plan` and `cleanup` can also inspect completed, abandoned, or failed runs.
 
 ### `pi-herd start`
@@ -427,6 +428,8 @@ pi-herd board --run latest
 
 The board uses the same read-only evaluation semantics as `pi-herd status`.
 It shows the run, lead, worker roles, artifacts, warnings, durable paths, and suggested terminal commands without writing run state.
+If no run can be selected implicitly, it prints next-step guidance instead of failing.
+Long boards are capped at 180 lines with a truncation notice, and the warnings section shows the first 12 warnings plus an omitted count.
 
 ### `pi-herd wait`
 
@@ -665,7 +668,8 @@ pi-herd run list --all
 pi-herd status --run <run_id>
 ```
 
-pi-herd refuses to guess when multiple active runs are available.
+Most pi-herd commands refuse to guess when multiple active runs are available.
+`pi-herd board` prints the available active runs and the explicit board or status command to use.
 
 ### A role is incomplete
 

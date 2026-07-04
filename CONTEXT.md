@@ -29,7 +29,7 @@ _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action argu
 **Herdr plugin pane**:
 A Herdr-managed terminal pane declared by `herdr-plugin.toml` for read-first pi-herd visibility.
 The first pane is `run-board`, which runs `pi-herd board` through the plugin pane wrapper, resolves the target project from Herdr plugin context or pane metadata, and stays open with a small refresh prompt because Herdr closes plugin panes when their command exits.
-The board is read-only: it delegates to `pi-herd status` semantics, shows the run, lead, roles, artifacts, warnings, durable paths, and suggested terminal commands, and does not own orchestration state.
+The board is read-only: it delegates to `pi-herd status` semantics, shows the run, lead, roles, artifacts, warnings, durable paths, and suggested terminal commands, prints guidance instead of failing when no run can be selected implicitly, caps long output at 180 lines, and does not own orchestration state.
 _Avoid_: treating the board as a native/web UI, adding destructive controls, writing board artifacts, or making it the source of truth
 
 **Pi extension command**:
@@ -191,7 +191,7 @@ Developer: What does the Herdr plugin expose first?
 Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions, plus a `run-board` pane.
 Repository-targeting actions and panes resolve the target project from Herdr plugin context or pane metadata, and they fail closed rather than guessing when no project directory is available.
 Because Herdr 0.7.1 plugin invocation does not pass arbitrary action arguments, the Herdr-discovered `start` action prints usage instead of inventing a goal.
-The `run-board` pane renders the read-only `pi-herd board`, stays open with Enter-to-refresh and `q`-to-quit, and does not write orchestration state.
+The `run-board` pane renders the read-only `pi-herd board`, stays open with Enter-to-refresh and `q`-to-quit, prints no-active or multiple-active guidance instead of failing when no run can be selected implicitly, and does not write orchestration state.
 Developer: Should we publish it as unscoped `pi-herd`?
 Domain expert: No.
 That risks confusion with existing packages, so future publishing should use a Ribbons Digital scope.
