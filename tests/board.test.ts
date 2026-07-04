@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { boardRun, formatBoard, nextBoardActions } from '../src/board.js';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
@@ -32,6 +32,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -46,7 +47,7 @@ describe('board command', () => {
     expect(result.text).toContain('pi-herd start <goal>');
   });
 
-  it('renders multiple active runs without selecting one', async () => {
+  it('renders multiple active runs without selecting one when status targeting is ambiguous', async () => {
     const runner = new RecordingRunner(baseResponses({}));
     await createRun({ cwd: dir, goal: 'First run', now: NOW, runner });
     await createRun({ cwd: dir, goal: 'Second run', now: new Date('2026-07-01T12:01:00.000Z'), runner });
@@ -58,6 +59,24 @@ describe('board command', () => {
     expect(result.text).toContain('First run');
     expect(result.text).toContain('Second run');
     expect(result.text).toContain('pi-herd board --run <run_id|slug>');
+  });
+
+  it('uses the current Herdr pane binding before showing the multi-run board', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson({ pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' }),
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+    const first = await createWorkingRun('planner-pane');
+    await createRun({ cwd: dir, goal: 'Second run', now: new Date('2026-07-01T12:01:00.000Z'), runner });
+    vi.stubEnv('HERDR_ENV', '1');
+    vi.stubEnv('HERDR_PANE_ID', 'lead-pane');
+    vi.stubEnv('PI_CODING_AGENT', 'true');
+
+    const result = await boardRun({ cwd: dir, runner, now: NOW });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.text).toContain(`Run: ${first.state.run_id}`);
+    expect(result.text).not.toContain('Multiple active pi-herd runs');
   });
 
   it('renders role state, artifacts, warnings, and next actions without writing run state', async () => {

@@ -23,18 +23,24 @@ const MAX_WARNINGS = 12;
 
 export async function boardRun(options: BoardCommandOptions): Promise<BoardCommandResult> {
   const runner = options.runner ?? nodeCommandRunner;
-  if (!options.run) {
+  try {
+    const status = await statusRun({ cwd: options.cwd, configPath: options.configPath, run: options.run, runner, now: options.now });
+    return { text: formatBoard(status.state, status.snapshot), exitCode: 0 };
+  } catch (error) {
+    if (options.run || !isUnresolvedImplicitRunError(error)) {
+      throw error;
+    }
     const activeRuns = await listRunsForInvocation(options.cwd, options.configPath, runner, false);
     if (activeRuns.length === 0) {
       return { text: formatNoActiveBoard(), exitCode: 0 };
     }
-    if (activeRuns.length > 1) {
-      return { text: formatMultipleRunsBoard(activeRuns), exitCode: 0 };
-    }
+    return { text: formatMultipleRunsBoard(activeRuns), exitCode: 0 };
   }
+}
 
-  const status = await statusRun({ cwd: options.cwd, configPath: options.configPath, run: options.run, runner, now: options.now });
-  return { text: formatBoard(status.state, status.snapshot), exitCode: 0 };
+function isUnresolvedImplicitRunError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith('No active runs found.') || message.startsWith('Multiple active runs found.') || message.startsWith('Current pane matches multiple active runs.');
 }
 
 export function formatNoActiveBoard(): string {
