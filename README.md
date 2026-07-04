@@ -21,9 +21,9 @@ The image above is an illustration of the layout and artifact flow.
 - Visible worker sessions for planning, implementation, review, and testing.
 - Git worktree isolation for source-changing roles.
 - Durable run artifacts under `.pi-herd/runs/`.
-- Read-only status and brief commands for steering a run without polluting context.
+- Read-only status, brief, diff, and board commands for steering a run without polluting context.
 - Collection and merge-preparation commands that write clear handoff artifacts.
-- A Herdr plugin manifest for common Herdr actions.
+- A Herdr plugin manifest for common Herdr actions and the read-only run board pane.
 - An optional Pi slash-command extension for `/herd ...` shortcuts and `/herd-start`.
 
 ## Requirements
@@ -64,7 +64,7 @@ Install pi-herd with Herdr:
 herdr plugin install ribbons-digital/pi-herd
 ```
 
-Herdr runs the manifest build commands and registers the plugin actions.
+Herdr runs the manifest build commands and registers the plugin actions and panes.
 This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for the Herdr plugin marketplace.
 
 ### Link a local checkout as a Herdr plugin
@@ -85,6 +85,12 @@ Run a plugin action:
 ```bash
 herdr plugin action invoke ribbons-digital.pi-herd.doctor
 herdr plugin action invoke status --plugin ribbons-digital.pi-herd
+```
+
+Open the read-only run board pane:
+
+```bash
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board --placement split --direction right
 ```
 
 Plugin logs are available through Herdr:
@@ -169,6 +175,7 @@ pi-herd init
 pi-herd doctor
 pi-herd start "implement the approved auth refresh plan"
 pi-herd status
+pi-herd board
 pi-herd lead brief
 pi-herd send implementer "Implement the approved plan."
 pi-herd send reviewer "Review the implementation branch."
@@ -341,7 +348,8 @@ Commands that target an existing run accept `--run RUN`.
 `RUN` can be a `run_id`, a `run_slug`, or `latest`.
 
 When `--run` is omitted, pi-herd first tries a verified current Herdr/Pi pane binding and then falls back to the single active run.
-If multiple active runs are visible, pi-herd refuses to guess and asks for `--run`.
+Most commands refuse to guess when multiple active runs are visible and ask for `--run`.
+`pi-herd board` is the read-only exception: without an implicit run, it prints no-active or multiple-active guidance and exits successfully.
 Explicit `--run` selectors for `merge-plan` and `cleanup` can also inspect completed, abandoned, or failed runs.
 
 ### `pi-herd start`
@@ -408,6 +416,20 @@ pi-herd status --run latest
 
 A role is done only when its activity signal has stopped and its required artifact is present, non-empty, and fresh enough for the current pass.
 Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
+
+### `pi-herd board`
+
+Render a read-only run board for a terminal or Herdr plugin pane.
+
+```bash
+pi-herd board
+pi-herd board --run latest
+```
+
+The board uses the same read-only evaluation semantics as `pi-herd status`.
+It shows the run, lead, worker roles, artifacts, warnings, durable paths, and suggested terminal commands without writing run state.
+If no run can be selected implicitly, it prints next-step guidance instead of failing.
+Long boards are capped at 180 lines with a truncation notice, and the warnings section shows the first 12 warnings plus an omitted count.
 
 ### `pi-herd wait`
 
@@ -500,7 +522,7 @@ Important safety rules:
 - Dirty worktree removal is refused unless `--force` is passed.
 - Forced worktree removal saves recovery refs and dirty-work stashes where needed.
 
-## Herdr plugin actions
+## Herdr plugin actions and panes
 
 The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
 
@@ -521,6 +543,27 @@ The `cleanup` action is report-only and does not pass destructive cleanup flags.
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
 For that reason, the Herdr-discovered `start` action prints usage instead of guessing a goal.
 Run `pi-herd start <goal>` directly from the project checkout when starting a run.
+
+Available panes:
+
+- `run-board`
+
+Open the read-only board as a Herdr-managed terminal pane:
+
+```bash
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board --placement split --direction right
+```
+
+The board renders current run state without writing it.
+It shows the run, lead, roles, artifacts, warnings, and suggested terminal commands.
+Because Herdr plugin panes are terminal processes, the board stays open with a prompt: press Enter to refresh, or type `q` then Enter to quit.
+
+You can also render the board in any terminal:
+
+```bash
+pi-herd board
+pi-herd board --run <run_id|slug>
+```
 
 ## Optional Pi extension
 
@@ -625,7 +668,8 @@ pi-herd run list --all
 pi-herd status --run <run_id>
 ```
 
-pi-herd refuses to guess when multiple active runs are available.
+Most pi-herd commands refuse to guess when multiple active runs are available.
+`pi-herd board` prints the available active runs and the explicit board or status command to use.
 
 ### A role is incomplete
 

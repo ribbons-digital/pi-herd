@@ -40,3 +40,8 @@ id = "cleanup"
 title = "pi-herd cleanup report"
 contexts = ["workspace", "tab", "pane"]
 command = ["node", "dist/herdr-plugin-action.js", "cleanup"]
+
+[[panes]]
+id = "run-board"
+title = "pi-herd run board"
+command = ["node", "dist/herdr-plugin-pane.js", "run-board"]

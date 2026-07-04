@@ -10,8 +10,14 @@ const cleanupMocks = vi.hoisted(() => ({
   mergePlanRun: vi.fn()
 }));
 
-vi.mock('../src/cleanup.js', () => cleanupMocks);
+const boardMocks = vi.hoisted(() => ({
+  boardRun: vi.fn()
+}));
 
+vi.mock('../src/cleanup.js', () => cleanupMocks);
+vi.mock('../src/board.js', () => boardMocks);
+
+import { boardRun, type BoardCommandResult } from '../src/board.js';
 import { cleanupRun, mergePlanRun, type LifecycleCommandResult } from '../src/cleanup.js';
 import { main, parseSendArgs } from '../src/cli.js';
 
@@ -35,6 +41,7 @@ describe('cli main', () => {
     await expect(main(['--', '--help'])).resolves.toBe(0);
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd run create');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd refresh <reviewer|tester>');
+    expect(stdout.mock.calls.flat().join('')).toContain('pi-herd board');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd diff');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd merge-plan');
     expect(stdout.mock.calls.flat().join('')).toContain('pi-herd cleanup');
@@ -70,6 +77,16 @@ describe('cli main', () => {
       abandon: true
     }));
     expect(stdout.mock.calls.flat().join('')).toContain('cleanup abandoned');
+  });
+
+  it('routes board through the top-level CLI parser', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(boardRun).mockResolvedValue(boardResult('board ok\n'));
+
+    await expect(main(['board', '--run', 'run-1'])).resolves.toBe(0);
+
+    expect(boardRun).toHaveBeenCalledWith(expect.objectContaining({ run: 'run-1' }));
+    expect(stdout.mock.calls.flat().join('')).toContain('board ok');
   });
 
   it('routes merge-plan through the top-level CLI parser', async () => {
@@ -129,6 +146,10 @@ describe('cli main', () => {
     expect(parsed.config).toBeUndefined();
   });
 });
+
+function boardResult(text: string): BoardCommandResult {
+  return { text, exitCode: 0 };
+}
 
 function commandResult(text: string): LifecycleCommandResult {
   return {
