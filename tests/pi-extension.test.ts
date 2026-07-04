@@ -405,6 +405,7 @@ describe('pi extension command handler', () => {
     const errorHandler = createHerdCommandHandler({ runner: errorRunner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
 
     await expect(errorHandler('wait', errorCtx)).rejects.toThrow('/herd wait failed to start');
+    expect(errorCtx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('pi-herd wait'), 'error');
   });
 
   it('notifies and throws on CLI failure', async () => {

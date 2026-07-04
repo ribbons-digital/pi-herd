@@ -48,6 +48,8 @@ export interface HerdCommand {
   warnExitCodes?: number[];
   /** Extra recovery guidance shown when a long-running command times out. */
   timeoutHint?: string;
+  /** Extra recovery guidance shown when a command process fails to start. */
+  failureHint?: string;
 }
 
 export interface HerdCommandHandlerOptions {
@@ -80,7 +82,7 @@ export const HERD_USAGE = `Usage:
 Notes:
   /herd start and /herd-start accept a simple goal. Use terminal pi-herd start for advanced flags.
   /herd diff is read-only and shows diff stat plus changed files.
-  /herd wait records role verdicts in run state, same as terminal pi-herd wait.
+  /herd wait uses a fixed 60s timeout and 2s poll interval, records role verdicts in run state, and rejects custom wait flags.
   /herd collect maps to read-only pi-herd lead collect.
   pi-herd collect remains a terminal command for writing FINAL_SUMMARY.md.`;
 
@@ -139,7 +141,7 @@ async function runHerdCommand(command: HerdCommand, ctx: PiCommandContext, optio
     return;
   }
 
-  const failure = formatCommandFailure(command.displayName, result, command.timeoutMs, command.timeoutHint);
+  const failure = formatCommandFailure(command.displayName, result, command.timeoutMs, command.timeoutHint, command.failureHint);
   presentOutput(ctx, failure, 'error');
   throw new Error(failure);
 }
@@ -198,7 +200,8 @@ export function buildHerdCommand(args: string): HerdCommand | null {
       displayName: '/herd wait',
       timeoutMs: WAIT_COMMAND_TIMEOUT_MS,
       warnExitCodes: [2, 3],
-      timeoutHint: 'The wait command may still be running. For custom or longer waits, run terminal command: pi-herd wait ...'
+      timeoutHint: 'The wait command may still be running. For custom or longer waits, run terminal command: pi-herd wait ...',
+      failureHint: 'For custom or longer waits, run terminal command: pi-herd wait ...'
     };
   }
 
@@ -511,12 +514,12 @@ export function boundOutput(text: string, maxChars = MAX_NOTIFY_CHARS): string {
   return `${text.slice(0, maxChars)}\n\n[Output truncated to ${maxChars} characters.]`;
 }
 
-export function formatCommandFailure(displayName: string, result: CommandResult, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, timeoutHint?: string): string {
+export function formatCommandFailure(displayName: string, result: CommandResult, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, timeoutHint?: string, failureHint?: string): string {
   if (result.timedOut) {
     return `${displayName} timed out after ${timeoutMs}ms.${timeoutHint ? `\n${timeoutHint}` : ''}`;
   }
   if (result.error) {
-    return `${displayName} failed to start: ${result.error.message}`;
+    return `${displayName} failed to start: ${result.error.message}${failureHint ? `\n${failureHint}` : ''}`;
   }
   const stderr = result.stderr.trim();
   const stdout = result.stdout.trim();
