@@ -73,6 +73,31 @@ describe('Herdr plugin pane entrypoint', () => {
     expect(readline.question).toHaveBeenCalled();
   });
 
+  it('refreshes the board once before quitting from the hold-open prompt', async () => {
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn().mockResolvedValueOnce('').mockResolvedValueOnce('q'),
+      close: vi.fn()
+    };
+    const runner = new RecordingRunner({
+      'git rev-parse --show-toplevel': { exitCode: 0, stdout: '/repo\n', stderr: '' },
+      'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' }
+    });
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(0);
+    expect(readline.question).toHaveBeenCalledTimes(2);
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
+  });
+
   it('rejects unsupported pane arguments', async () => {
     const stdout = { write: vi.fn() };
     const runner = new RecordingRunner({});

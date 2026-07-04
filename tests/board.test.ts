@@ -107,7 +107,7 @@ describe('board command', () => {
     expect(nextBoardActions(state, snapshot)).toContain(`Review implementation changes: pi-herd diff --run ${state.run_id}`);
   });
 
-  it('bounds very large board output', async () => {
+  it('caps warnings before board-level truncation', async () => {
     const { state } = await createWorkingRun('planner-pane');
     const snapshot = minimalSnapshot(state);
     snapshot.warnings = Array.from({ length: 220 }, (_, index) => `warning ${index}`);
@@ -116,6 +116,30 @@ describe('board command', () => {
 
     expect(text.split('\n').length).toBeLessThanOrEqual(181);
     expect(text).toContain('more warnings omitted');
+  });
+
+  it('truncates board output when role artifact detail exceeds the board line budget', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    const snapshot = minimalSnapshot(state);
+    const planner = snapshot.roles.find((role) => role.role === 'planner');
+    expect(planner).toBeDefined();
+    planner!.artifacts = Array.from({ length: 220 }, (_, index) => ({
+      role: 'planner',
+      name: `PLAN-${index}.md`,
+      path: join(state.canonical_run_dir, `PLAN-${index}.md`),
+      present: true,
+      valid: true,
+      stale: false,
+      bytes: 12
+    }));
+
+    const text = formatBoard(state, snapshot);
+    const lines = text.trimEnd().split('\n');
+
+    expect(lines).toHaveLength(180);
+    expect(text).toContain('[Board truncated to 180 lines. Run pi-herd status --run <run> for full detail.]');
+    expect(text).toContain('PLAN-0.md');
+    expect(text).not.toContain('PLAN-219.md');
   });
 });
 
