@@ -182,6 +182,7 @@ Wait for working roles to settle:
 ```
 
 `/herd wait` waits up to 60 seconds, polls every 2 seconds, and records role verdicts in run state just like terminal `pi-herd wait`.
+It rejects custom wait flags.
 Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
 
 Collect role verdicts, pane logs, and artifact excerpts:
@@ -551,6 +552,7 @@ Use terminal `pi-herd start ...` for advanced start flags.
 `/herd collect` maps to read-only `pi-herd lead collect`.
 `/herd diff` maps to read-only `pi-herd diff` and shows diff stat plus changed files against the run base ref.
 `/herd wait` maps to `pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000` and records role verdicts in run state on success, unresolved verdicts, and timeout, same as terminal `pi-herd wait`.
+It rejects custom wait flags.
 Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 

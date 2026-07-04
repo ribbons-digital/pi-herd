@@ -44,7 +44,7 @@ export interface HerdCommand {
   cliArgs: string[];
   displayName: string;
   timeoutMs: number;
-  /** Present these exit codes with stdout, plus any stderr, as warnings for diagnostic reports. */
+  /** Present these exit codes with stdout, plus any stderr, as warnings instead of failures. */
   warnExitCodes?: number[];
   /** Extra recovery guidance shown when a long-running command times out. */
   timeoutHint?: string;
