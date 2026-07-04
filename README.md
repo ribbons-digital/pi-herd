@@ -21,9 +21,9 @@ The image above is an illustration of the layout and artifact flow.
 - Visible worker sessions for planning, implementation, review, and testing.
 - Git worktree isolation for source-changing roles.
 - Durable run artifacts under `.pi-herd/runs/`.
-- Read-only status and brief commands for steering a run without polluting context.
+- Read-only status, brief, diff, and board commands for steering a run without polluting context.
 - Collection and merge-preparation commands that write clear handoff artifacts.
-- A Herdr plugin manifest for common Herdr actions.
+- A Herdr plugin manifest for common Herdr actions and the read-only run board pane.
 - An optional Pi slash-command extension for `/herd ...` shortcuts and `/herd-start`.
 
 ## Requirements
@@ -85,6 +85,12 @@ Run a plugin action:
 ```bash
 herdr plugin action invoke ribbons-digital.pi-herd.doctor
 herdr plugin action invoke status --plugin ribbons-digital.pi-herd
+```
+
+Open the read-only run board pane:
+
+```bash
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board --placement split --direction right
 ```
 
 Plugin logs are available through Herdr:

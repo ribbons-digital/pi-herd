@@ -188,9 +188,10 @@ Developer: Should the repo and CLI both be called pi-herd?
 Domain expert: Yes.
 The repo is `ribbons-digital/pi-herd`, the CLI is `pi-herd`, and the Herdr plugin id is `ribbons-digital.pi-herd`.
 Developer: What does the Herdr plugin expose first?
-Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions.
-Repository-targeting actions resolve the target project from Herdr plugin context or pane metadata, and they fail closed rather than guessing when no project directory is available.
+Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions, plus a `run-board` pane.
+Repository-targeting actions and panes resolve the target project from Herdr plugin context or pane metadata, and they fail closed rather than guessing when no project directory is available.
 Because Herdr 0.7.1 plugin invocation does not pass arbitrary action arguments, the Herdr-discovered `start` action prints usage instead of inventing a goal.
+The `run-board` pane renders the read-only `pi-herd board`, stays open with Enter-to-refresh and `q`-to-quit, and does not write orchestration state.
 Developer: Should we publish it as unscoped `pi-herd`?
 Domain expert: No.
 That risks confusion with existing packages, so future publishing should use a Ribbons Digital scope.
