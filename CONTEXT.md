@@ -26,6 +26,12 @@ The first plugin actions are `doctor`, `start`, `status`, `collect`, and report-
 The Herdr-discovered `start` action prints usage because Herdr 0.7.1 does not pass goal text.
 _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action arguments
 
+**Herdr plugin pane**:
+A Herdr-managed terminal pane declared by `herdr-plugin.toml` for read-first pi-herd visibility.
+The first pane is `run-board`, which runs `pi-herd board` through the plugin pane wrapper, resolves the target project from Herdr plugin context or pane metadata, and stays open with a small refresh prompt because Herdr closes plugin panes when their command exits.
+The board is read-only: it delegates to `pi-herd status` semantics, shows the run, lead, roles, artifacts, warnings, durable paths, and suggested terminal commands, and does not own orchestration state.
+_Avoid_: treating the board as a native/web UI, adding destructive controls, writing board artifacts, or making it the source of truth
+
 **Pi extension command**:
 Pi slash commands registered by the optional pi-herd extension for lead-session convenience.
 The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `diff`, `wait`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.

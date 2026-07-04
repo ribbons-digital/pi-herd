@@ -169,6 +169,7 @@ pi-herd init
 pi-herd doctor
 pi-herd start "implement the approved auth refresh plan"
 pi-herd status
+pi-herd board
 pi-herd lead brief
 pi-herd send implementer "Implement the approved plan."
 pi-herd send reviewer "Review the implementation branch."
@@ -409,6 +410,18 @@ pi-herd status --run latest
 A role is done only when its activity signal has stopped and its required artifact is present, non-empty, and fresh enough for the current pass.
 Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
 
+### `pi-herd board`
+
+Render a read-only run board for a terminal or Herdr plugin pane.
+
+```bash
+pi-herd board
+pi-herd board --run latest
+```
+
+The board uses the same read-only evaluation semantics as `pi-herd status`.
+It shows the run, lead, worker roles, artifacts, warnings, durable paths, and suggested terminal commands without writing run state.
+
 ### `pi-herd wait`
 
 Poll working or blocked roles until they resolve.
@@ -500,7 +513,7 @@ Important safety rules:
 - Dirty worktree removal is refused unless `--force` is passed.
 - Forced worktree removal saves recovery refs and dirty-work stashes where needed.
 
-## Herdr plugin actions
+## Herdr plugin actions and panes
 
 The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
 
@@ -521,6 +534,27 @@ The `cleanup` action is report-only and does not pass destructive cleanup flags.
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
 For that reason, the Herdr-discovered `start` action prints usage instead of guessing a goal.
 Run `pi-herd start <goal>` directly from the project checkout when starting a run.
+
+Available panes:
+
+- `run-board`
+
+Open the read-only board as a Herdr-managed terminal pane:
+
+```bash
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board --placement split --direction right
+```
+
+The board renders current run state without writing it.
+It shows the run, lead, roles, artifacts, warnings, and suggested terminal commands.
+Because Herdr plugin panes are terminal processes, the board stays open with a prompt: press Enter to refresh, or type `q` then Enter to quit.
+
+You can also render the board in any terminal:
+
+```bash
+pi-herd board
+pi-herd board --run <run_id|slug>
+```
 
 ## Optional Pi extension
 

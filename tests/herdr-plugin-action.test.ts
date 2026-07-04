@@ -21,6 +21,7 @@ interface PluginManifest {
   min_herdr_version: string;
   build: Array<{ command: string[] }>;
   actions: Array<{ id: string; title: string; contexts: string[]; command: string[] }>;
+  panes: Array<{ id: string; title: string; command: string[] }>;
 }
 
 afterEach(() => {
@@ -54,6 +55,9 @@ describe('Herdr plugin manifest', () => {
       collect: 'collect',
       cleanup: 'cleanup'
     });
+    expect(manifest.panes).toEqual([
+      { id: 'run-board', title: 'pi-herd run board', command: ['node', 'dist/herdr-plugin-pane.js', 'run-board'] }
+    ]);
   });
 });
 
