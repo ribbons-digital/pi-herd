@@ -31,7 +31,7 @@ command = ["node", "dist/herdr-plugin-action.js", "status"]
 
 [[actions]]
 id = "collect"
-title = "pi-herd collect"
+title = "pi-herd collect read-only"
 contexts = ["workspace", "tab", "pane"]
 command = ["node", "dist/herdr-plugin-action.js", "collect"]
 

@@ -16,6 +16,11 @@ export interface RunPluginPaneOptions {
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   holdOpen?: boolean;
   createReadline?: () => Interface;
+  autoRefreshIntervalMs?: number;
+}
+
+function formatRefreshInterval(ms: number): string {
+  return ms > 0 && Number.isInteger(ms) && ms % 1_000 === 0 ? `${ms / 1_000}s` : `${ms}ms`;
 }
 
 export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise<number> {
@@ -34,15 +39,44 @@ export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise
   }
   const ok = await renderBoardSafely(options, output);
   if (options.holdOpen === false) return ok ? 0 : 1;
-  output.write('\nPress Enter to refresh, or type q then Enter to quit.\n');
+  const autoRefreshIntervalMs = options.autoRefreshIntervalMs ?? 10_000;
+  output.write(`\nPress Enter to refresh now. Auto-refreshes every ${formatRefreshInterval(autoRefreshIntervalMs)}. Type q then Enter to quit.\n`);
   const readline = options.createReadline?.() ?? createInterface({ input: defaultStdin, output: defaultStdout });
+  let renderInFlight: Promise<void> | null = null;
+  let manualRefreshRequested = false;
+  const startRender = (): Promise<void> => (async () => {
+    try {
+      await renderBoardSafely(options, output);
+    } finally {
+      if (manualRefreshRequested) {
+        manualRefreshRequested = false;
+        renderInFlight = startRender();
+      } else {
+        renderInFlight = null;
+      }
+    }
+  })();
+  const queueRender = (manual = false): Promise<void> => {
+    if (renderInFlight) {
+      if (manual) manualRefreshRequested = true;
+      return renderInFlight;
+    }
+    renderInFlight = startRender();
+    return renderInFlight;
+  };
+  const interval = setInterval(() => {
+    if (renderInFlight) return;
+    void queueRender();
+  }, autoRefreshIntervalMs);
   try {
     for (;;) {
       const answer = await readline.question('pi-herd board> ');
       if (answer.trim().toLowerCase() === 'q') break;
-      await renderBoardSafely(options, output);
+      await queueRender(true);
     }
   } finally {
+    clearInterval(interval);
+    while (renderInFlight) await renderInFlight;
     readline.close();
   }
   return 0;

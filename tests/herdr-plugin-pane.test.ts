@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runHerdrPluginPane } from '../src/herdr-plugin-pane.js';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 
@@ -15,6 +15,19 @@ class RecordingRunner implements CommandRunner {
     throw new Error(`Unexpected command: ${key}`);
   }
 }
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('Herdr plugin pane entrypoint', () => {
   it('renders the board from Herdr plugin context and exits in non-hold mode', async () => {
@@ -69,7 +82,7 @@ describe('Herdr plugin pane entrypoint', () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Could not determine a target project directory'));
-    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Press Enter to refresh'));
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Auto-refreshes every 10s'));
     expect(readline.question).toHaveBeenCalled();
   });
 
@@ -96,6 +109,157 @@ describe('Herdr plugin pane entrypoint', () => {
     expect(exitCode).toBe(0);
     expect(readline.question).toHaveBeenCalledTimes(2);
     expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
+  });
+
+  it('auto-refreshes the board while hold-open mode waits for input', async () => {
+    vi.useFakeTimers();
+    const stdout = { write: vi.fn() };
+    let resolveQuestion: (value: string) => void = () => {};
+    const readline = {
+      question: vi.fn(() => new Promise<string>((resolve) => {
+        resolveQuestion = resolve;
+      })),
+      close: vi.fn()
+    };
+    const runner = new RecordingRunner({
+      'git rev-parse --show-toplevel': { exitCode: 0, stdout: '/repo\n', stderr: '' },
+      'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' }
+    });
+
+    const panePromise = runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never,
+      autoRefreshIntervalMs: 500
+    });
+
+    await vi.waitFor(() => expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1));
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Auto-refreshes every 500ms'));
+
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2));
+
+    resolveQuestion('q');
+    await panePromise;
+  });
+
+  it('stops auto-refreshing after q then Enter quits hold-open mode', async () => {
+    vi.useFakeTimers();
+    const stdout = { write: vi.fn() };
+    let resolveQuestion: (value: string) => void = () => {};
+    const readline = {
+      question: vi.fn(() => new Promise<string>((resolve) => {
+        resolveQuestion = resolve;
+      })),
+      close: vi.fn()
+    };
+    const runner = new RecordingRunner({
+      'git rev-parse --show-toplevel': { exitCode: 0, stdout: '/repo\n', stderr: '' },
+      'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' }
+    });
+
+    const panePromise = runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never,
+      autoRefreshIntervalMs: 1_000
+    });
+
+    await vi.waitFor(() => expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    resolveQuestion('q');
+    await panePromise;
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('coalesces interval refreshes while a board render is already running', async () => {
+    vi.useFakeTimers();
+    const stdout = { write: vi.fn() };
+    const blockedGitRoot = deferred<CommandResult>();
+    let gitRootCalls = 0;
+    let resolveQuestion: (value: string) => void = () => {};
+    const readline = {
+      question: vi.fn(() => new Promise<string>((resolve) => {
+        resolveQuestion = resolve;
+      })),
+      close: vi.fn()
+    };
+    const runner: CommandRunner = {
+      run: vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+        const key = [command, ...args].join(' ');
+        if (key === 'git rev-parse --show-toplevel') {
+          gitRootCalls += 1;
+          if (gitRootCalls === 3) return blockedGitRoot.promise;
+          return { exitCode: 0, stdout: '/repo\n', stderr: '' };
+        }
+        if (key === 'git symbolic-ref --short HEAD') return { exitCode: 0, stdout: 'main\n', stderr: '' };
+        if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2] }), stderr: '' };
+        if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 1, stdout: '', stderr: 'timeout\n' };
+        throw new Error(`Unexpected command: ${key}`);
+      })
+    };
+
+    const panePromise = runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never,
+      autoRefreshIntervalMs: 500
+    });
+
+    await vi.waitFor(() => expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(gitRootCalls).toBe(3));
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(gitRootCalls).toBe(3);
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1);
+
+    resolveQuestion('q');
+    blockedGitRoot.resolve({ exitCode: 0, stdout: '/repo\n', stderr: '' });
+    await panePromise;
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(gitRootCalls).toBe(4);
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('does not start auto-refresh in non-hold mode', async () => {
+    vi.useFakeTimers();
+    const stdout = { write: vi.fn() };
+    const runner = new RecordingRunner({
+      'git rev-parse --show-toplevel': { exitCode: 0, stdout: '/repo\n', stderr: '' },
+      'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' }
+    });
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      holdOpen: false,
+      autoRefreshIntervalMs: 25
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(exitCode).toBe(0);
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1);
   });
 
   it('rejects unsupported pane arguments', async () => {

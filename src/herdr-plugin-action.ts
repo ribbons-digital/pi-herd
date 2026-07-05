@@ -106,6 +106,10 @@ export function buildPluginCliArgs(action: PluginAction, args: string[]): string
     return ['cleanup', ...parseRunSelectorArgs(args)];
   }
 
+  if (action === 'collect') {
+    return ['lead', 'collect', ...parseRunSelectorArgs(args)];
+  }
+
   return [action, ...parseRunSelectorArgs(args)];
 }
 
