@@ -165,6 +165,28 @@ describe('messaging commands', () => {
     expect(saved.roles.planner?.pass).toBe(1);
   });
 
+  it('does not claim verdict instruction when the role has no required artifacts', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    state.roles.planner!.required_artifacts = [];
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
+
+    expect(result.text).toContain('Sent message to planner');
+    expect(result.text).toContain('Delivery verified: planner reported working.');
+    expect(result.text).not.toContain('verdict instruction appended');
+    expect(result.text).not.toContain('Pass 1:');
+    const sendCall = runner.calls.find((call) => call.startsWith('herdr pane send-text planner-pane'));
+    expect(sendCall).toBe('herdr pane send-text planner-pane Continue planning');
+    expect(sendCall).not.toContain('[pi-herd]');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
+  });
+
   it('advances the verdict instruction to pass 2 on a second send', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({

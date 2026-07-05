@@ -82,9 +82,14 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
   const deliveryLine = delivery.verification === 'verified'
     ? `Delivery verified: ${options.role} reported working.`
     : `Warning: ${delivery.note}`;
+  const textLines = [`Sent message to ${options.role} (${paneId}).`];
+  if (artifactName) {
+    textLines.push(`Pass ${reservedPass}: verdict instruction appended to the prompt.`);
+  }
+  textLines.push(deliveryLine, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`));
   return {
     state: updated,
-    text: [`Sent message to ${options.role} (${paneId}).`, `Pass ${reservedPass}: verdict instruction appended to the prompt.`, deliveryLine, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
+    text: textLines.join('\n') + '\n'
   };
 }
 
