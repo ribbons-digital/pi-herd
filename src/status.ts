@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { describeFailure, paneGet, waitAgentStatus } from './herdr.js';
+import { describeFailure, notificationShow, paneGet, waitAgentStatus } from './herdr.js';
 import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RoleStatus, type RunState } from './run-state.js';
 import { dirtyPaths } from './refresh.js';
@@ -76,6 +76,16 @@ interface RoleDecision {
   shouldPersist: boolean;
 }
 
+interface PersistRoleDecisionResult {
+  state: RunState;
+  transitions: RoleTransition[];
+}
+
+interface RoleTransition {
+  role: BuiltInRole;
+  status: RoleStatus;
+}
+
 const DEFAULT_SIGNAL_TIMEOUT_MS = 250;
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
@@ -111,10 +121,11 @@ export async function waitRun(options: WaitCommandOptions): Promise<StatusComman
     const resolvedRoles = activeRoles.filter((role) => role.evaluated_status === 'done' || role.evaluated_status === 'incomplete' || role.evaluated_status === 'blocked');
     if (!activeRoles.length || resolvedRoles.length === activeRoles.length) {
       const persisted = await persistRoleDecisions(latestStatePath, latestState, latestSnapshot);
-      const finalSnapshot = snapshotWithPersistedState(latestSnapshot, persisted);
+      const finalSnapshot = snapshotWithPersistedState(latestSnapshot, persisted.state);
+      await appendNotificationWarning(finalSnapshot, runner, persisted.state, persisted.transitions);
       const hasIncomplete = hasUnresolvedOrNegativeVerdict(finalSnapshot);
       return {
-        state: persisted,
+        state: persisted.state,
         snapshot: finalSnapshot,
         text: options.json ? `${JSON.stringify(finalSnapshot, null, 2)}\n` : formatStatusText(finalSnapshot),
         exitCode: hasIncomplete ? 3 : 0
@@ -126,11 +137,12 @@ export async function waitRun(options: WaitCommandOptions): Promise<StatusComman
   if (!latestState || !latestSnapshot) {
     throw new Error('No status snapshot was produced.');
   }
-  const persisted = latestStatePath ? await persistRoleDecisions(latestStatePath, latestState, latestSnapshot) : latestState;
-  const timeoutSnapshot = snapshotWithPersistedState(latestSnapshot, persisted);
+  const persisted = latestStatePath ? await persistRoleDecisions(latestStatePath, latestState, latestSnapshot) : { state: latestState, transitions: [] };
+  const timeoutSnapshot = snapshotWithPersistedState(latestSnapshot, persisted.state);
+  await appendNotificationWarning(timeoutSnapshot, runner, persisted.state, persisted.transitions);
   timeoutSnapshot.warnings.push('Timed out waiting for active roles.');
   return {
-    state: persisted,
+    state: persisted.state,
     snapshot: timeoutSnapshot,
     text: options.json ? `${JSON.stringify(timeoutSnapshot, null, 2)}\n` : `${formatStatusText(timeoutSnapshot)}Timed out waiting for active roles.\n`,
     exitCode: 2
@@ -142,16 +154,16 @@ export async function collectRun(options: StatusCommandOptions): Promise<StatusC
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
   const initialSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true);
   const persisted = await persistRoleDecisions(resolved.statePath, resolved.state, initialSnapshot);
-  const logWarnings = await collectPaneLogs(persisted, runner);
-  const snapshot = snapshotWithPersistedState(initialSnapshot, persisted);
+  const logWarnings = await collectPaneLogs(persisted.state, runner);
+  const snapshot = snapshotWithPersistedState(initialSnapshot, persisted.state);
   snapshot.warnings.push(...logWarnings);
-  const finalSummaryPath = join(persisted.canonical_run_dir, 'FINAL_SUMMARY.md');
+  const finalSummaryPath = join(persisted.state.canonical_run_dir, 'FINAL_SUMMARY.md');
   snapshot.final_summary_path = finalSummaryPath;
   await writeTextAtomic(finalSummaryPath, formatFinalSummary(snapshot));
   const finalSnapshot = { ...snapshot, final_summary_path: finalSummaryPath };
   const hasIncomplete = hasUnresolvedOrNegativeVerdict(finalSnapshot);
   return {
-    state: persisted,
+    state: persisted.state,
     snapshot: finalSnapshot,
     text: options.json ? `${JSON.stringify(finalSnapshot, null, 2)}\n` : `${formatStatusText(finalSnapshot)}Wrote ${finalSummaryPath}\n`,
     exitCode: hasIncomplete ? 3 : 0
@@ -301,7 +313,7 @@ async function artifactStatuses(state: RunState, record: RoleRecord): Promise<Ar
   return statuses;
 }
 
-async function persistRoleDecisions(statePath: string, observedState: RunState, snapshot: RunSnapshot): Promise<RunState> {
+async function persistRoleDecisions(statePath: string, observedState: RunState, snapshot: RunSnapshot): Promise<PersistRoleDecisionResult> {
   const decisions = snapshot.roles.map((role): RoleDecision => ({
     role: role.role,
     nextStatus: role.evaluated_status,
@@ -310,9 +322,10 @@ async function persistRoleDecisions(statePath: string, observedState: RunState, 
     shouldPersist: role.evaluated_status === 'done' || role.evaluated_status === 'incomplete' || role.evaluated_status === 'blocked'
   }));
   if (!decisions.some((decision) => canApplyDecision(observedState, decision))) {
-    return observedState;
+    return { state: observedState, transitions: [] };
   }
-  return updateRunState(statePath, (fresh) => {
+  const transitions: RoleTransition[] = [];
+  const state = await updateRunState(statePath, (fresh) => {
     let changed = false;
     for (const decision of decisions) {
       if (!decision.shouldPersist) continue;
@@ -323,10 +336,29 @@ async function persistRoleDecisions(statePath: string, observedState: RunState, 
       if (record.last_activity_at !== decision.observedLastActivityAt) continue;
       if (record.status === decision.nextStatus) continue;
       record.status = decision.nextStatus;
+      transitions.push({ role: decision.role, status: decision.nextStatus });
       changed = true;
     }
     return changed;
   });
+  return { state, transitions };
+}
+
+async function appendNotificationWarning(snapshot: RunSnapshot, runner: CommandRunner, state: RunState, transitions: RoleTransition[]): Promise<void> {
+  if (!transitions.length) return;
+  const summary = transitions.map((transition) => `${transition.role}: ${transition.status}`).join(', ');
+  try {
+    const result = await notificationShow(runner, state.repo_root, {
+      title: `pi-herd ${state.run_id}`,
+      body: `Role status updates: ${summary}`,
+      sound: 'done'
+    });
+    if (result.exitCode !== 0) {
+      snapshot.warnings.push(`Could not deliver lead notification: ${describeFailure(result, 'notification failed')}`);
+    }
+  } catch (error) {
+    snapshot.warnings.push(`Could not deliver lead notification: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function collectPaneLogs(state: RunState, runner: CommandRunner): Promise<string[]> {

@@ -63,7 +63,7 @@ const SEND_COMMAND_TIMEOUT_MS = 300_000;
 const START_COMMAND_TIMEOUT_MS = 300_000;
 const WAIT_CLI_TIMEOUT_MS = 60_000;
 const WAIT_CLI_POLL_INTERVAL_MS = 2_000;
-const WAIT_COMMAND_TIMEOUT_MS = 90_000;
+const WAIT_COMMAND_TIMEOUT_CUSHION_MS = 30_000;
 const MAX_NOTIFY_CHARS = 12_000;
 const MAX_CAPTURE_CHARS = MAX_NOTIFY_CHARS;
 
@@ -76,14 +76,14 @@ export const HERD_USAGE = `Usage:
   /herd brief [--run RUN]
   /herd collect [--run RUN]
   /herd diff [--run RUN]
-  /herd wait [--run RUN]
+  /herd wait [--timeout-ms MS] [--run RUN]
   /herd send <role> <message> [--run RUN]
   /herd interrupt <role> [--run RUN]
 
 Notes:
   /herd start and /herd-start accept a simple goal. Use terminal pi-herd start for advanced flags.
   /herd diff is read-only and shows diff stat plus changed files.
-  /herd wait uses a fixed 60s timeout and 2s poll interval, records role verdicts in run state, and rejects custom wait flags.
+  /herd wait accepts --timeout-ms MS, uses a fixed 2s poll interval, and records role verdicts in run state.
   /herd collect maps to read-only pi-herd lead collect.
   pi-herd collect remains a terminal command for writing FINAL_SUMMARY.md.
   /herd interrupt sends Escape to a role pane and marks its stored status blocked until it is re-prompted.`;
@@ -205,18 +205,18 @@ export function buildHerdCommand(args: string): HerdCommand | null {
   }
 
   if (subcommand === 'wait') {
-    const run = parseOptionalRun(tokens.slice(1), '/herd wait [--run RUN]', 'For custom or longer waits, run terminal command: pi-herd wait ...');
-    const cliArgs = ['wait', '--timeout-ms', String(WAIT_CLI_TIMEOUT_MS), '--poll-interval-ms', String(WAIT_CLI_POLL_INTERVAL_MS)];
-    if (run) {
-      cliArgs.push('--run', run);
+    const wait = parseWaitOptions(tokens.slice(1));
+    const cliArgs = ['wait', '--timeout-ms', String(wait.timeoutMs), '--poll-interval-ms', String(WAIT_CLI_POLL_INTERVAL_MS)];
+    if (wait.run) {
+      cliArgs.push('--run', wait.run);
     }
     return {
       cliArgs,
       displayName: '/herd wait',
-      timeoutMs: WAIT_COMMAND_TIMEOUT_MS,
+      timeoutMs: wait.timeoutMs + WAIT_COMMAND_TIMEOUT_CUSHION_MS,
       warnExitCodes: [2, 3],
-      timeoutHint: 'The wait command may still be running. For custom or longer waits, run terminal command: pi-herd wait ...',
-      failureHint: 'For custom or longer waits, run terminal command: pi-herd wait ...'
+      timeoutHint: 'The wait command may still be running. For longer waits, pass --timeout-ms MS to /herd wait.',
+      failureHint: 'For longer waits, pass --timeout-ms MS to /herd wait.'
     };
   }
 
@@ -411,6 +411,52 @@ export function parseOptionalRun(tokens: TokenSpan[], usage: string, advancedHin
     throw new Error(`Unknown argument for /herd command: ${token}\nUsage: ${usage}${advancedHint ? `\n${advancedHint}` : ''}`);
   }
   return run;
+}
+
+function parseWaitOptions(tokens: TokenSpan[]): { timeoutMs: number; run?: string } {
+  const usage = '/herd wait [--timeout-ms MS] [--run RUN]';
+  let timeoutMs = WAIT_CLI_TIMEOUT_MS;
+  let run: string | undefined;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]?.value;
+    if (token === '--timeout-ms') {
+      const value = tokens[index + 1]?.value;
+      if (!value) {
+        throw new Error(`--timeout-ms requires a positive integer value.\nUsage: ${usage}`);
+      }
+      timeoutMs = parsePositiveIntegerFlag(value, '--timeout-ms', usage);
+      index += 1;
+      continue;
+    }
+    if (token === '--run') {
+      const value = tokens[index + 1]?.value;
+      if (!value) {
+        throw new Error(`--run requires a value.\nUsage: ${usage}`);
+      }
+      if (index + 2 < tokens.length) {
+        throw new Error(`--run must be the trailing /herd wait option.\nUsage: ${usage}`);
+      }
+      run = value;
+      index += 1;
+      continue;
+    }
+    if (token === '--help' || token === '-h') {
+      throw new Error(`Usage: ${usage}`);
+    }
+    throw new Error(`Unsupported /herd wait argument: ${token}\nUsage: ${usage}`);
+  }
+  return { timeoutMs, run };
+}
+
+function parsePositiveIntegerFlag(value: string, name: string, usage: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${name} must be a positive integer.\nUsage: ${usage}`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be a positive integer no larger than ${Number.MAX_SAFE_INTEGER}.\nUsage: ${usage}`);
+  }
+  return parsed;
 }
 
 export interface TokenSpan {
