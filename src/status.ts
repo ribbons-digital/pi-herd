@@ -347,11 +347,12 @@ async function persistRoleDecisions(statePath: string, observedState: RunState, 
 async function appendNotificationWarning(snapshot: RunSnapshot, runner: CommandRunner, state: RunState, transitions: RoleTransition[]): Promise<void> {
   if (!transitions.length) return;
   const summary = transitions.map((transition) => `${transition.role}: ${transition.status}`).join(', ');
+  const sound = transitions.some((transition) => transition.status === 'blocked' || transition.status === 'incomplete') ? 'request' : 'done';
   try {
     const result = await notificationShow(runner, state.repo_root, {
       title: `pi-herd ${state.run_id}`,
       body: `Role status updates: ${summary}`,
-      sound: 'done'
+      sound
     });
     if (result.exitCode !== 0) {
       snapshot.warnings.push(`Could not deliver lead notification: ${describeFailure(result, 'notification failed')}`);

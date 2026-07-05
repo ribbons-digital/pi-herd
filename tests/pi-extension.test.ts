@@ -71,6 +71,12 @@ describe('pi extension /herd argument mapping', () => {
     const cliTimeoutIndex = command?.cliArgs.indexOf('--timeout-ms') ?? -1;
     expect(cliTimeoutIndex).toBeGreaterThan(-1);
     expect(command?.timeoutMs).toBeGreaterThan(Number(command?.cliArgs[cliTimeoutIndex + 1]));
+    const maxWaitTimeoutMs = 2_147_483_647 - 30_000;
+    const maxCommand = buildHerdCommand(`wait --timeout-ms ${maxWaitTimeoutMs}`);
+    expect(maxCommand).toMatchObject({
+      cliArgs: ['wait', '--timeout-ms', String(maxWaitTimeoutMs), '--poll-interval-ms', '2000'],
+      timeoutMs: 2_147_483_647
+    });
   });
 
   it('rejects unknown args for non-send subcommands', () => {
@@ -81,6 +87,7 @@ describe('pi extension /herd argument mapping', () => {
     expect(() => buildHerdCommand('wait --timeout-ms')).toThrow('--timeout-ms requires a positive integer value');
     expect(() => buildHerdCommand('wait --timeout-ms 0')).toThrow('--timeout-ms must be a positive integer');
     expect(() => buildHerdCommand('wait --timeout-ms 1.5')).toThrow('--timeout-ms must be a positive integer');
+    expect(() => buildHerdCommand(`wait --timeout-ms ${2_147_483_647 - 30_000 + 1}`)).toThrow('--timeout-ms must be a positive integer no larger than 2147453647');
   });
 
   it('rejects start without a goal or with leading flag-like usage', () => {

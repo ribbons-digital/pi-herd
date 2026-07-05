@@ -91,6 +91,7 @@ describe('status, wait, and collect commands', () => {
     expect(notifications).toHaveLength(1);
     expect(notifications[0]).toContain(state.run_id);
     expect(notifications[0]).toContain('planner: done');
+    expect(notifications[0]).toContain('--sound done');
   });
 
   it('warns but preserves wait exit semantics when notification delivery fails', async () => {
@@ -138,6 +139,9 @@ describe('status, wait, and collect commands', () => {
     expect(result.text).toContain('PLAN.md is stale for the current pass');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('incomplete');
+    const notifications = runner.calls.filter((call) => call.startsWith('herdr notification show '));
+    expect(notifications[0]).toContain('planner: incomplete');
+    expect(notifications[0]).toContain('--sound request');
   });
 
   it('treats artifacts written within the previous freshness grace as stale', async () => {
@@ -241,6 +245,9 @@ describe('status, wait, and collect commands', () => {
     expect(result.exitCode).toBe(3);
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('blocked');
+    const notifications = runner.calls.filter((call) => call.startsWith('herdr notification show '));
+    expect(notifications[0]).toContain('planner: blocked');
+    expect(notifications[0]).toContain('--sound request');
   });
 
   it('does not overwrite a fresher status with a stale role verdict', async () => {

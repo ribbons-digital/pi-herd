@@ -54,4 +54,20 @@ describe('Herdr notification helpers', () => {
       ['herdr', ['notification', 'show', 'pi-herd run-1', '--body', 'planner: done', '--sound', 'done'], { cwd: '/repo', timeoutMs: 10_000 }]
     ]);
   });
+
+  it('builds notification show commands with only a title', async () => {
+    const calls: unknown[] = [];
+    const runner = {
+      async run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }) {
+        calls.push([command, args, options]);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+    };
+
+    await notificationShow(runner, '/repo', { title: 'pi-herd run-1' });
+
+    expect(calls).toEqual([
+      ['herdr', ['notification', 'show', 'pi-herd run-1'], { cwd: '/repo', timeoutMs: 10_000 }]
+    ]);
+  });
 });

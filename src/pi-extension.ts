@@ -64,6 +64,8 @@ const START_COMMAND_TIMEOUT_MS = 300_000;
 const WAIT_CLI_TIMEOUT_MS = 60_000;
 const WAIT_CLI_POLL_INTERVAL_MS = 2_000;
 const WAIT_COMMAND_TIMEOUT_CUSHION_MS = 30_000;
+const NODE_TIMER_MAX_MS = 2_147_483_647;
+const WAIT_CLI_TIMEOUT_MAX_MS = NODE_TIMER_MAX_MS - WAIT_COMMAND_TIMEOUT_CUSHION_MS;
 const MAX_NOTIFY_CHARS = 12_000;
 const MAX_CAPTURE_CHARS = MAX_NOTIFY_CHARS;
 
@@ -424,7 +426,7 @@ function parseWaitOptions(tokens: TokenSpan[]): { timeoutMs: number; run?: strin
       if (!value) {
         throw new Error(`--timeout-ms requires a positive integer value.\nUsage: ${usage}`);
       }
-      timeoutMs = parsePositiveIntegerFlag(value, '--timeout-ms', usage);
+      timeoutMs = parsePositiveIntegerFlag(value, '--timeout-ms', usage, WAIT_CLI_TIMEOUT_MAX_MS);
       index += 1;
       continue;
     }
@@ -448,13 +450,13 @@ function parseWaitOptions(tokens: TokenSpan[]): { timeoutMs: number; run?: strin
   return { timeoutMs, run };
 }
 
-function parsePositiveIntegerFlag(value: string, name: string, usage: string): number {
+function parsePositiveIntegerFlag(value: string, name: string, usage: string, max = Number.MAX_SAFE_INTEGER): number {
   if (!/^[1-9]\d*$/.test(value)) {
     throw new Error(`${name} must be a positive integer.\nUsage: ${usage}`);
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) {
-    throw new Error(`${name} must be a positive integer no larger than ${Number.MAX_SAFE_INTEGER}.\nUsage: ${usage}`);
+  if (!Number.isSafeInteger(parsed) || parsed > max) {
+    throw new Error(`${name} must be a positive integer no larger than ${max}.\nUsage: ${usage}`);
   }
   return parsed;
 }
