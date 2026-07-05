@@ -44,8 +44,8 @@ The extension also registers `/herd-start <goal>` as a prompt-native alias for `
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
 `/herd diff` stays read-only and shows diff stat plus changed files against the run base ref.
-`/herd wait` waits up to 60 seconds, polls every 2 seconds, records role verdicts in run state like terminal `pi-herd wait`, and presents timeout or unresolved-verdict snapshots as warnings rather than hard failures.
-`/herd wait` does not accept custom timeout flags; use terminal `pi-herd wait` for longer or custom waits.
+`/herd wait` waits up to 60 seconds by default, accepts `--timeout-ms MS`, polls every 2 seconds, records role verdicts in run state like terminal `pi-herd wait`, and presents timeout or unresolved-verdict snapshots as warnings rather than hard failures.
+The Pi extension keeps the wait poll interval fixed at 2000 ms.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
 Child output is bounded before display, and an absolute `HERDR_BIN_PATH` contributes its directory to the child CLI `PATH`.
 It does not own orchestration state and does not register agent-callable tools.
@@ -275,7 +275,7 @@ It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to 
 Developer: What does the optional Pi extension expose first?
 Domain expert: It registers `/herd` for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, read-only `diff`, bounded `wait`, `send`, and `help`.
 It also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>` because Pi prompt templates do not re-dispatch expanded slash commands.
-`/herd wait` uses a fixed 60-second timeout and 2-second poll interval, rejects custom wait flags, and records role verdicts in run state like terminal `pi-herd wait`, while `/herd diff` only reports stat and changed files.
+`/herd wait` uses a default 60-second timeout, accepts `--timeout-ms MS`, keeps a fixed 2-second poll interval, and records role verdicts in run state like terminal `pi-herd wait`, while `/herd diff` only reports stat and changed files.
 It maps operational subcommands to existing CLI helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I start a run from Pi inside Herdr?
 Domain expert: Use `/herd start <goal>` or `/herd-start <goal>` for a simple goal.

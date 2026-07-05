@@ -194,12 +194,11 @@ pi-herd send tester "Run the smoke tests and write TEST_REPORT.md."
 Wait for working roles to settle:
 
 ```text
-/herd wait
+/herd wait [--timeout-ms MS]
 ```
 
-`/herd wait` waits up to 60 seconds, polls every 2 seconds, and records role verdicts in run state just like terminal `pi-herd wait`.
-It rejects custom wait flags.
-Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
+`/herd wait` waits up to 60 seconds by default, accepts `--timeout-ms MS` for longer waits, polls every 2 seconds, and records role verdicts in run state just like terminal `pi-herd wait`.
+The poll interval is fixed for the Pi extension.
 
 Collect role verdicts, pane logs, and artifact excerpts:
 
@@ -627,7 +626,7 @@ Available shortcuts:
 /herd brief [--run RUN]
 /herd collect [--run RUN]
 /herd diff [--run RUN]
-/herd wait [--run RUN]
+/herd wait [--timeout-ms MS] [--run RUN]
 /herd send <role> <message> [--run RUN]
 /herd interrupt <role> [--run RUN]
 /herd help
@@ -641,9 +640,8 @@ Use terminal `pi-herd start ...` for advanced start flags.
 `/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
 `/herd diff` maps to read-only `pi-herd diff` and shows diff stat plus changed files against the run base ref.
-`/herd wait` maps to `pi-herd wait --timeout-ms 60000 --poll-interval-ms 2000` and records role verdicts in run state on success, unresolved verdicts, and timeout, same as terminal `pi-herd wait`.
-It rejects custom wait flags.
-Use terminal `pi-herd wait --timeout-ms ... --poll-interval-ms ...` for longer or custom waits.
+`/herd wait` maps to `pi-herd wait --timeout-ms MS --poll-interval-ms 2000` and records role verdicts in run state on success, unresolved verdicts, and timeout, same as terminal `pi-herd wait`.
+It defaults to 60000 ms, accepts `--timeout-ms MS`, and keeps the Pi-extension poll interval fixed at 2000 ms.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.
 
 For local use, build the project and symlink the extension:

@@ -31,6 +31,7 @@ class RecordingRunner implements CommandRunner {
     if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return okJson({ pane_id: args[2] });
     if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 1, stdout: '', stderr: 'timeout\n' };
     if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read') return okText(`log for ${args[2]}\n`);
+    if (command === 'herdr' && args[0] === 'notification' && args[1] === 'show') return ok();
     throw new Error(`Unexpected command: ${key}`);
   }
 }
@@ -76,6 +77,52 @@ describe('status, wait, and collect commands', () => {
     expect(saved.state_revision).toBe(1);
   });
 
+  it('sends one lead notification when wait persists a role transition', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    await writeFile(join(state.canonical_run_dir, 'PLAN.md'), 'approved plan\n', 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await waitRun({ cwd: dir, run: state.run_id, timeoutMs: 10, pollIntervalMs: 1, runner, now: NOW });
+
+    expect(result.exitCode).toBe(0);
+    const notifications = runner.calls.filter((call) => call.startsWith('herdr notification show '));
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toContain(state.run_id);
+    expect(notifications[0]).toContain('planner: done');
+    expect(notifications[0]).toContain('--sound done');
+  });
+
+  it('warns but preserves wait exit semantics when notification delivery fails', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    await writeFile(join(state.canonical_run_dir, 'PLAN.md'), 'approved plan\n', 'utf8');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok(),
+      [`herdr notification show pi-herd ${state.run_id} --body Role status updates: planner: done --sound done`]: { exitCode: 1, stdout: '', stderr: 'notify failed\n' }
+    }));
+
+    const result = await waitRun({ cwd: dir, run: state.run_id, timeoutMs: 10, pollIntervalMs: 1, runner, now: NOW });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.text).toContain('Could not deliver lead notification: notify failed');
+  });
+
+  it('does not notify when wait applies no role transition', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    state.roles.planner!.status = 'staged';
+    const statePath = join(state.canonical_run_dir, 'state.json');
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await waitRun({ cwd: dir, run: state.run_id, timeoutMs: 10, pollIntervalMs: 1, runner, now: NOW });
+
+    expect(result.exitCode).toBe(0);
+    expect(runner.calls.some((call) => call.startsWith('herdr notification show '))).toBe(false);
+  });
+
   it('treats artifacts older than the current pass as stale', async () => {
     const { state, statePath } = await createWorkingRun('planner-pane');
     const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
@@ -92,6 +139,9 @@ describe('status, wait, and collect commands', () => {
     expect(result.text).toContain('PLAN.md is stale for the current pass');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('incomplete');
+    const notifications = runner.calls.filter((call) => call.startsWith('herdr notification show '));
+    expect(notifications[0]).toContain('planner: incomplete');
+    expect(notifications[0]).toContain('--sound request');
   });
 
   it('treats artifacts written within the previous freshness grace as stale', async () => {
@@ -181,6 +231,7 @@ describe('status, wait, and collect commands', () => {
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('blocked');
     expect(saved.state_revision).toBeUndefined();
+    expect(runner.calls.some((call) => call.startsWith('herdr notification show '))).toBe(false);
   });
 
   it('maps a blocked activity signal to blocked status', async () => {
@@ -194,6 +245,9 @@ describe('status, wait, and collect commands', () => {
     expect(result.exitCode).toBe(3);
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('blocked');
+    const notifications = runner.calls.filter((call) => call.startsWith('herdr notification show '));
+    expect(notifications[0]).toContain('planner: blocked');
+    expect(notifications[0]).toContain('--sound request');
   });
 
   it('does not overwrite a fresher status with a stale role verdict', async () => {

@@ -8,6 +8,8 @@ export const HERDR_READY_RUNNER_TIMEOUT_MS = 20_000;
 export const HERDR_WORKTREE_CREATE_TIMEOUT_MS = 120_000;
 export const HERDR_DELIVERY_ACK_TIMEOUT_MS = 10_000;
 
+
+export const HERDR_NOTIFICATION_TIMEOUT_MS = 10_000;
 export interface PaneMetadata {
   paneId: string | null;
   workspaceId: string | null;
@@ -95,7 +97,12 @@ export function worktreeRemove(runner: CommandRunner, cwd: string, options: { wo
   return runner.run('herdr', ['worktree', 'remove', '--workspace', options.workspaceId, ...(options.force ? ['--force'] : [])], { cwd, timeoutMs: HERDR_WORKTREE_CREATE_TIMEOUT_MS });
 }
 
+export function notificationShow(runner: CommandRunner, cwd: string, options: { title: string; body?: string; sound?: 'none' | 'done' | 'request' }): Promise<CommandResult> {
+  return runner.run('herdr', ['notification', 'show', options.title, ...(options.body ? ['--body', options.body] : []), ...(options.sound ? ['--sound', options.sound] : [])], { cwd, timeoutMs: HERDR_NOTIFICATION_TIMEOUT_MS });
+}
+
 export function worktreeCreate(runner: CommandRunner, cwd: string, options: { repoRoot: string; branch: string; baseRef: string; path: string; label: string }): Promise<CommandResult> {
+
   return runner.run('herdr', [
     'worktree',
     'create',

@@ -55,25 +55,39 @@ describe('pi extension /herd argument mapping', () => {
       warnExitCodes: [2, 3]
     });
 
-    const command = buildHerdCommand('wait --run run-1');
+    expect(buildHerdCommand('wait --run run-1')).toMatchObject({
+      cliArgs: ['wait', '--timeout-ms', '60000', '--poll-interval-ms', '2000', '--run', 'run-1'],
+      timeoutMs: 90_000
+    });
+
+    const command = buildHerdCommand('wait --timeout-ms 120000 --run run-1');
 
     expect(command).toMatchObject({
-      cliArgs: ['wait', '--timeout-ms', '60000', '--poll-interval-ms', '2000', '--run', 'run-1'],
+      cliArgs: ['wait', '--timeout-ms', '120000', '--poll-interval-ms', '2000', '--run', 'run-1'],
       displayName: '/herd wait',
-      timeoutMs: 90_000,
+      timeoutMs: 150_000,
       warnExitCodes: [2, 3]
     });
     const cliTimeoutIndex = command?.cliArgs.indexOf('--timeout-ms') ?? -1;
     expect(cliTimeoutIndex).toBeGreaterThan(-1);
     expect(command?.timeoutMs).toBeGreaterThan(Number(command?.cliArgs[cliTimeoutIndex + 1]));
+    const maxWaitTimeoutMs = 2_147_483_647 - 30_000;
+    const maxCommand = buildHerdCommand(`wait --timeout-ms ${maxWaitTimeoutMs}`);
+    expect(maxCommand).toMatchObject({
+      cliArgs: ['wait', '--timeout-ms', String(maxWaitTimeoutMs), '--poll-interval-ms', '2000'],
+      timeoutMs: 2_147_483_647
+    });
   });
 
   it('rejects unknown args for non-send subcommands', () => {
     expect(() => buildHerdCommand('status --json')).toThrow('Unknown argument');
     expect(() => buildHerdCommand('doctor --json')).toThrow('Unknown argument');
     expect(() => buildHerdCommand('diff --json')).toThrow('Unknown argument');
-    expect(() => buildHerdCommand('wait --timeout-ms 120000')).toThrow('For custom or longer waits');
-    expect(() => buildHerdCommand('wait --poll-interval-ms 5000')).toThrow('For custom or longer waits');
+    expect(() => buildHerdCommand('wait --poll-interval-ms 5000')).toThrow('Unsupported /herd wait argument: --poll-interval-ms');
+    expect(() => buildHerdCommand('wait --timeout-ms')).toThrow('--timeout-ms requires a positive integer value');
+    expect(() => buildHerdCommand('wait --timeout-ms 0')).toThrow('--timeout-ms must be a positive integer');
+    expect(() => buildHerdCommand('wait --timeout-ms 1.5')).toThrow('--timeout-ms must be a positive integer');
+    expect(() => buildHerdCommand(`wait --timeout-ms ${2_147_483_647 - 30_000 + 1}`)).toThrow('--timeout-ms must be a positive integer no larger than 2147453647');
   });
 
   it('rejects start without a goal or with leading flag-like usage', () => {
@@ -395,9 +409,9 @@ describe('pi extension command handler', () => {
     const ctx = fakeContext();
     const handler = createHerdCommandHandler({ runner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
 
-    await handler('wait --run run-1', ctx);
+    await handler('wait --timeout-ms 120000 --run run-1', ctx);
 
-    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['wait', '--timeout-ms', '60000', '--poll-interval-ms', '2000', '--run', 'run-1'], { cwd: '/tmp/project', timeoutMs: 90_000, env: { PI_HERD_CLI: '/opt/bin/pi-herd' } });
+    expect(runner.run).toHaveBeenCalledWith('/opt/bin/pi-herd', ['wait', '--timeout-ms', '120000', '--poll-interval-ms', '2000', '--run', 'run-1'], { cwd: '/tmp/project', timeoutMs: 150_000, env: { PI_HERD_CLI: '/opt/bin/pi-herd' } });
     expect(ctx.ui?.notify).toHaveBeenCalledWith('wait warning\nwait snapshot\nTimed out waiting for active roles.', 'warning');
   });
 
@@ -417,7 +431,7 @@ describe('pi extension command handler', () => {
     const timedOutHandler = createHerdCommandHandler({ runner: timedOutRunner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
 
     await expect(timedOutHandler('wait', timedOutCtx)).rejects.toThrow('/herd wait timed out after 90000ms');
-    expect(timedOutCtx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('pi-herd wait'), 'error');
+    expect(timedOutCtx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('--timeout-ms MS'), 'error');
 
     const spawnError = Object.assign(new Error('spawn failed'), { code: 'ENOENT' }) as NodeJS.ErrnoException;
     const errorRunner = fakeRunner({ exitCode: 2, stdout: 'partial snapshot\n', stderr: '', error: spawnError });
@@ -425,7 +439,7 @@ describe('pi extension command handler', () => {
     const errorHandler = createHerdCommandHandler({ runner: errorRunner, env: { PI_HERD_CLI: '/opt/bin/pi-herd' }, moduleUrl: 'file:///missing.js' });
 
     await expect(errorHandler('wait', errorCtx)).rejects.toThrow('/herd wait failed to start');
-    expect(errorCtx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('pi-herd wait'), 'error');
+    expect(errorCtx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('--timeout-ms MS'), 'error');
   });
 
   it('notifies and throws on CLI failure', async () => {
