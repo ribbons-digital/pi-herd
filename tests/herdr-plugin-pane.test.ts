@@ -16,6 +16,14 @@ class RecordingRunner implements CommandRunner {
   }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -170,6 +178,62 @@ describe('Herdr plugin pane entrypoint', () => {
     await panePromise;
     await vi.advanceTimersByTimeAsync(100);
 
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('coalesces interval refreshes while a board render is already running', async () => {
+    vi.useFakeTimers();
+    const stdout = { write: vi.fn() };
+    const blockedGitRoot = deferred<CommandResult>();
+    let gitRootCalls = 0;
+    let resolveQuestion: (value: string) => void = () => {};
+    const readline = {
+      question: vi.fn(() => new Promise<string>((resolve) => {
+        resolveQuestion = resolve;
+      })),
+      close: vi.fn()
+    };
+    const runner: CommandRunner = {
+      run: vi.fn(async (command: string, args: string[]): Promise<CommandResult> => {
+        const key = [command, ...args].join(' ');
+        if (key === 'git rev-parse --show-toplevel') {
+          gitRootCalls += 1;
+          if (gitRootCalls === 3) return blockedGitRoot.promise;
+          return { exitCode: 0, stdout: '/repo\n', stderr: '' };
+        }
+        if (key === 'git symbolic-ref --short HEAD') return { exitCode: 0, stdout: 'main\n', stderr: '' };
+        if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2] }), stderr: '' };
+        if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 1, stdout: '', stderr: 'timeout\n' };
+        throw new Error(`Unexpected command: ${key}`);
+      })
+    };
+
+    const panePromise = runHerdrPluginPane({
+      argv: ['run-board'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/repo' }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never,
+      autoRefreshIntervalMs: 500
+    });
+
+    await vi.waitFor(() => expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(gitRootCalls).toBe(3));
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(gitRootCalls).toBe(3);
+    expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(1);
+
+    resolveQuestion('q');
+    blockedGitRoot.resolve({ exitCode: 0, stdout: '/repo\n', stderr: '' });
+    await panePromise;
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(gitRootCalls).toBe(4);
     expect(stdout.write.mock.calls.filter(([message]) => String(message).includes('# pi-herd run board'))).toHaveLength(2);
     expect(readline.close).toHaveBeenCalled();
   });

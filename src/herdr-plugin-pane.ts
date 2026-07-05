@@ -42,25 +42,41 @@ export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise
   const autoRefreshIntervalMs = options.autoRefreshIntervalMs ?? 10_000;
   output.write(`\nPress Enter to refresh now. Auto-refreshes every ${formatRefreshInterval(autoRefreshIntervalMs)}. Type q then Enter to quit.\n`);
   const readline = options.createReadline?.() ?? createInterface({ input: defaultStdin, output: defaultStdout });
-  let renderChain = Promise.resolve();
-  const queueRender = (): Promise<void> => {
-    renderChain = renderChain.then(async () => {
+  let renderInFlight: Promise<void> | null = null;
+  let manualRefreshRequested = false;
+  const startRender = (): Promise<void> => (async () => {
+    try {
       await renderBoardSafely(options, output);
-    });
-    return renderChain;
+    } finally {
+      if (manualRefreshRequested) {
+        manualRefreshRequested = false;
+        renderInFlight = startRender();
+      } else {
+        renderInFlight = null;
+      }
+    }
+  })();
+  const queueRender = (manual = false): Promise<void> => {
+    if (renderInFlight) {
+      if (manual) manualRefreshRequested = true;
+      return renderInFlight;
+    }
+    renderInFlight = startRender();
+    return renderInFlight;
   };
   const interval = setInterval(() => {
+    if (renderInFlight) return;
     void queueRender();
   }, autoRefreshIntervalMs);
   try {
     for (;;) {
       const answer = await readline.question('pi-herd board> ');
       if (answer.trim().toLowerCase() === 'q') break;
-      await queueRender();
+      await queueRender(true);
     }
   } finally {
     clearInterval(interval);
-    await renderChain;
+    while (renderInFlight) await renderInFlight;
     readline.close();
   }
   return 0;
