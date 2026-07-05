@@ -27,7 +27,8 @@ class RecordingRunner implements CommandRunner {
   async run(command: string, args: string[]): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
-    const response = this.responses[key.replaceAll(dir, 'DIR')];
+    const normalized = key.replace(/\n\n\[pi-herd\] When pass \d+ is complete[\s\S]*$/, '').replaceAll(dir, 'DIR');
+    const response = this.responses[normalized];
     if (response) {
       return response;
     }
@@ -119,6 +120,32 @@ describe('start orchestration', () => {
     expect(saved.lead_binding.session_ref).toBeNull();
     expect(saved.roles.planner?.launch_metadata?.launch_method).toBe('herdr-agent-start');
     expect(saved.roles.planner?.launch_metadata?.prompt_method).toBe('pane-send-text-enter');
+  });
+
+  it('appends the pass-1 verdict instruction to the planner kickoff payload and persists the pass', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
+      [worktreeCommand('launch-sessions')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', RUN_ID, 'implementer'), branch: `pi-herd/${RUN_ID}/impl` }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-planner --session-id 2026-07-01T12-00-00-launch-sessions-planner': okJson(envelopedPane('cli:agent:start', { pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' })),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-launch-sessions.\nGoal: Launch sessions\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-launch-sessions/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --cwd DIR/.worktrees/pi-herd/2026-07-01T12-00-00-launch-sessions/implementer --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --session-id 2026-07-01T12-00-00-launch-sessions-implementer': okJson({ pane_id: 'impl-pane', workspace_id: 'lead-ws', tab_id: 'impl-tab' })
+    }));
+
+    const result = await startRun({
+      cwd: dir,
+      goal: 'Launch sessions',
+      now: NOW,
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', HERDR_WORKSPACE_ID: 'lead-ws', HERDR_TAB_ID: 'lead-tab', PI_CODING_AGENT: 'true' }
+    });
+
+    const kickoff = runner.calls.find((call) => call.startsWith('herdr pane send-text planner-pane'));
+    const planPath = join(dir, '.pi-herd/runs', RUN_ID, 'PLAN.md');
+    expect(kickoff).toContain(`\n\n[pi-herd] When pass 1 is complete, end ${planPath} with the line: pi-herd-verdict: done pass=1`);
+    expect(result.state.roles.planner?.pass).toBe(1);
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
   });
 
   it('refuses to start a duplicate active run from the same verified lead pane', async () => {

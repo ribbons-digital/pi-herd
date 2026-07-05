@@ -65,6 +65,8 @@ export interface RoleRecord {
   launch_metadata?: LaunchMetadata;
   required_artifacts: string[];
   last_activity_at: string | null;
+  /** Prompt pass counter; 0 until the first prompt is sent, missing on legacy state. */
+  pass?: number;
 }
 
 /** Additive session launch details persisted after Herdr/Pi launch steps succeed. */
@@ -523,7 +525,8 @@ function createRoleRecord(role: BuiltInRole, harness: string, runId: string): Ro
     herdr_pane_id: null,
     session_ref: null,
     required_artifacts: [...defaults.requiredArtifacts],
-    last_activity_at: null
+    last_activity_at: null,
+    pass: 0
   };
 }
 

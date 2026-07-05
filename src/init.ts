@@ -129,6 +129,9 @@ Write durable results to the canonical run directory.
 Expected writes: ${expectedWrites}.
 Required artifact(s): ${requiredArtifacts.join(', ')}.
 ${repeatedPass}
+When a pass is complete, end your required artifact with the line: pi-herd-verdict: done pass=<N> <one-line summary>.
+Use blocked instead of done when you cannot proceed, and take <N> from the [pi-herd] instruction line in the prompt that started the pass.
+
 Follow the lead session's instructions and leave questions in the lead inbox instead of coordinating directly with other workers.
 `;
 }

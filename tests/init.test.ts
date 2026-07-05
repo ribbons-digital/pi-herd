@@ -34,6 +34,16 @@ describe('init', () => {
     expect(gitignore).toContain('/.worktrees/');
   });
 
+  it('instructs workers to end required artifacts with the verdict protocol line', async () => {
+    await runInit({ cwd: dir });
+
+    for (const role of ['planner', 'implementer', 'reviewer', 'tester']) {
+      const prompt = await readFile(join(dir, `.pi-herd/prompts/${role}.md`), 'utf8');
+      expect(prompt).toContain('pi-herd-verdict: done pass=<N>');
+      expect(prompt).toContain('Use blocked instead of done when you cannot proceed');
+    }
+  });
+
   it('does not overwrite config or prompts without force', async () => {
     await runInit({ cwd: dir });
     await writeFile(join(dir, '.pi-herd/config.yaml'), 'custom: true\n', 'utf8');

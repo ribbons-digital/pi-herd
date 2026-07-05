@@ -254,6 +254,19 @@ Common artifacts include:
 - lead inbox files under `inbox/`
 - bounded pane logs under `logs/`
 
+### Verdict markers
+
+Every prompt sent to a role carries an appended one-line instruction naming the role's required artifact and the current prompt pass.
+Workers finish a pass by ending that artifact with a marker line:
+
+```text
+pi-herd-verdict: done pass=3 refreshed auth flow and updated REVIEW.md
+```
+
+Use `blocked` instead of `done` when the worker cannot proceed; the summary is optional.
+The pass number comes from the `[pi-herd]` instruction line in the prompt that started the pass, and only a marker matching the current pass counts.
+Markers are preferred evidence; runs without them still complete through the artifact-freshness fallback with a warning.
+
 ## Configuration
 
 `pi-herd init` creates a default config at `.pi-herd/config.yaml`:
@@ -430,7 +443,9 @@ pi-herd status --json
 pi-herd status --run latest
 ```
 
-A role is done only when its activity signal has stopped and its required artifact is present, non-empty, and fresh enough for the current pass.
+A role is done when its activity signal has stopped and either its required artifact ends with a `pi-herd-verdict: done pass=<N>` marker for the current pass, or the artifact is present, non-empty, and fresh enough for the current pass.
+An explicit current-pass marker supersedes file-timestamp freshness, and a `blocked` marker reports the role as blocked with its summary.
+Completion inferred without a marker is flagged with a warning so the lead knows it rests on timestamps.
 Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
 
 ### `pi-herd board`
@@ -693,6 +708,7 @@ Most pi-herd commands refuse to guess when multiple active runs are available.
 
 Inspect the role artifact and pane log.
 Then re-prompt the role or refresh the reviewer or tester worktree before another pass.
+If the role artifact lacks a current-pass `pi-herd-verdict` line, ask the role to append one so completion does not rest on file timestamps.
 
 ```bash
 pi-herd lead collect
