@@ -56,18 +56,27 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
       activation.notes.push(readyWarning);
     }
   }
-  const nextPass = (record.pass ?? 0) + 1;
+  const reserved = await updateRunState(resolved.statePath, (fresh) => {
+    const freshRecord = fresh.roles[options.role];
+    if (!freshRecord) return;
+    freshRecord.pass = (freshRecord.pass ?? 0) + 1;
+  });
+  const reservedRecord = reserved.roles[options.role];
+  if (!reservedRecord) {
+    throw new Error(`Role ${options.role} is not selected for run ${state.run_id}.`);
+  }
+  const reservedPass = reservedRecord.pass ?? 0;
   const artifactName = record.required_artifacts[0];
   const prompt = artifactName
-    ? `${options.message}\n\n${verdictInstruction(join(state.canonical_run_dir, artifactName), nextPass)}`
+    ? `${options.message}\n\n${verdictInstruction(join(state.canonical_run_dir, artifactName), reservedPass)}`
     : options.message;
+  // Skipped passes are safe: older-pass verdicts become stale when a later pass is reserved.
   const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
   const updated = await updateRunState(resolved.statePath, (fresh) => {
     const freshRecord = fresh.roles[options.role];
     if (!freshRecord) return;
     freshRecord.status = 'working';
     freshRecord.last_activity_at = new Date().toISOString();
-    freshRecord.pass = Math.max(freshRecord.pass ?? 0, nextPass);
   });
   const warnings = capabilityWarnings(record);
   const deliveryLine = delivery.verification === 'verified'
@@ -75,7 +84,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     : `Warning: ${delivery.note}`;
   return {
     state: updated,
-    text: [`Sent message to ${options.role} (${paneId}).`, `Pass ${nextPass}: verdict instruction appended to the prompt.`, deliveryLine, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
+    text: [`Sent message to ${options.role} (${paneId}).`, `Pass ${reservedPass}: verdict instruction appended to the prompt.`, deliveryLine, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
   };
 }
 

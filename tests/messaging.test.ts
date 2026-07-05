@@ -186,6 +186,20 @@ describe('messaging commands', () => {
     expect(saved.roles.planner?.pass).toBe(2);
   });
 
+  it('reserves a pass without marking working when pane delivery fails', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': { exitCode: 1, stdout: '', stderr: 'send failed\n' }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner })).rejects.toThrow(/Could not send pane text/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
+    expect(saved.roles.planner?.status).toBe('staged');
+    expect(saved.roles.planner?.last_activity_at).toBeNull();
+  });
+
   it('requires lead commands to run from the bound lead pane', async () => {
     const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({}));

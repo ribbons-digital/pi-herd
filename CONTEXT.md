@@ -95,7 +95,8 @@ _Avoid_: treating idle terminal state or a stale artifact alone as done
 An explicit completion line a worker appends to its required artifact, in the form `pi-herd-verdict: <done|blocked> pass=<N> [summary]`.
 pi-herd appends a one-line instruction with the current pass number to every delivered prompt, and only a marker matching the role's current prompt pass counts.
 A current-pass done marker supersedes file-timestamp freshness, a blocked marker surfaces the role as blocked when work has stopped, and a live working signal always wins over any marker.
-Runs without markers fall back to the artifact-freshness heuristic with a warning instead of failing.
+For verdict-enabled roles, runs without markers fall back to the artifact-freshness heuristic with a warning instead of failing.
+Legacy roles without pass tracking use the same fallback silently.
 _Avoid_: making old runs incomplete for lacking markers, or letting a blocked marker resolve a role that is still working
 
 **Prompt pass**:

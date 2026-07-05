@@ -265,7 +265,8 @@ pi-herd-verdict: done pass=3 refreshed auth flow and updated REVIEW.md
 
 Use `blocked` instead of `done` when the worker cannot proceed; the summary is optional.
 The pass number comes from the `[pi-herd]` instruction line in the prompt that started the pass, and only a marker matching the current pass counts.
-Markers are preferred evidence; runs without them still complete through the artifact-freshness fallback with a warning.
+Markers are preferred evidence; verdict-enabled roles that complete without them still complete through the artifact-freshness fallback with a warning.
+Legacy roles without pass tracking use the same fallback silently.
 
 ## Configuration
 
@@ -445,7 +446,8 @@ pi-herd status --run latest
 
 A role is done when its activity signal has stopped and either its required artifact ends with a `pi-herd-verdict: done pass=<N>` marker for the current pass, or the artifact is present, non-empty, and fresh enough for the current pass.
 An explicit current-pass marker supersedes file-timestamp freshness, and a `blocked` marker reports the role as blocked with its summary.
-Completion inferred without a marker is flagged with a warning so the lead knows it rests on timestamps.
+For verdict-enabled roles, completion inferred without a marker is flagged with a warning so the lead knows it rests on timestamps.
+Legacy roles without pass tracking are not warned.
 Stale `REVIEW.md` or `TEST_REPORT.md` files from older passes do not count as complete.
 
 ### `pi-herd board`

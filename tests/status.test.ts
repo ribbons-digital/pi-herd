@@ -309,6 +309,26 @@ describe('status, wait, and collect commands', () => {
     expect(planner?.verdict).toEqual({ verdict: 'done', pass: 1, summary: 'plan approved' });
   });
 
+  it('overrides staleness with a current-pass blocked marker and evaluates blocked when work has stopped', async () => {
+    const { state, statePath } = await createWorkingRun('planner-pane');
+    state.roles.planner!.pass = 1;
+    await writeJsonAtomic(statePath, state);
+    const artifactPath = join(state.canonical_run_dir, 'PLAN.md');
+    await writeFile(artifactPath, 'plan draft\npi-herd-verdict: blocked pass=1 waiting on credentials\n', 'utf8');
+    await utimes(artifactPath, new Date('2026-07-01T11:59:50.000Z'), new Date('2026-07-01T11:59:50.000Z'));
+    const runner = new RecordingRunner(baseResponses({
+      'herdr wait agent-status planner-pane --status idle --timeout 250': ok()
+    }));
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('planner: stored=working; evaluated=blocked; signal=idle');
+    expect(result.text).not.toContain('PLAN.md is stale for the current pass');
+    expect(result.text).not.toContain('stale PLAN.md');
+    const planner = result.snapshot.roles.find((role) => role.role === 'planner');
+    expect(planner?.artifacts[0]?.stale).toBe(false);
+  });
+
   it('reports blocked when a current-pass blocked marker is present and work has stopped', async () => {
     const { state, statePath } = await createWorkingRun('planner-pane');
     state.roles.planner!.pass = 1;

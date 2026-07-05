@@ -289,8 +289,8 @@ async function artifactStatuses(state: RunState, record: RoleRecord): Promise<Ar
       const text = raw.toString('utf8');
       status.verdict = parseVerdictMarker(text);
       const currentPass = record.pass ?? 0;
-      const explicitDone = currentPass >= 1 && status.verdict?.pass === currentPass && status.verdict.verdict === 'done';
-      status.stale = explicitDone ? false : isArtifactStale(fileStat.mtimeMs, record.last_activity_at);
+      const explicitCurrent = currentPass >= 1 && status.verdict?.pass === currentPass;
+      status.stale = explicitCurrent ? false : isArtifactStale(fileStat.mtimeMs, record.last_activity_at);
       status.valid = text.trim().length > 0 && !status.stale;
       status.preview = truncateBytes(text, OUTPUT_BUDGETS.artifactPreviewBytes);
     } catch (error) {
