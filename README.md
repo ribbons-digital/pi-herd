@@ -570,7 +570,8 @@ Available actions:
 Repository-targeting actions resolve the project directory from Herdr plugin context or pane metadata.
 They fail closed when no target project can be found.
 
-The `collect` action writes run state, logs, and `FINAL_SUMMARY.md`, just like `pi-herd collect`.
+The Herdr plugin `collect` action maps to read-only `pi-herd lead collect`, so it prints an inventory without writing run state, logs, or `FINAL_SUMMARY.md`.
+Run terminal `pi-herd collect` when you want to persist run state, collect logs, and write `FINAL_SUMMARY.md`.
 The `cleanup` action is report-only and does not pass destructive cleanup flags.
 
 Herdr 0.7.1 action invocation does not pass arbitrary action arguments.
@@ -589,7 +590,7 @@ herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board -
 
 The board renders current run state without writing it.
 It shows the run, lead, roles, artifacts, warnings, and suggested terminal commands.
-Because Herdr plugin panes are terminal processes, the board stays open with a prompt: press Enter to refresh, or type `q` then Enter to quit.
+Because Herdr plugin panes are terminal processes, the board stays open, auto-refreshes every 10 seconds, supports Enter for immediate refresh, and quits when you type `q` then Enter.
 
 You can also render the board in any terminal:
 

@@ -55,6 +55,7 @@ describe('Herdr plugin manifest', () => {
       collect: 'collect',
       cleanup: 'cleanup'
     });
+    expect(manifest.actions.find((action) => action.id === 'collect')?.title).toBe('pi-herd collect read-only');
     expect(manifest.panes).toEqual([
       { id: 'run-board', title: 'pi-herd run board', command: ['node', 'dist/herdr-plugin-pane.js', 'run-board'] }
     ]);
@@ -135,7 +136,7 @@ describe('Herdr plugin action wrapper', () => {
   it('builds safe CLI args for doctor, status, collect, and report-only cleanup', () => {
     expect(buildPluginCliArgs('doctor', ['--json', '--config', 'herd.yaml'])).toEqual(['doctor', '--json', '--config', 'herd.yaml']);
     expect(buildPluginCliArgs('status', ['--run', 'run-1'])).toEqual(['status', '--run', 'run-1']);
-    expect(buildPluginCliArgs('collect', ['--config', 'herd.yaml'])).toEqual(['collect', '--config', 'herd.yaml']);
+    expect(buildPluginCliArgs('collect', ['--config', 'herd.yaml'])).toEqual(['lead', 'collect', '--config', 'herd.yaml']);
     expect(buildPluginCliArgs('cleanup', ['--run', 'run-1'])).toEqual(['cleanup', '--run', 'run-1']);
   });
 

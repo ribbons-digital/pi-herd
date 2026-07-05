@@ -16,6 +16,11 @@ export interface RunPluginPaneOptions {
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   holdOpen?: boolean;
   createReadline?: () => Interface;
+  autoRefreshIntervalMs?: number;
+}
+
+function formatRefreshInterval(ms: number): string {
+  return ms > 0 && Number.isInteger(ms) && ms % 1_000 === 0 ? `${ms / 1_000}s` : `${ms}ms`;
 }
 
 export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise<number> {
@@ -34,15 +39,28 @@ export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise
   }
   const ok = await renderBoardSafely(options, output);
   if (options.holdOpen === false) return ok ? 0 : 1;
-  output.write('\nPress Enter to refresh, or type q then Enter to quit.\n');
+  const autoRefreshIntervalMs = options.autoRefreshIntervalMs ?? 10_000;
+  output.write(`\nPress Enter to refresh now. Auto-refreshes every ${formatRefreshInterval(autoRefreshIntervalMs)}. Type q then Enter to quit.\n`);
   const readline = options.createReadline?.() ?? createInterface({ input: defaultStdin, output: defaultStdout });
+  let renderChain = Promise.resolve();
+  const queueRender = (): Promise<void> => {
+    renderChain = renderChain.then(async () => {
+      await renderBoardSafely(options, output);
+    });
+    return renderChain;
+  };
+  const interval = setInterval(() => {
+    void queueRender();
+  }, autoRefreshIntervalMs);
   try {
     for (;;) {
       const answer = await readline.question('pi-herd board> ');
       if (answer.trim().toLowerCase() === 'q') break;
-      await renderBoardSafely(options, output);
+      await queueRender();
     }
   } finally {
+    clearInterval(interval);
+    await renderChain;
     readline.close();
   }
   return 0;
