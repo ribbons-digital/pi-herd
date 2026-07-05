@@ -23,7 +23,7 @@ The image above is an illustration of the layout and artifact flow.
 - Durable run artifacts under `.pi-herd/runs/`.
 - Read-only status, brief, diff, and board commands for steering a run without polluting context.
 - Collection and merge-preparation commands that write clear handoff artifacts.
-- A Herdr plugin manifest for common Herdr actions and the read-only run board pane.
+- A Herdr plugin manifest for common Herdr actions, the read-only run board pane, and interactive start and send panes.
 - An optional Pi slash-command extension for `/herd ...` shortcuts and `/herd-start`.
 
 ## Requirements
@@ -92,6 +92,15 @@ Open the read-only run board pane:
 ```bash
 herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint run-board --placement split --direction right
 ```
+
+Open the interactive start wizard or send-message pane when you need to provide arguments through Herdr:
+
+```bash
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint start-wizard --placement split --direction right
+herdr plugin pane open --plugin ribbons-digital.pi-herd --entrypoint send-message --placement split --direction right
+```
+
+Herdr 0.7.1 plugin actions do not pass arbitrary action arguments, so `start-wizard` and `send-message` are the interactive path for entering a start goal, roles, planner worktree choice, role target, message text, and optional run selector.
 
 Plugin logs are available through Herdr:
 
@@ -581,7 +590,10 @@ Run `pi-herd start <goal>` directly from the project checkout when starting a ru
 Available panes:
 
 - `run-board`
+- `start-wizard`
+- `send-message`
 
+Use `start-wizard` to prompt for goal, roles, and planner-worktree, and use `send-message` to prompt for role, message, and run selector.
 Open the read-only board as a Herdr-managed terminal pane:
 
 ```bash

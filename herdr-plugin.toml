@@ -45,3 +45,13 @@ command = ["node", "dist/herdr-plugin-action.js", "cleanup"]
 id = "run-board"
 title = "pi-herd run board"
 command = ["node", "dist/herdr-plugin-pane.js", "run-board"]
+
+[[panes]]
+id = "start-wizard"
+title = "pi-herd start wizard"
+command = ["node", "dist/herdr-plugin-pane.js", "start-wizard"]
+
+[[panes]]
+id = "send-message"
+title = "pi-herd send message"
+command = ["node", "dist/herdr-plugin-pane.js", "send-message"]
