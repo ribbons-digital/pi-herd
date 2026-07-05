@@ -37,6 +37,9 @@ class RecordingRunner implements CommandRunner {
     if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') {
       return { exitCode: 0, stdout: '', stderr: '' };
     }
+    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
+      return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2], agent_status: 'idle' }), stderr: '' };
+    }
     throw new Error(`Unexpected command: ${key}`);
   }
 }
@@ -331,6 +334,25 @@ describe('start orchestration', () => {
     expect(state.lead_binding.herdr_pane_id).toBe('lead-pane');
     expect(state.roles.planner?.herdr_pane_id).toBe('planner-pane');
     expect(state.roles.planner?.status).toBe('failed');
+  });
+
+  it('records a kickoff warning and still succeeds when the planner pane was already working', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr workspace create --cwd DIR --label pi-herd busy-planner lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-busy-planner-lead --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-busy-planner-lead --session-id 2026-07-01T12-00-00-busy-planner-lead': okJson({ pane_id: 'new-lead-pane', workspace_id: 'new-lead-ws', tab_id: 'new-lead-tab' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-busy-planner-planner --cwd DIR --workspace new-lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-busy-planner-planner --session-id 2026-07-01T12-00-00-busy-planner-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'new-lead-ws', tab_id: 'planner-tab' }),
+      'herdr pane get planner-pane': okJson({ pane_id: 'planner-pane', agent_status: 'working' }),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-busy-planner.\nGoal: Busy planner\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-busy-planner/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' }
+    }));
+
+    const result = await startRun({ cwd: dir, goal: 'Busy planner', now: NOW, roles: ['planner'], runner, env: {} });
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/^planner kickoff: pane planner-pane was already working/);
+    expect(result.state.status).toBe('active');
+    expect(result.state.roles.planner?.status).toBe('working');
+    expect(runner.calls).not.toContain('herdr wait agent-status planner-pane --status working --timeout 10000');
   });
 });
 

@@ -6,6 +6,7 @@ export const HERDR_PROMPT_TIMEOUT_MS = 10_000;
 export const HERDR_READY_WAIT_TIMEOUT_MS = 15_000;
 export const HERDR_READY_RUNNER_TIMEOUT_MS = 20_000;
 export const HERDR_WORKTREE_CREATE_TIMEOUT_MS = 120_000;
+export const HERDR_DELIVERY_ACK_TIMEOUT_MS = 10_000;
 
 export interface PaneMetadata {
   paneId: string | null;
@@ -82,6 +83,10 @@ export function paneSendEnter(runner: CommandRunner, cwd: string, paneId: string
   return runner.run('herdr', ['pane', 'send-keys', paneId, 'enter'], { cwd, timeoutMs: HERDR_PROMPT_TIMEOUT_MS });
 }
 
+export function paneSendEscape(runner: CommandRunner, cwd: string, paneId: string): Promise<CommandResult> {
+  return runner.run('herdr', ['pane', 'send-keys', paneId, 'escape'], { cwd, timeoutMs: HERDR_PROMPT_TIMEOUT_MS });
+}
+
 export function waitAgentStatus(runner: CommandRunner, cwd: string, paneId: string, status: 'idle' | 'working' | 'blocked' | 'done' | 'unknown' = 'idle', timeoutMs = HERDR_READY_WAIT_TIMEOUT_MS): Promise<CommandResult> {
   return runner.run('herdr', ['wait', 'agent-status', paneId, '--status', status, '--timeout', String(timeoutMs)], { cwd, timeoutMs: HERDR_READY_RUNNER_TIMEOUT_MS });
 }
@@ -117,6 +122,13 @@ export function parsePaneMetadata(stdout: string): PaneMetadata {
     workspaceId: stringFromRecords(records, ['workspace_id', 'workspaceId', 'herdr_workspace_id']),
     tabId: stringFromRecords(records, ['tab_id', 'tabId', 'herdr_tab_id'])
   };
+}
+
+/** Parse the reported agent status from `pane get` output, returning null when the field is missing or unparsable. */
+export function parseAgentStatus(stdout: string): string | null {
+  const parsed = parseJsonRecord(stdout);
+  const records = metadataContainers(parsed, ['result', 'data', 'pane', 'agent']);
+  return stringFromRecords(records, ['agent_status', 'agentStatus']);
 }
 
 export function parseWorktreeCreateResult(stdout: string, options: { role: BuiltInRole; branch: string; path: string; isAbsolutePath: (path: string) => boolean; normalizePath: (path: string) => string }): ParsedWorktreeCreateResult | null {

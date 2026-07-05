@@ -34,9 +34,9 @@ _Avoid_: treating the board as a native/web UI, adding destructive controls, wri
 
 **Pi extension command**:
 Pi slash commands registered by the optional pi-herd extension for lead-session convenience.
-The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `diff`, `wait`, `send`, and `help` subcommands that map to existing CLI commands or local usage text.
+The first command is `/herd`, with `init`, `doctor`, `start`, `status`, `brief`, `collect`, `diff`, `wait`, `send`, `interrupt`, and `help` subcommands that map to existing CLI commands or local usage text.
 The extension also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>`.
-`/herd init`, `/herd doctor`, `/herd start`, `/herd-start`, `/herd diff`, and `/herd wait` map to top-level `pi-herd` commands, while `/herd status`, `/herd brief`, `/herd collect`, and `/herd send` map to the existing `pi-herd lead` command family.
+`/herd init`, `/herd doctor`, `/herd start`, `/herd-start`, `/herd diff`, `/herd wait`, and `/herd interrupt` map to top-level `pi-herd` commands, while `/herd status`, `/herd brief`, `/herd collect`, and `/herd send` map to the existing `pi-herd lead` command family.
 `/herd start` and `/herd-start` accept a simple goal, reject leading flag-like goals, use a longer timeout, show partial-run recovery guidance on timeout, and rely on the CLI to guard against starting a duplicate active run from a pane that is already bound as lead.
 `/herd-start` exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
@@ -165,8 +165,14 @@ _Avoid_: worker-initiated orchestration commands as the normal workflow
 **Prompt delivery**:
 The Herdr pane submission path pi-herd uses to steer a worker.
 Prompts are inserted with one `pane send-text` payload, including multi-line content, and then submitted with Enter.
+After submission, pi-herd verifies delivery by watching for a proven non-working to working agent-status transition and reports a warning when the transition is ambiguous or missing.
 After a fresh launch, pi-herd waits briefly for idle readiness and warns rather than blocks when readiness cannot be confirmed.
-_Avoid_: assuming prompt delivery proves worker completion
+_Avoid_: assuming prompt delivery proves worker completion, or treating an unverified delivery warning as a hard failure
+
+**Worker interrupt**:
+An explicit lead action that sends one Escape key to a saved role pane with `pi-herd interrupt` or `/herd interrupt` to stop its current work.
+Interrupt validates the pane first, marks the stored role status blocked until the role is re-prompted or reports progress, never closes panes, and never targets the lead session.
+_Avoid_: treating interrupt as cleanup or using it to infer worker completion
 
 **Implementation branch**:
 The role-owned branch where source changes for a run are made and reviewed.
@@ -264,3 +270,9 @@ Developer: How should I send a prompt that starts with a dash?
 Domain expert: For terminal `pi-herd send`, put `--` after the role, then write the dash-prefixed prompt as literal message text.
 For `/herd send`, write dash-prefixed text directly because only a final `--run RUN` is treated as a selector.
 Quote the `/herd send` message when literal text should end with run-looking content, because one matching outer quote pair is stripped before delivery.
+Developer: How do I stop a worker that is going in the wrong direction?
+Domain expert: Run `pi-herd interrupt <role>` or `/herd interrupt <role>`.
+It sends one Escape to the saved role pane, marks the stored status blocked, and leaves re-prompting to the lead.
+Developer: How do I know a prompt actually reached a worker?
+Domain expert: pi-herd verifies delivery by watching for a proven non-working to working transition after submit.
+Ambiguous or missing transitions produce warnings so the lead can inspect the pane before re-sending.
