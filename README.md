@@ -386,8 +386,24 @@ Sending marks the target role as `working` and updates activity timestamps.
 It does not infer completion.
 Prompt text, including multi-line text, is delivered as one Herdr `pane send-text` payload followed by Enter.
 If Enter submission fails after text insertion, pi-herd reports that the pane may contain unsubmitted text and a retry may duplicate it.
+After submission, pi-herd verifies delivery by watching for the pane to transition from a non-working agent status to working.
+A proven transition is reported as verified delivery.
+If the pane was already working, its pre-send status was unknown, or no transition is observed within 10 seconds, pi-herd reports a delivery warning instead of failing the send.
 
 If reviewer or tester has not launched yet, first send materializes or refreshes that role worktree, launches the role session, waits briefly for readiness, and then sends the prompt.
+
+### `pi-herd interrupt`
+
+Send Escape to a role pane to stop its current work.
+
+```bash
+pi-herd interrupt implementer
+pi-herd interrupt planner --run latest
+```
+
+Interrupt validates the saved role pane, sends one Escape key, and marks the stored role status `blocked`.
+The role stays blocked until you re-prompt it with `pi-herd send` or it reports progress.
+Interrupt never closes panes and never targets the lead session.
 
 ### `pi-herd lead ...`
 
@@ -583,10 +599,11 @@ Available shortcuts:
 /herd diff [--run RUN]
 /herd wait [--run RUN]
 /herd send <role> <message> [--run RUN]
+/herd interrupt <role> [--run RUN]
 /herd help
 ```
 
-`/herd init`, `/herd doctor`, `/herd start`, and `/herd-start` map to the top-level CLI commands.
+`/herd init`, `/herd doctor`, `/herd start`, `/herd-start`, and `/herd interrupt` map to the top-level CLI commands.
 `/herd-start <goal>` is an explicit alias for `/herd start <goal>` so users can start a run from slash completion without relying on natural-language interception.
 The alias exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd start` and `/herd-start` accept a simple goal and use a longer timeout because startup can create worktrees, panes, sessions, and kickoff prompts.
@@ -623,6 +640,7 @@ Notes:
 - `/herd send` strips one matching outer quote pair from message text.
 - Dash-prefixed `/herd send` message text does not need the terminal CLI's `--` sentinel.
 - A `--run` selector is parsed only when it appears at the end of `/herd send`.
+- `/herd interrupt` sends Escape to the saved role pane and marks its stored status blocked until the role is re-prompted.
 - Child output captured and displayed by the extension is bounded to 12,000 characters per stream.
 - When `HERDR_BIN_PATH` is absolute, the extension adds its directory to the child CLI `PATH`.
 - The extension does not register agent-callable tools.

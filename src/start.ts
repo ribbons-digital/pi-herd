@@ -3,7 +3,7 @@ import { createRun, listRunsForInvocation, readRunState, writeJsonAtomic, type L
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
-import { agentStart, describeFailure, firstLine, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parsePaneMetadata, verifyCurrentPane as verifyCurrentHerdrPane, waitAgentStatus, workspaceCreate } from './herdr.js';
+import { agentStart, describeFailure, firstLine, HERDR_DELIVERY_ACK_TIMEOUT_MS, paneGet, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parseAgentStatus, parsePaneMetadata, verifyCurrentPane as verifyCurrentHerdrPane, waitAgentStatus, workspaceCreate } from './herdr.js';
 
 /** Options for creating a run and launching its initial visible Herdr/Pi sessions. */
 export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
@@ -72,7 +72,10 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
       if (plannerReady) {
         warnings.push(plannerReady);
       }
-      await sendPlannerKickoff(runner, planner.paneId, state);
+      const kickoffNote = await sendPlannerKickoff(runner, planner.paneId, state);
+      if (kickoffNote) {
+        warnings.push(kickoffNote);
+      }
       state.roles.planner.status = 'working';
       state.roles.planner.launch_metadata = { ...state.roles.planner.launch_metadata, prompt_method: 'pane-send-text-enter' };
       state.roles.planner.last_activity_at = new Date().toISOString();
@@ -293,18 +296,32 @@ async function createLeadWorkspace(runner: CommandRunner, state: RunState): Prom
   return { workspaceId };
 }
 
-async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: RunState): Promise<void> {
+async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: RunState): Promise<string | null> {
   const prompt = `You are the planner for pi-herd run ${state.run_id}.\nGoal: ${state.goal}\nWrite your plan to ${join(state.canonical_run_dir, 'PLAN.md')}.\nDo not edit source files unless explicitly instructed by the lead.`;
   try {
-    await sendToPane(runner, state.repo_root, paneId, prompt);
+    const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
+    return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
     state.roles.planner!.status = 'failed';
     throw error;
   }
 }
 
-/** Submit text to a Herdr pane as one send-text payload followed by Enter; Enter failure may leave unsubmitted text in the pane. */
-export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<void> {
+/** Delivery verification outcome for a submitted pane prompt. */
+export interface PaneDelivery {
+  verification: 'verified' | 'ambiguous' | 'unverified';
+  note: string | null;
+}
+
+/**
+ * Submit text to a Herdr pane as one send-text payload followed by Enter, then verify delivery.
+ * Delivery is verified only when the pane provably transitions from a non-working agent status to working after submit.
+ * A pane that was already working or had an unknown status before submit yields an ambiguous result, and a missing transition yields an unverified warning.
+ * Enter failure may leave unsubmitted text in the pane.
+ */
+export async function sendToPane(runner: CommandRunner, cwd: string, paneId: string, message: string): Promise<PaneDelivery> {
+  const before = await paneGet(runner, cwd, paneId);
+  const preStatus = before.exitCode === 0 ? parseAgentStatus(before.stdout) : null;
   const text = await paneSendText(runner, cwd, paneId, message);
   if (text.exitCode !== 0) {
     throw new Error(`Could not send pane text: ${describeFailure(text, 'pane send-text failed')}`);
@@ -313,6 +330,18 @@ export async function sendToPane(runner: CommandRunner, cwd: string, paneId: str
   if (enter.exitCode !== 0) {
     throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, 'pane send-keys failed')}`);
   }
+  if (preStatus === 'working') {
+    return { verification: 'ambiguous', note: `pane ${paneId} was already working before the prompt was submitted, so delivery could not be independently verified.` };
+  }
+  const provenNonWorking = preStatus === 'idle' || preStatus === 'blocked' || preStatus === 'done';
+  const ack = await waitAgentStatus(runner, cwd, paneId, 'working', HERDR_DELIVERY_ACK_TIMEOUT_MS);
+  if (ack.exitCode === 0) {
+    if (provenNonWorking) {
+      return { verification: 'verified', note: null };
+    }
+    return { verification: 'ambiguous', note: `pane ${paneId} reported working after submit, but its pre-send agent status was unknown, so the transition could not be proven.` };
+  }
+  return { verification: 'unverified', note: `pane ${paneId} did not report working within ${HERDR_DELIVERY_ACK_TIMEOUT_MS / 1000}s after submit; inspect the pane before re-sending because a retry may duplicate the prompt.` };
 }
 
 export async function waitForRoleReady(runner: CommandRunner, cwd: string, paneId: string, role: string): Promise<string | null> {

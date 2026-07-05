@@ -6,7 +6,7 @@ import { nodeCommandRunner } from './command-runner.js';
 import { runInit, formatInitText } from './init.js';
 import { createRun, formatRunCreateText, listRunsForInvocation, parseRole, type ActiveRunSummary } from './run-state.js';
 import { formatStartText, startRun } from './start.js';
-import { leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
+import { interruptRole, leadBrief, leadCollect, leadStatus, sendMessage } from './messaging.js';
 import { boardRun } from './board.js';
 import { collectRun, statusRun, waitRun } from './status.js';
 import { diffRun, refreshRole } from './refresh.js';
@@ -21,6 +21,7 @@ Usage:
   pi-herd run list [--all] [--json] [--config PATH]
   pi-herd start <goal> [--planner-worktree] [--role ROLE] [--base-ref REF] [--json] [--config PATH]
   pi-herd send <role> <message> [--run RUN] [--config PATH]
+  pi-herd interrupt <role> [--run RUN] [--config PATH]
   pi-herd status [--json] [--run RUN] [--config PATH]
   pi-herd board [--run RUN] [--config PATH]
   pi-herd wait [--timeout-ms MS] [--poll-interval-ms MS] [--json] [--run RUN] [--config PATH]
@@ -38,6 +39,7 @@ Commands:
   run        Create and manage orchestration run state.
   start      Create or bind lead, launch visible sessions, and activate planner.
   send       Send a prompt to a selected role pane, activating reviewer/tester if needed.
+  interrupt  Send Escape to a role pane to stop its current work.
   status     Evaluate role activity and required artifacts without writing state.
   board      Show a read-only run board optimized for a Herdr pane.
   wait       Wait for working roles to resolve and persist role verdicts.
@@ -145,6 +147,28 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()): P
         return 0;
       }
       const result = await sendMessage({ cwd, configPath: parsed.config, run: parsed.run, role: parsed.role, message: parsed.message, runner: nodeCommandRunner });
+      process.stdout.write(result.text);
+      return 0;
+    }
+
+    if (command === 'interrupt') {
+      const { values, positionals } = parseArgs({
+        args: argv.slice(1),
+        options: {
+          run: { type: 'string' },
+          config: { type: 'string' },
+          help: { type: 'boolean', short: 'h', default: false }
+        },
+        allowPositionals: true
+      });
+      if (values.help) {
+        process.stdout.write('Usage: pi-herd interrupt <role> [--run RUN] [--config PATH]\n');
+        return 0;
+      }
+      if (positionals.length !== 1) {
+        throw new Error('Usage: pi-herd interrupt <role> [--run RUN] [--config PATH]');
+      }
+      const result = await interruptRole({ cwd, configPath: values.config, run: values.run, role: parseRole(positionals[0]), runner: nodeCommandRunner });
       process.stdout.write(result.text);
       return 0;
     }

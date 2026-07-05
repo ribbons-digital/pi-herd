@@ -5,7 +5,7 @@ import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane, waitForRoleReady } from './start.js';
-import { describeFailure, paneGet } from './herdr.js';
+import { describeFailure, paneGet, paneSendEscape } from './herdr.js';
 import { materializeRoleWorktree } from './worktree.js';
 import { loadConfigIfPresent, resolveRunContext, resolveRunsRoot, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 
@@ -55,7 +55,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
       activation.notes.push(readyWarning);
     }
   }
-  await sendToPane(runner, state.repo_root, paneId, options.message);
+  const delivery = await sendToPane(runner, state.repo_root, paneId, options.message);
   const updated = await updateRunState(resolved.statePath, (fresh) => {
     const freshRecord = fresh.roles[options.role];
     if (!freshRecord) return;
@@ -63,9 +63,53 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     freshRecord.last_activity_at = new Date().toISOString();
   });
   const warnings = capabilityWarnings(record);
+  const deliveryLine = delivery.verification === 'verified'
+    ? `Delivery verified: ${options.role} reported working.`
+    : `Warning: ${delivery.note}`;
   return {
     state: updated,
-    text: [`Sent message to ${options.role} (${paneId}).`, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
+    text: [`Sent message to ${options.role} (${paneId}).`, deliveryLine, ...activation.notes, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n') + '\n'
+  };
+}
+
+/** Options for interrupting a role pane. */
+export interface InterruptOptions extends RunCommandOptions {
+  role: BuiltInRole;
+}
+
+/** Send Escape to a role pane to stop its current work, marking the stored role status blocked until it is re-prompted. */
+export async function interruptRole(options: InterruptOptions): Promise<CommandResultText> {
+  const runner = options.runner ?? nodeCommandRunner;
+  const resolved = await resolveRunState(options, runner);
+  const state = resolved.state;
+  const record = state.roles[options.role];
+  if (!record) {
+    throw new Error(`Role ${options.role} is not selected for run ${state.run_id}.`);
+  }
+  const paneId = record.herdr_pane_id;
+  if (!paneId) {
+    throw new Error(`Role ${options.role} has no launched pane to interrupt.`);
+  }
+  const pane = await paneGet(runner, state.repo_root, paneId);
+  if (pane.exitCode !== 0) {
+    if (!pane.timedOut && !pane.error && isMissingPaneFailure(pane)) {
+      throw new Error(`Role ${options.role} pane ${paneId} is missing; nothing to interrupt.`);
+    }
+    throw new Error(`Could not validate ${options.role} pane ${paneId}: ${describeFailure(pane, 'pane get failed')}`);
+  }
+  const escape = await paneSendEscape(runner, state.repo_root, paneId);
+  if (escape.exitCode !== 0) {
+    throw new Error(`Could not send Escape to ${options.role} pane ${paneId}: ${describeFailure(escape, 'pane send-keys failed')}`);
+  }
+  const updated = await updateRunState(resolved.statePath, (fresh) => {
+    const freshRecord = fresh.roles[options.role];
+    if (!freshRecord) return;
+    freshRecord.status = 'blocked';
+    freshRecord.last_activity_at = new Date().toISOString();
+  });
+  return {
+    state: updated,
+    text: `Sent Escape to ${options.role} (${paneId}) and marked the stored role status blocked.\nRe-prompt with pi-herd send ${options.role} <message> when the role should resume.\n`
   };
 }
 

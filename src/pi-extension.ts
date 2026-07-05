@@ -78,19 +78,21 @@ export const HERD_USAGE = `Usage:
   /herd diff [--run RUN]
   /herd wait [--run RUN]
   /herd send <role> <message> [--run RUN]
+  /herd interrupt <role> [--run RUN]
 
 Notes:
   /herd start and /herd-start accept a simple goal. Use terminal pi-herd start for advanced flags.
   /herd diff is read-only and shows diff stat plus changed files.
   /herd wait uses a fixed 60s timeout and 2s poll interval, records role verdicts in run state, and rejects custom wait flags.
   /herd collect maps to read-only pi-herd lead collect.
-  pi-herd collect remains a terminal command for writing FINAL_SUMMARY.md.`;
+  pi-herd collect remains a terminal command for writing FINAL_SUMMARY.md.
+  /herd interrupt sends Escape to a role pane and marks its stored status blocked until it is re-prompted.`;
 
 export default function piHerdExtension(pi: PiExtensionApi): void {
   pi.registerCommand('herd', {
     description: 'Lead-session pi-herd shortcuts',
     getArgumentCompletions: (prefix) => {
-      const commands = ['init', 'doctor', 'start', 'status', 'brief', 'collect', 'diff', 'wait', 'send', 'help'];
+      const commands = ['init', 'doctor', 'start', 'status', 'brief', 'collect', 'diff', 'wait', 'send', 'interrupt', 'help'];
       const filtered = commands.filter((command) => command.startsWith(prefix.trim()));
       return filtered.length > 0 ? filtered.map((command) => ({ value: command, label: command })) : null;
     },
@@ -185,6 +187,19 @@ export function buildHerdCommand(args: string): HerdCommand | null {
     return {
       cliArgs: run ? ['diff', '--run', run] : ['diff'],
       displayName: '/herd diff',
+      timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS
+    };
+  }
+
+  if (subcommand === 'interrupt') {
+    const role = tokens[1]?.value;
+    if (!role || role.startsWith('-')) {
+      throw new Error('Usage: /herd interrupt <role> [--run RUN]');
+    }
+    const run = parseOptionalRun(tokens.slice(2), '/herd interrupt <role> [--run RUN]');
+    return {
+      cliArgs: run ? ['interrupt', role, '--run', run] : ['interrupt', role],
+      displayName: '/herd interrupt',
       timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS
     };
   }

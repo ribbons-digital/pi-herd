@@ -188,6 +188,25 @@ describe('pi extension /herd argument mapping', () => {
     expect(() => buildHerdCommand('send reviewer --run run-1')).toThrow('Message must be a non-empty string');
   });
 
+  it('maps interrupt to the top-level interrupt command with an optional trailing run selector', () => {
+    expect(buildHerdCommand('interrupt planner')).toEqual({
+      cliArgs: ['interrupt', 'planner'],
+      displayName: '/herd interrupt',
+      timeoutMs: 30_000
+    });
+    expect(buildHerdCommand('interrupt tester --run run-1')).toEqual({
+      cliArgs: ['interrupt', 'tester', '--run', 'run-1'],
+      displayName: '/herd interrupt',
+      timeoutMs: 30_000
+    });
+  });
+
+  it('rejects interrupt without a role or with unknown arguments', () => {
+    expect(() => buildHerdCommand('interrupt')).toThrow('Usage: /herd interrupt <role> [--run RUN]');
+    expect(() => buildHerdCommand('interrupt --run run-1')).toThrow('Usage: /herd interrupt <role> [--run RUN]');
+    expect(() => buildHerdCommand('interrupt planner --json')).toThrow('Unknown argument');
+  });
+
   it('tokenizes quoted run selectors for option parsing', () => {
     expect(tokenizeWithSpans('brief --run "run one"').map((token) => token.value)).toEqual(['brief', '--run', 'run one']);
   });
@@ -305,6 +324,7 @@ describe('pi extension command handler', () => {
 
     expect(runner.run).not.toHaveBeenCalled();
     expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('/herd status'), 'info');
+    expect(ctx.ui?.notify).toHaveBeenCalledWith(expect.stringContaining('/herd interrupt'), 'info');
   });
 
   it('uses the longer activation timeout for start commands and preserves Herdr/Pi env', async () => {

@@ -3,7 +3,7 @@ import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
-import { sendMessage, leadStatus, leadCollect, leadBrief } from '../src/messaging.js';
+import { interruptRole, sendMessage, leadStatus, leadCollect, leadBrief } from '../src/messaging.js';
 import { sendToPane } from '../src/start.js';
 import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
 
@@ -30,7 +30,7 @@ class RecordingRunner implements CommandRunner {
     const response = this.responses[key.replaceAll(dir, 'DIR')];
     if (response) return response;
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
-    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2] }), stderr: '' };
+    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2], agent_status: 'idle' }), stderr: '' };
     if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 0, stdout: '', stderr: '' };
     throw new Error(`Unexpected command: ${key}`);
   }
@@ -43,12 +43,74 @@ describe('messaging commands', () => {
       'herdr pane send-keys pane-1 enter': ok()
     }));
 
-    await sendToPane(runner, dir, 'pane-1', 'line one\nline two');
+    const delivery = await sendToPane(runner, dir, 'pane-1', 'line one\nline two');
 
+    expect(delivery.verification).toBe('verified');
     expect(runner.calls).toEqual([
+      'herdr pane get pane-1',
       'herdr pane send-text pane-1 line one\nline two',
+      'herdr pane send-keys pane-1 enter',
+      'herdr wait agent-status pane-1 --status working --timeout 10000'
+    ]);
+  });
+
+  it('verifies delivery with no note when a provably non-working pane acknowledges', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get pane-1': okJson({ pane_id: 'pane-1', agent_status: 'blocked' }),
+      'herdr pane send-text pane-1 Resume work': ok(),
+      'herdr pane send-keys pane-1 enter': ok()
+    }));
+
+    const delivery = await sendToPane(runner, dir, 'pane-1', 'Resume work');
+
+    expect(delivery).toEqual({ verification: 'verified', note: null });
+    expect(runner.calls).toContain('herdr wait agent-status pane-1 --status working --timeout 10000');
+  });
+
+  it('reports ambiguous delivery without an ack wait when the pane was already working', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get pane-1': okJson({ pane_id: 'pane-1', agent_status: 'working' }),
+      'herdr pane send-text pane-1 Hold on': ok(),
+      'herdr pane send-keys pane-1 enter': ok()
+    }));
+
+    const delivery = await sendToPane(runner, dir, 'pane-1', 'Hold on');
+
+    expect(delivery.verification).toBe('ambiguous');
+    expect(delivery.note).toContain('already working');
+    expect(runner.calls).toEqual([
+      'herdr pane get pane-1',
+      'herdr pane send-text pane-1 Hold on',
       'herdr pane send-keys pane-1 enter'
     ]);
+  });
+
+  it('reports ambiguous delivery when the pre-send pane status is unreadable', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get pane-1': { exitCode: 1, stdout: '', stderr: 'daemon busy\n' },
+      'herdr pane send-text pane-1 Try anyway': ok(),
+      'herdr pane send-keys pane-1 enter': ok()
+    }));
+
+    const delivery = await sendToPane(runner, dir, 'pane-1', 'Try anyway');
+
+    expect(delivery.verification).toBe('ambiguous');
+    expect(delivery.note).toContain('could not be proven');
+    expect(runner.calls).toContain('herdr wait agent-status pane-1 --status working --timeout 10000');
+  });
+
+  it('reports unverified delivery when the pane never acknowledges working', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text pane-1 Ping': ok(),
+      'herdr pane send-keys pane-1 enter': ok(),
+      'herdr wait agent-status pane-1 --status working --timeout 10000': { exitCode: 1, stdout: '', stderr: '' }
+    }));
+
+    const delivery = await sendToPane(runner, dir, 'pane-1', 'Ping');
+
+    expect(delivery.verification).toBe('unverified');
+    expect(delivery.note).toContain('did not report working within 10s');
+    expect(delivery.note).toContain('retry may duplicate the prompt');
   });
 
   it('sends to an existing role pane and marks the role working', async () => {
@@ -61,11 +123,28 @@ describe('messaging commands', () => {
     const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
 
     expect(result.text).toContain('Sent message to planner');
+    expect(result.text).toContain('Delivery verified: planner reported working.');
     expect(runner.calls).toContain('herdr pane get planner-pane');
-    expect(runner.calls.some((call) => call.includes('wait agent-status'))).toBe(false);
+    expect(runner.calls).toContain('herdr wait agent-status planner-pane --status working --timeout 10000');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('working');
     expect(saved.roles.planner?.last_activity_at).toBeTruthy();
+  });
+
+  it('warns about unverified delivery while still marking the role working', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': ok(),
+      'herdr pane send-keys planner-pane enter': ok(),
+      'herdr wait agent-status planner-pane --status working --timeout 10000': { exitCode: 1, stdout: '', stderr: '' }
+    }));
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
+
+    expect(result.text).not.toContain('Delivery verified');
+    expect(result.text).toContain('Warning: pane planner-pane did not report working');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('working');
   });
 
   it('requires lead commands to run from the bound lead pane', async () => {
@@ -326,6 +405,65 @@ describe('messaging commands', () => {
     expect(saved.roles.reviewer?.worktree_path).toBe(reviewerPath);
     expect(saved.roles.reviewer?.herdr_pane_id).toBe('review-pane');
     expect(saved.roles.reviewer?.status).toBe('working');
+  });
+
+  it('interrupts a launched role pane and marks the stored status blocked', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-keys planner-pane escape': ok()
+    }));
+
+    const result = await interruptRole({ cwd: dir, run: state.run_id, role: 'planner', runner });
+
+    expect(result.text).toContain('Sent Escape to planner (planner-pane)');
+    expect(result.text).toContain('Re-prompt with pi-herd send planner');
+    expect(runner.calls).toContain('herdr pane send-keys planner-pane escape');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('blocked');
+    expect(saved.roles.planner?.last_activity_at).toBeTruthy();
+  });
+
+  it('refuses to interrupt a role without a launched pane', async () => {
+    const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({}));
+
+    await expect(interruptRole({ cwd: dir, run: state.run_id, role: 'reviewer', runner })).rejects.toThrow(/reviewer has no launched pane to interrupt/);
+  });
+
+  it('reports a missing pane on interrupt without sending Escape', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get planner-pane': { exitCode: 1, stdout: '', stderr: 'missing pane\n' }
+    }));
+
+    await expect(interruptRole({ cwd: dir, run: state.run_id, role: 'planner', runner })).rejects.toThrow(/planner pane planner-pane is missing; nothing to interrupt/);
+
+    expect(runner.calls.some((call) => call.includes('escape'))).toBe(false);
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('staged');
+  });
+
+  it('does not send Escape when interrupt pane validation is ambiguous', async () => {
+    const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane get planner-pane': { exitCode: null, stdout: '', stderr: '', timedOut: true }
+    }));
+
+    await expect(interruptRole({ cwd: dir, run: state.run_id, role: 'planner', runner })).rejects.toThrow(/Could not validate planner pane planner-pane/);
+    expect(runner.calls.some((call) => call.includes('escape'))).toBe(false);
+  });
+
+  it('keeps the stored role status when Escape delivery fails', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-keys planner-pane escape': { exitCode: 1, stdout: '', stderr: 'send-keys failed\n' }
+    }));
+
+    await expect(interruptRole({ cwd: dir, run: state.run_id, role: 'planner', runner })).rejects.toThrow(/Could not send Escape to planner pane planner-pane/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('staged');
+    expect(saved.roles.planner?.last_activity_at).toBeNull();
   });
 });
 

@@ -145,6 +145,28 @@ describe('cli main', () => {
     expect(parsed).toMatchObject({ role: 'planner', message: '-- --run literal --config text', run: 'latest' });
     expect(parsed.config).toBeUndefined();
   });
+
+  it('prints interrupt usage for --help without running the command', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    await expect(main(['interrupt', '--help'])).resolves.toBe(0);
+    expect(stdout.mock.calls.flat().join('')).toContain('Usage: pi-herd interrupt <role> [--run RUN] [--config PATH]');
+  });
+
+  it('rejects interrupt without exactly one role positional', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(main(['interrupt'])).resolves.toBe(1);
+    await expect(main(['interrupt', 'planner', 'tester'])).resolves.toBe(1);
+    expect(stderr.mock.calls.flat().join('')).toContain('Usage: pi-herd interrupt <role> [--run RUN] [--config PATH]');
+  });
+
+  it('rejects interrupt for unknown roles', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(main(['interrupt', 'bogus'])).resolves.toBe(1);
+    expect(stderr.mock.calls.flat().join('')).toContain("Unknown role 'bogus'");
+  });
 });
 
 function boardResult(text: string): BoardCommandResult {
