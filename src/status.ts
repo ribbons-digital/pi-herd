@@ -6,6 +6,7 @@ import { describeFailure, paneGet, waitAgentStatus } from './herdr.js';
 import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RoleStatus, type RunState } from './run-state.js';
 import { dirtyPaths } from './refresh.js';
+import { parseVerdictMarker, type VerdictMarker } from './verdict.js';
 
 export interface StatusCommandOptions {
   cwd: string;
@@ -49,6 +50,8 @@ export interface RoleSnapshot {
   worktree_status: RoleRecord['worktree_status'];
   artifacts: ArtifactStatus[];
   warnings: string[];
+  pass: number;
+  verdict: VerdictMarker | null;
 }
 
 export interface ArtifactStatus {
@@ -60,6 +63,7 @@ export interface ArtifactStatus {
   stale: boolean;
   bytes: number;
   preview?: string;
+  verdict?: VerdictMarker | null;
 }
 
 type RoleSignal = 'idle' | 'working' | 'blocked' | 'done' | 'stopped' | 'unknown' | 'not-launched';
@@ -161,8 +165,14 @@ export async function buildSnapshot(state: RunState, runner: CommandRunner, now:
     const artifacts = await artifactStatuses(state, record);
     const signalResult = probeSignals ? await readRoleSignal(runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
     const dirtyWarnings = await artifactOnlyWorktreeWarnings(runner, record);
-    const roleWarnings = [...signalResult.warnings, ...dirtyWarnings, ...artifacts.filter((artifact) => artifact.stale).map((artifact) => `${artifact.name} is stale for the current pass`)];
-    const evaluatedStatus = evaluateRole(record, signalResult.signal, artifacts);
+    const verdict = currentPassVerdict(record, artifacts);
+    const roleWarnings = [
+      ...signalResult.warnings,
+      ...dirtyWarnings,
+      ...artifacts.filter((artifact) => artifact.stale).map((artifact) => `${artifact.name} is stale for the current pass`),
+      ...verdictNotes(record, artifacts, verdict, signalResult.signal)
+    ];
+    const evaluatedStatus = evaluateRole(record, signalResult.signal, artifacts, verdict);
     roles.push({
       role: record.role,
       stored_status: record.status,
@@ -171,7 +181,9 @@ export async function buildSnapshot(state: RunState, runner: CommandRunner, now:
       pane_id: record.herdr_pane_id,
       worktree_status: record.worktree_status,
       artifacts,
-      warnings: roleWarnings
+      warnings: roleWarnings,
+      pass: record.pass ?? 0,
+      verdict
     });
     warnings.push(...roleWarnings.map((warning) => `${record.role}: ${warning}`));
   }
@@ -198,14 +210,48 @@ function snapshotWithPersistedState(snapshot: RunSnapshot, state: RunState): Run
   };
 }
 
-function evaluateRole(record: RoleRecord, signal: RoleSignal, artifacts: ArtifactStatus[]): RoleStatus {
+function evaluateRole(record: RoleRecord, signal: RoleSignal, artifacts: ArtifactStatus[], verdict: VerdictMarker | null): RoleStatus {
   if (record.status === 'done' || record.status === 'failed' || record.status === 'incomplete') return record.status;
   if (record.status === 'blocked' && signal === 'working') return 'working';
   if (signal === 'blocked') return 'blocked';
   if (signal === 'idle' || signal === 'stopped' || signal === 'done') {
+    if (verdict?.verdict === 'blocked') return 'blocked';
     return artifacts.every((artifact) => artifact.valid) ? 'done' : 'incomplete';
   }
   return record.status;
+}
+
+/** Find the explicit verdict marker matching the role's current prompt pass, or null when none applies. */
+function currentPassVerdict(record: RoleRecord, artifacts: ArtifactStatus[]): VerdictMarker | null {
+  const pass = record.pass ?? 0;
+  if (pass < 1) return null;
+  for (const artifact of artifacts) {
+    if (artifact.verdict && artifact.verdict.pass === pass) return artifact.verdict;
+  }
+  return null;
+}
+
+/** Warning notes about stale, missing, or blocked verdict markers; silent for legacy roles that never received the verdict protocol. */
+function verdictNotes(record: RoleRecord, artifacts: ArtifactStatus[], verdict: VerdictMarker | null, signal: RoleSignal): string[] {
+  const pass = record.pass ?? 0;
+  if (pass < 1) return [];
+  const notes: string[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.verdict && artifact.verdict.pass !== pass) {
+      notes.push(`${artifact.name} verdict marker is for pass ${artifact.verdict.pass}; current pass is ${pass}`);
+    }
+  }
+  const workStopped = signal === 'idle' || signal === 'stopped' || signal === 'done';
+  if (!verdict && workStopped && artifacts.length > 0 && artifacts.every((artifact) => artifact.valid)) {
+    notes.push(`no verdict marker for pass ${pass}; completion inferred from artifact freshness`);
+  }
+  if (verdict?.verdict === 'blocked') {
+    const detail = verdict.summary ? `: ${verdict.summary}` : '';
+    notes.push(workStopped
+      ? `reported blocked for pass ${pass}${detail}`
+      : `blocked marker present for pass ${pass} but the worker is still active${detail}`);
+  }
+  return notes;
 }
 
 async function readRoleSignal(runner: CommandRunner, state: RunState, record: RoleRecord): Promise<{ signal: RoleSignal; warnings: string[] }> {
@@ -241,7 +287,10 @@ async function artifactStatuses(state: RunState, record: RoleRecord): Promise<Ar
       status.present = true;
       status.bytes = raw.byteLength;
       const text = raw.toString('utf8');
-      status.stale = isArtifactStale(fileStat.mtimeMs, record.last_activity_at);
+      status.verdict = parseVerdictMarker(text);
+      const currentPass = record.pass ?? 0;
+      const explicitCurrent = currentPass >= 1 && status.verdict?.pass === currentPass;
+      status.stale = explicitCurrent ? false : isArtifactStale(fileStat.mtimeMs, record.last_activity_at);
       status.valid = text.trim().length > 0 && !status.stale;
       status.preview = truncateBytes(text, OUTPUT_BUDGETS.artifactPreviewBytes);
     } catch (error) {
@@ -307,7 +356,9 @@ function formatStatusText(snapshot: RunSnapshot): string {
   ];
   for (const role of snapshot.roles) {
     const artifactSummary = role.artifacts.map((artifact) => `${artifact.valid ? 'valid' : artifact.stale ? 'stale' : artifact.present ? 'invalid' : 'missing'} ${artifact.name}`).join(', ');
-    lines.push(`- ${role.role}: stored=${role.stored_status}; evaluated=${role.evaluated_status}; signal=${role.signal}; artifacts=${artifactSummary || 'none'}`);
+    const passSummary = role.pass >= 1 ? `; pass=${role.pass}` : '';
+    const verdictSummary = role.verdict ? `; verdict=${role.verdict.verdict}${role.verdict.summary ? ` (${role.verdict.summary})` : ''}` : '';
+    lines.push(`- ${role.role}: stored=${role.stored_status}; evaluated=${role.evaluated_status}; signal=${role.signal}${passSummary}${verdictSummary}; artifacts=${artifactSummary || 'none'}`);
     for (const warning of role.warnings) {
       lines.push(`  Warning: ${warning}`);
     }
@@ -334,7 +385,8 @@ function formatFinalSummary(snapshot: RunSnapshot): string {
     '## Role verdicts'
   ];
   for (const role of snapshot.roles) {
-    lines.push(`- ${role.role}: ${role.stored_status} (signal: ${role.signal})`);
+    const explicit = role.verdict ? `; explicit verdict: ${role.verdict.verdict} pass ${role.verdict.pass}${role.verdict.summary ? ` - ${role.verdict.summary}` : ''}` : '';
+    lines.push(`- ${role.role}: ${role.stored_status} (signal: ${role.signal}${explicit})`);
   }
   lines.push('', '## Artifacts');
   for (const role of snapshot.roles) {

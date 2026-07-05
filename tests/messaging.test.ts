@@ -27,7 +27,8 @@ class RecordingRunner implements CommandRunner {
     if (command === 'git' && args.join(' ') === 'rev-parse --show-toplevel' && options?.cwd?.includes(`${dir}${sep}.worktrees${sep}`)) {
       return { exitCode: 0, stdout: `${options.cwd}\n`, stderr: '' };
     }
-    const response = this.responses[key.replaceAll(dir, 'DIR')];
+    const normalized = key.replace(/\n\n\[pi-herd\] When pass \d+ is complete[\s\S]*$/, '').replaceAll(dir, 'DIR');
+    const response = this.responses[normalized];
     if (response) return response;
     if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
     if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2], agent_status: 'idle' }), stderr: '' };
@@ -145,6 +146,80 @@ describe('messaging commands', () => {
     expect(result.text).toContain('Warning: pane planner-pane did not report working');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('working');
+  });
+
+  it('appends the pass-1 verdict instruction to the delivered prompt and persists the pass', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
+
+    const sendCall = runner.calls.find((call) => call.startsWith('herdr pane send-text planner-pane'));
+    expect(sendCall).toContain('Continue planning\n\n[pi-herd] When pass 1 is complete');
+    expect(sendCall).toContain(`end ${join(state.canonical_run_dir, 'PLAN.md')} with the line: pi-herd-verdict: done pass=1`);
+    expect(result.text).toContain('Pass 1: verdict instruction appended to the prompt.');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
+  });
+
+  it('does not claim verdict instruction when the role has no required artifacts', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    state.roles.planner!.required_artifacts = [];
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner });
+
+    expect(result.text).toContain('Sent message to planner');
+    expect(result.text).toContain('Delivery verified: planner reported working.');
+    expect(result.text).not.toContain('verdict instruction appended');
+    expect(result.text).not.toContain('Pass 1:');
+    const sendCall = runner.calls.find((call) => call.startsWith('herdr pane send-text planner-pane'));
+    expect(sendCall).toBe('herdr pane send-text planner-pane Continue planning');
+    expect(sendCall).not.toContain('[pi-herd]');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
+  });
+
+  it('advances the verdict instruction to pass 2 on a second send', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Draft the plan': ok(),
+      'herdr pane send-text planner-pane Address review notes': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Draft the plan', runner });
+    const second = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Address review notes', runner });
+
+    const sendCalls = runner.calls.filter((call) => call.startsWith('herdr pane send-text planner-pane'));
+    expect(sendCalls).toHaveLength(2);
+    expect(sendCalls[0]).toContain('pi-herd-verdict: done pass=1');
+    expect(sendCalls[1]).toContain('Address review notes\n\n[pi-herd] When pass 2 is complete');
+    expect(sendCalls[1]).toContain('pi-herd-verdict: done pass=2');
+    expect(second.text).toContain('Pass 2: verdict instruction appended to the prompt.');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(2);
+  });
+
+  it('reserves a pass without marking working when pane delivery fails', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': { exitCode: 1, stdout: '', stderr: 'send failed\n' }
+    }));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner })).rejects.toThrow(/Could not send pane text/);
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.pass).toBe(1);
+    expect(saved.roles.planner?.status).toBe('staged');
+    expect(saved.roles.planner?.last_activity_at).toBeNull();
   });
 
   it('requires lead commands to run from the bound lead pane', async () => {

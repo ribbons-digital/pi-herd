@@ -4,6 +4,7 @@ import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
 import { agentStart, describeFailure, firstLine, HERDR_DELIVERY_ACK_TIMEOUT_MS, paneGet, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parseAgentStatus, parsePaneMetadata, verifyCurrentPane as verifyCurrentHerdrPane, waitAgentStatus, workspaceCreate } from './herdr.js';
+import { verdictInstruction } from './verdict.js';
 
 /** Options for creating a run and launching its initial visible Herdr/Pi sessions. */
 export interface StartOptions extends Omit<RunCreateOptions, 'withWorktrees'> {
@@ -79,6 +80,7 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
       state.roles.planner.status = 'working';
       state.roles.planner.launch_metadata = { ...state.roles.planner.launch_metadata, prompt_method: 'pane-send-text-enter' };
       state.roles.planner.last_activity_at = new Date().toISOString();
+      state.roles.planner.pass = 1;
       state.updated_at = new Date().toISOString();
       await writeJsonAtomic(statePath, state);
     }
@@ -297,7 +299,8 @@ async function createLeadWorkspace(runner: CommandRunner, state: RunState): Prom
 }
 
 async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: RunState): Promise<string | null> {
-  const prompt = `You are the planner for pi-herd run ${state.run_id}.\nGoal: ${state.goal}\nWrite your plan to ${join(state.canonical_run_dir, 'PLAN.md')}.\nDo not edit source files unless explicitly instructed by the lead.`;
+  const planPath = join(state.canonical_run_dir, 'PLAN.md');
+  const prompt = `You are the planner for pi-herd run ${state.run_id}.\nGoal: ${state.goal}\nWrite your plan to ${planPath}.\nDo not edit source files unless explicitly instructed by the lead.\n\n${verdictInstruction(planPath, 1)}`;
   try {
     const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;

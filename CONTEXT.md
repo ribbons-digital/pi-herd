@@ -87,9 +87,22 @@ _Avoid_: treating old completed, abandoned, or failed runs as candidates for imp
 
 **Worker completion**:
 The condition where a worker session is considered done for orchestration purposes.
-A worker is complete only when the harness activity signal says work has stopped and the required artifact is present, non-empty, and fresh relative to the worker's latest activity.
+A worker is complete only when the harness activity signal says work has stopped and the required artifact either carries an explicit current-pass verdict marker or is present, non-empty, and fresh relative to the worker's latest activity.
 `pi-herd status` evaluates this without writing state, while `pi-herd wait` and top-level `pi-herd collect` persist resolved role verdicts.
 _Avoid_: treating idle terminal state or a stale artifact alone as done
+
+**Verdict marker**:
+An explicit completion line a worker appends to its required artifact, in the form `pi-herd-verdict: <done|blocked> pass=<N> [summary]`.
+pi-herd appends a one-line instruction with the current pass number to every delivered prompt, and only a marker matching the role's current prompt pass counts.
+A current-pass done marker supersedes file-timestamp freshness, a blocked marker surfaces the role as blocked when work has stopped, and a live working signal always wins over any marker.
+For verdict-enabled roles, runs without markers fall back to the artifact-freshness heuristic with a warning instead of failing.
+Legacy roles without pass tracking use the same fallback silently.
+_Avoid_: making old runs incomplete for lacking markers, or letting a blocked marker resolve a role that is still working
+
+**Prompt pass**:
+The per-role counter of prompts pi-herd has delivered to a worker, persisted as the role record `pass` and starting at 0 before the first prompt.
+Each `pi-herd send` increments the pass and tells the worker which pass number its verdict marker must carry.
+_Avoid_: reusing a pass number across prompts or trusting a marker whose pass does not match the stored counter
 
 **Incomplete worker**:
 A worker session where the harness activity signal says work has stopped but a required artifact is missing, empty, or stale for the current pass.
@@ -276,3 +289,9 @@ It sends one Escape to the saved role pane, marks the stored status blocked, and
 Developer: How do I know a prompt actually reached a worker?
 Domain expert: pi-herd verifies delivery by watching for a proven non-working to working transition after submit.
 Ambiguous or missing transitions produce warnings so the lead can inspect the pane before re-sending.
+Developer: How does a worker prove a pass is finished?
+Domain expert: It ends its required artifact with `pi-herd-verdict: done pass=<N> <summary>`, using the pass number from the `[pi-herd]` line appended to its prompt.
+A current-pass done marker supersedes file-timestamp freshness, and blocked markers surface the role as blocked once work stops.
+Developer: What happens to runs whose workers never write verdict markers?
+Domain expert: They still complete through the artifact-freshness fallback.
+pi-herd only adds a warning that completion was inferred from timestamps, and legacy roles that never received the protocol get no warning at all.
