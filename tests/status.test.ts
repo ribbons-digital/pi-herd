@@ -336,6 +336,8 @@ describe('status, wait, and collect commands', () => {
     const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW });
 
     expect(result.text).toContain('planner: stored=working; evaluated=working; signal=working');
+    expect(result.text).toContain('blocked marker present for pass 1 but the worker is still active: waiting on credentials');
+    expect(result.text).not.toContain('reported blocked for pass 1');
   });
 
   it('ignores a verdict marker for a different pass and keeps the freshness heuristic', async () => {

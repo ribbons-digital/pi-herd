@@ -246,7 +246,10 @@ function verdictNotes(record: RoleRecord, artifacts: ArtifactStatus[], verdict: 
     notes.push(`no verdict marker for pass ${pass}; completion inferred from artifact freshness`);
   }
   if (verdict?.verdict === 'blocked') {
-    notes.push(`reported blocked for pass ${pass}${verdict.summary ? `: ${verdict.summary}` : ''}`);
+    const detail = verdict.summary ? `: ${verdict.summary}` : '';
+    notes.push(workStopped
+      ? `reported blocked for pass ${pass}${detail}`
+      : `blocked marker present for pass ${pass} but the worker is still active${detail}`);
   }
   return notes;
 }
