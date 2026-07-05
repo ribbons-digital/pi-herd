@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runHerdrPluginPane } from '../src/herdr-plugin-pane.js';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
+import { createRun, writeJsonAtomic } from '../src/run-state.js';
 
 class RecordingRunner implements CommandRunner {
   calls: string[] = [];
@@ -8,10 +12,12 @@ class RecordingRunner implements CommandRunner {
   async run(command: string, args: string[]): Promise<CommandResult> {
     const key = [command, ...args].join(' ');
     this.calls.push(key);
-    const response = this.responses[key];
+    const normalized = key.replace(/\n\n\[pi-herd\] When pass \d+ is complete[\s\S]*$/, '').replaceAll(dir, 'DIR');
+    const response = this.responses[normalized] ?? this.responses[key];
     if (response) return response;
-    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2] }), stderr: '' };
-    if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 1, stdout: '', stderr: 'timeout\n' };
+    if (command === 'git' && args[0] === 'show-ref') return { exitCode: 1, stdout: '', stderr: '' };
+    if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') return { exitCode: 0, stdout: JSON.stringify({ pane_id: args[2], agent_status: 'idle' }), stderr: '' };
+    if (command === 'herdr' && args[0] === 'wait' && args[1] === 'agent-status') return { exitCode: 0, stdout: '', stderr: '' };
     throw new Error(`Unexpected command: ${key}`);
   }
 }
@@ -24,9 +30,17 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-afterEach(() => {
+let dir = '';
+const NOW = new Date('2026-07-01T12:00:00.000Z');
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'pi-herd-pane-'));
+});
+
+afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  await rm(dir, { recursive: true, force: true });
 });
 
 describe('Herdr plugin pane entrypoint', () => {
@@ -278,4 +292,182 @@ describe('Herdr plugin pane entrypoint', () => {
     expect(exitCode).toBe(1);
     expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Unsupported plugin pane argument: --json'));
   });
+
+  it('runs the start wizard with interactive answers', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn()
+        .mockResolvedValueOnce('Launch sessions')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('no'),
+      close: vi.fn()
+    };
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson({ pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' }),
+      [worktreeCommand('launch-sessions')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd/2026-07-01T12-00-00-launch-sessions/implementer'), branch: 'pi-herd/2026-07-01T12-00-00-launch-sessions/impl' }),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-planner --session-id 2026-07-01T12-00-00-launch-sessions-planner': okJson({ pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' }),
+      'herdr pane send-text planner-pane You are the planner for pi-herd run 2026-07-01T12-00-00-launch-sessions.\nGoal: Launch sessions\nWrite your plan to DIR/.pi-herd/runs/2026-07-01T12-00-00-launch-sessions/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.': ok(),
+      'herdr pane send-keys planner-pane enter': ok(),
+      'herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --cwd DIR/.worktrees/pi-herd/2026-07-01T12-00-00-launch-sessions/implementer --workspace lead-ws --split down --no-focus -- pi --name pi-herd-2026-07-01T12-00-00-launch-sessions-implementer --session-id 2026-07-01T12-00-00-launch-sessions-implementer': okJson({ pane_id: 'impl-pane', workspace_id: 'lead-ws', tab_id: 'impl-tab' })
+    }));
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['start-wizard'],
+      env: {
+        HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dir }),
+        HERDR_ENV: '1',
+        HERDR_PANE_ID: 'lead-pane',
+        HERDR_WORKSPACE_ID: 'lead-ws',
+        HERDR_TAB_ID: 'lead-tab',
+        PI_CODING_AGENT: 'true'
+      },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(0);
+    expect(readline.close).toHaveBeenCalled();
+    expect(runner.calls).toContain('herdr pane current --current');
+    expect(runner.calls.some((call) => call.startsWith('herdr agent start pi-herd-2026-07-01T12-00-00-launch-sessions-planner'))).toBe(true);
+    expect(runner.calls.some((call) => call.startsWith('herdr pane send-text planner-pane'))).toBe(true);
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Started run 2026-07-01T12-00-00-launch-sessions'));
+  });
+
+  it('rejects an empty start wizard goal', async () => {
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn().mockResolvedValueOnce('   '),
+      close: vi.fn()
+    };
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['start-wizard'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dir }) },
+      pluginRoot: '/plugin',
+      runner: new RecordingRunner({}),
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Start goal is required.'));
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('runs the send message pane with interactive answers', async () => {
+    await createStartedRun({ plannerPane: 'planner-pane' });
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn()
+        .mockResolvedValueOnce('planner')
+        .mockResolvedValueOnce('Continue planning')
+        .mockResolvedValueOnce(''),
+      close: vi.fn()
+    };
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane send-text planner-pane Continue planning': ok(),
+      'herdr pane send-keys planner-pane enter': ok()
+    }));
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['send-message'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dir }) },
+      pluginRoot: '/plugin',
+      runner,
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runner.calls).toContain('herdr pane get planner-pane');
+    expect(runner.calls.some((call) => call.startsWith('herdr pane send-text planner-pane Continue planning'))).toBe(true);
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Sent message to planner (planner-pane).'));
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('rejects an empty send message', async () => {
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn()
+        .mockResolvedValueOnce('planner')
+        .mockResolvedValueOnce('   '),
+      close: vi.fn()
+    };
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['send-message'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dir }) },
+      pluginRoot: '/plugin',
+      runner: new RecordingRunner({}),
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Send message is required.'));
+    expect(readline.close).toHaveBeenCalled();
+  });
+
+  it('rejects an invalid send role', async () => {
+    const stdout = { write: vi.fn() };
+    const readline = {
+      question: vi.fn().mockResolvedValueOnce('lead'),
+      close: vi.fn()
+    };
+
+    const exitCode = await runHerdrPluginPane({
+      argv: ['send-message'],
+      env: { HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dir }) },
+      pluginRoot: '/plugin',
+      runner: new RecordingRunner({}),
+      stdout,
+      createReadline: () => readline as never
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining("Unknown role 'lead'"));
+    expect(readline.close).toHaveBeenCalled();
+  });
 });
+
+async function createStartedRun(options: { plannerPane: string }) {
+  const result = await createRun({ cwd: dir, goal: 'Send review', now: NOW, runner: new RecordingRunner(baseResponses({})) });
+  result.state.lead_binding.herdr_workspace_id = 'lead-ws';
+  result.state.lead_binding.herdr_pane_id = 'lead-pane';
+  result.state.roles.planner!.status = 'staged';
+  result.state.roles.planner!.herdr_workspace_id = 'lead-ws';
+  result.state.roles.planner!.herdr_pane_id = options.plannerPane;
+  await writeJsonAtomic(result.statePath, result.state);
+  return result;
+}
+
+function baseResponses(overrides: Record<string, CommandResult>): Record<string, CommandResult> {
+  return {
+    'git rev-parse --show-toplevel': { exitCode: 0, stdout: `${dir}\n`, stderr: '' },
+    'git symbolic-ref --short HEAD': { exitCode: 0, stdout: 'main\n', stderr: '' },
+    'git status --porcelain --untracked-files=all -- . :!.pi-herd/runs :!.worktrees': ok(),
+    ...normalize(overrides)
+  };
+}
+
+function normalize(responses: Record<string, CommandResult>): Record<string, CommandResult> {
+  const normalized: Record<string, CommandResult> = {};
+  for (const [key, value] of Object.entries(responses)) normalized[key.replaceAll(dir, 'DIR')] = value;
+  return normalized;
+}
+
+function worktreeCommand(slug: string): string {
+  const runId = `2026-07-01T12-00-00-${slug}`;
+  return `herdr worktree create --cwd DIR --branch pi-herd/${runId}/impl --base main --path DIR/.worktrees/pi-herd/${runId}/implementer --label pi-herd ${slug} implementer --no-focus --json`;
+}
+
+function ok(): CommandResult {
+  return { exitCode: 0, stdout: '', stderr: '' };
+}
+
+function okJson(value: unknown): CommandResult {
+  return { exitCode: 0, stdout: JSON.stringify(value), stderr: '' };
+}

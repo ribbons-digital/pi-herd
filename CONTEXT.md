@@ -27,9 +27,11 @@ The Herdr-discovered `start` action prints usage because Herdr 0.7.1 does not pa
 _Avoid_: assuming plugin invocation has Pi lead binding or arbitrary action arguments
 
 **Herdr plugin pane**:
-A Herdr-managed terminal pane declared by `herdr-plugin.toml` for read-first pi-herd visibility.
-The first pane is `run-board`, which runs `pi-herd board` through the plugin pane wrapper, resolves the target project from Herdr plugin context or pane metadata, stays open with 10-second auto-refresh, supports Enter for immediate refresh, and quits when the user types `q` then Enter.
+A Herdr-managed terminal pane declared by `herdr-plugin.toml` for pi-herd visibility or interactive argument entry.
+The plugin panes are `run-board`, `start-wizard`, and `send-message`.
+`run-board` runs `pi-herd board` through the plugin pane wrapper, resolves the target project from Herdr plugin context or pane metadata, stays open with 10-second auto-refresh, supports Enter for immediate refresh, and quits when the user types `q` then Enter.
 The board is read-only: it delegates to `pi-herd status` semantics, shows the run, lead, roles, artifacts, warnings, durable paths, and suggested terminal commands, prints guidance instead of failing when no run can be selected implicitly, caps long output at 180 lines, and does not own orchestration state.
+`start-wizard` and `send-message` are the interactive path around Herdr 0.7.1 action argument limits for entering a start goal, roles, planner worktree choice, role target, message text, and optional run selector.
 _Avoid_: treating the board as a native/web UI, adding destructive controls, writing board artifacts, or making it the source of truth
 
 **Pi extension command**:
@@ -207,7 +209,7 @@ Developer: Should the repo and CLI both be called pi-herd?
 Domain expert: Yes.
 The repo is `ribbons-digital/pi-herd`, the CLI is `pi-herd`, and the Herdr plugin id is `ribbons-digital.pi-herd`.
 Developer: What does the Herdr plugin expose first?
-Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions, plus a `run-board` pane.
+Domain expert: It exposes `doctor`, `start`, `status`, `collect`, and report-only `cleanup` actions, plus `run-board`, `start-wizard`, and `send-message` panes.
 Repository-targeting actions and panes resolve the target project from Herdr plugin context or pane metadata, and they fail closed rather than guessing when no project directory is available.
 Because Herdr 0.7.1 plugin invocation does not pass arbitrary action arguments, the Herdr-discovered `start` action prints usage instead of inventing a goal.
 The `run-board` pane renders the read-only `pi-herd board`, stays open with 10-second auto-refresh, supports Enter for immediate refresh, quits when the user types `q` then Enter, prints no-active or multiple-active guidance instead of failing when no run can be selected implicitly, and does not write orchestration state.

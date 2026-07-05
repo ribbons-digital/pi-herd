@@ -57,7 +57,9 @@ describe('Herdr plugin manifest', () => {
     });
     expect(manifest.actions.find((action) => action.id === 'collect')?.title).toBe('pi-herd collect read-only');
     expect(manifest.panes).toEqual([
-      { id: 'run-board', title: 'pi-herd run board', command: ['node', 'dist/herdr-plugin-pane.js', 'run-board'] }
+      { id: 'run-board', title: 'pi-herd run board', command: ['node', 'dist/herdr-plugin-pane.js', 'run-board'] },
+      { id: 'start-wizard', title: 'pi-herd start wizard', command: ['node', 'dist/herdr-plugin-pane.js', 'start-wizard'] },
+      { id: 'send-message', title: 'pi-herd send message', command: ['node', 'dist/herdr-plugin-pane.js', 'send-message'] }
     ]);
   });
 });

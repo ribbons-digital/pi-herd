@@ -4,8 +4,11 @@ import { pathToFileURL } from 'node:url';
 import { boardRun } from './board.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { applyHerdrBinPath, resolvePluginTargetCwd, type PluginRuntimeEnv } from './herdr-plugin-action.js';
+import { sendMessage } from './messaging.js';
+import { parseRole } from './run-state.js';
+import { formatStartText, startRun } from './start.js';
 
-export const PLUGIN_PANES = ['run-board'] as const;
+export const PLUGIN_PANES = ['run-board', 'start-wizard', 'send-message'] as const;
 export type PluginPane = typeof PLUGIN_PANES[number];
 
 export interface RunPluginPaneOptions {
@@ -33,10 +36,8 @@ export async function runHerdrPluginPane(options: RunPluginPaneOptions): Promise
   }
 
   applyHerdrBinPath(env);
-  if (pane !== 'run-board') {
-    output.write(`Unsupported pi-herd plugin pane: ${pane}\n`);
-    return 1;
-  }
+  if (pane === 'start-wizard') return runStartWizardSafely(options, output);
+  if (pane === 'send-message') return runSendMessageSafely(options, output);
   const ok = await renderBoardSafely(options, output);
   if (options.holdOpen === false) return ok ? 0 : 1;
   const autoRefreshIntervalMs = options.autoRefreshIntervalMs ?? 10_000;
@@ -98,13 +99,79 @@ export function parsePluginPane(value: string | undefined): PluginPane | null {
 }
 
 async function renderBoardOnce(options: RunPluginPaneOptions, output: Pick<NodeJS.WriteStream, 'write'>): Promise<void> {
+  const { runner, targetCwd } = await resolvePaneRuntime(options);
+  const run = parsePaneArgs(options.argv.slice(1));
+  const result = await boardRun({ cwd: targetCwd, run, runner });
+  output.write(result.text);
+}
+
+async function runStartWizardSafely(options: RunPluginPaneOptions, output: Pick<NodeJS.WriteStream, 'write'>): Promise<number> {
+  const readline = options.createReadline?.() ?? createInterface({ input: defaultStdin, output: defaultStdout });
+  try {
+    const { env, runner, targetCwd } = await resolvePaneRuntime(options);
+    rejectPaneArgs(options.argv.slice(1), 'start-wizard');
+    const goal = (await readline.question('Goal: ')).trim();
+    if (!goal) throw new Error('Start goal is required.');
+    const roles = parseRolesAnswer(await readline.question('Roles (comma-separated, blank for defaults): '));
+    const plannerWorktree = parseYesNoAnswer(await readline.question('Planner worktree? (y/N): '), 'Planner worktree');
+    const result = await startRun({ cwd: targetCwd, goal, roles, plannerWorktree, runner, env });
+    output.write(formatStartText(result));
+    return 0;
+  } catch (error) {
+    output.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  } finally {
+    readline.close();
+  }
+}
+
+async function runSendMessageSafely(options: RunPluginPaneOptions, output: Pick<NodeJS.WriteStream, 'write'>): Promise<number> {
+  const readline = options.createReadline?.() ?? createInterface({ input: defaultStdin, output: defaultStdout });
+  try {
+    const { env, runner, targetCwd } = await resolvePaneRuntime(options);
+    rejectPaneArgs(options.argv.slice(1), 'send-message');
+    const roleAnswer = (await readline.question('Role: ')).trim();
+    if (!roleAnswer) throw new Error('Send role is required.');
+    const role = parseRole(roleAnswer);
+    const message = (await readline.question('Message: ')).trim();
+    if (!message) throw new Error('Send message is required.');
+    const runAnswer = (await readline.question('Run selector (blank for latest active): ')).trim();
+    const result = await sendMessage({ cwd: targetCwd, role, message, run: runAnswer || undefined, runner, env });
+    output.write(result.text);
+    return 0;
+  } catch (error) {
+    output.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  } finally {
+    readline.close();
+  }
+}
+
+async function resolvePaneRuntime(options: RunPluginPaneOptions): Promise<{ env: PluginRuntimeEnv; runner: CommandRunner; targetCwd: string }> {
   const env = options.env ?? process.env;
   const pluginRoot = options.pluginRoot ?? env.HERDR_PLUGIN_ROOT ?? process.cwd();
   const runner = options.runner ?? nodeCommandRunner;
   const targetCwd = await resolvePluginTargetCwd({ env, pluginRoot, runner });
-  const run = parsePaneArgs(options.argv.slice(1));
-  const result = await boardRun({ cwd: targetCwd, run, runner });
-  output.write(result.text);
+  return { env, runner, targetCwd };
+}
+
+function rejectPaneArgs(args: string[], pane: Exclude<PluginPane, 'run-board'>): void {
+  if (args.length) throw new Error(`Unsupported plugin pane argument for ${pane}: ${args[0]}.`);
+}
+
+function parseRolesAnswer(answer: string) {
+  const trimmed = answer.trim();
+  if (!trimmed) return undefined;
+  const values = trimmed.split(',').map((value) => value.trim());
+  if (values.some((value) => !value)) throw new Error('Roles must be comma-separated role names.');
+  return values.map(parseRole);
+}
+
+function parseYesNoAnswer(answer: string, label: string): boolean {
+  const normalized = answer.trim().toLowerCase();
+  if (!normalized || normalized === 'n' || normalized === 'no') return false;
+  if (normalized === 'y' || normalized === 'yes') return true;
+  throw new Error(`${label} must be yes or no.`);
 }
 
 function parsePaneArgs(args: string[]): string | undefined {
