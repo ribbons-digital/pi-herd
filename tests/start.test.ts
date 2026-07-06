@@ -89,7 +89,7 @@ describe('start orchestration', () => {
         return { workspaceId: 'lead-ws', tabId: `${role}-tab`, paneId: `${role}-pane`, sessionRef: `${RUN_ID}-${role}`, launchMethod: 'herdr-agent-start', metadata: { launch_method: 'herdr-agent-start', expected_writes: role === 'planner' ? 'artifacts' : 'worktree' } };
       },
       sendToPane: async (_runner, cwd, paneId, message) => {
-        harnessCalls.push(`send:${cwd}:${paneId}:${message.split('\\n')[0]}`);
+        harnessCalls.push(`send:${cwd}:${paneId}:${message.split('\n')[0]}`);
         return { verification: 'verified', note: null };
       },
       waitForRoleReady: async (_runner, cwd, paneId, role) => {
