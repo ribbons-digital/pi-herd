@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { OUTPUT_BUDGETS } from './defaults.js';
 import { describeFailure, paneClose, paneGet, worktreeRemove } from './herdr.js';
-import { backupRefFor, formatBoundedLines, git, implementationDiff, assertExpectedRoleWorktree } from './refresh.js';
+import { backupRefFor, formatBoundedLines, git, sourceDiffs, assertExpectedRoleWorktree, type SourceDiff } from './refresh.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 import { buildSnapshot, type RunSnapshot } from './status.js';
 import { assertNoSymlinkPathComponents, roleWorktreePath } from './worktree.js';
@@ -40,9 +40,9 @@ export async function mergePlanRun(options: MergePlanOptions): Promise<Lifecycle
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner, includeAllForExplicitRun: true });
   const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true);
-  const diff = await implementationDiff(runner, resolved.state);
+  const diffs = await sourceDiffs(runner, resolved.state);
   const mergeDecisionPath = `${resolved.state.canonical_run_dir}/MERGE_DECISION.md`;
-  const content = await formatMergeDecision(resolved.state, snapshot, diff, options.now ?? new Date());
+  const content = await formatMergeDecision(resolved.state, snapshot, diffs, options.now ?? new Date());
   await writeText(mergeDecisionPath, content);
   const result = {
     state: resolved.state,
@@ -52,7 +52,7 @@ export async function mergePlanRun(options: MergePlanOptions): Promise<Lifecycle
     exitCode: 0
   };
   if (options.json) {
-    result.text = `${JSON.stringify({ run_id: resolved.state.run_id, path: mergeDecisionPath, snapshot }, null, 2)}\n`;
+    result.text = `${JSON.stringify({ run_id: resolved.state.run_id, path: mergeDecisionPath, sources: diffs, snapshot }, null, 2)}\n`;
   }
   return result;
 }
@@ -200,12 +200,18 @@ async function removeRoleWorktree(state: RunState, record: RoleRecord, runner: C
 async function formatMergeDecision(
   state: RunState,
   snapshot: RunSnapshot,
-  diff: Awaited<ReturnType<typeof implementationDiff>>,
+  diffs: SourceDiff[],
   now: Date
 ): Promise<string> {
   const reviewerExcerpt = await artifactExcerpt(state, 'REVIEW.md');
   const testerExcerpt = await artifactExcerpt(state, 'TEST_REPORT.md');
   const finalSummaryExists = await exists(`${state.canonical_run_dir}/FINAL_SUMMARY.md`);
+  const sourceLines = diffs.length === 1
+    ? singleSourceLines(state, diffs[0])
+    : multiSourceLines(state, diffs);
+  const mergeStep = diffs.length === 1
+    ? `2. If approved, merge ${diffs[0].branch} into the intended target branch manually.`
+    : `2. If approved, merge the listed source branches into the intended target branch manually: ${diffs.map((diff) => diff.branch).join(', ')}.`;
   const lines = [
     '# Merge Decision',
     '',
@@ -215,20 +221,7 @@ async function formatMergeDecision(
     `Goal: ${state.goal}`,
     `Status: ${state.status}`,
     '',
-    '## Source',
-    '',
-    `Base ref: ${state.base_ref}`,
-    `Implementation branch: ${diff.implementationBranch}`,
-    `Diff range: ${diff.range}`,
-    `Full diff command: git diff ${diff.range}`,
-    '',
-    '## Diff stat',
-    '',
-    ...(boundedMarkdownLines(diff.statLines.length ? diff.statLines : ['No changes.'])),
-    '',
-    '## Changed files',
-    '',
-    ...(boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.'])),
+    ...sourceLines,
     '',
     '## Role context',
     '',
@@ -253,12 +246,58 @@ async function formatMergeDecision(
     '## Manual next steps',
     '',
     '1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the implementation diff.',
-    `2. If approved, merge ${diff.implementationBranch} into the intended target branch manually.`,
+    mergeStep,
     '3. Run project validation in the target branch after merge.',
     '4. Run `pi-herd cleanup --complete` after the run is accepted, or `pi-herd cleanup --abandon` if it is not.',
     ''
   ];
   return `${lines.join('\n')}\n`;
+}
+
+function singleSourceLines(state: RunState, diff: SourceDiff): string[] {
+  return [
+    '## Source',
+    '',
+    `Base ref: ${state.base_ref}`,
+    `Implementation branch: ${diff.branch}`,
+    `Diff range: ${diff.range}`,
+    `Full diff command: git diff ${diff.range}`,
+    '',
+    '## Diff stat',
+    '',
+    ...(boundedMarkdownLines(diff.statLines.length ? diff.statLines : ['No changes.'])),
+    '',
+    '## Changed files',
+    '',
+    ...(boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.']))
+  ];
+}
+
+function multiSourceLines(state: RunState, diffs: SourceDiff[]): string[] {
+  const lines = [
+    '## Sources',
+    '',
+    `Base ref: ${state.base_ref}`
+  ];
+  for (const diff of diffs) {
+    lines.push(
+      '',
+      `### ${diff.role}`,
+      '',
+      `Branch: ${diff.branch}`,
+      `Diff range: ${diff.range}`,
+      `Full diff command: git diff ${diff.range}`,
+      '',
+      '#### Diff stat',
+      '',
+      ...(boundedMarkdownLines(diff.statLines.length ? diff.statLines : ['No changes.'])),
+      '',
+      '#### Changed files',
+      '',
+      ...(boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.']))
+    );
+  }
+  return lines;
 }
 
 async function cleanupDirtyPaths(runner: CommandRunner, worktreePath: string): Promise<string[]> {

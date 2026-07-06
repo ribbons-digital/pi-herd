@@ -145,8 +145,9 @@ _Avoid_: hardcoding a global pi-herd model catalog
 **Role registry**:
 The `roles` config block defines the default selected role order and per-role display name, expected write mode, and required artifacts.
 Existing configs without `roles` use the built-in planner, implementer, reviewer, tester registry for compatibility.
-Role names are safe slug-like identifiers and can be custom, but current implementation branch, diff, and refresh semantics remain tied to the built-in `implementer`, `reviewer`, and `tester` names until the parallel source-role fan-out slice.
-_Avoid_: treating custom roles as new implementation source branches or changing refresh to target non-reviewer/tester roles
+Custom roles can be artifact-only, no-write, or additional worktree-writing source roles.
+Runs with any worktree-writing role must include the built-in `implementer` role as the primary source branch so reviewer and tester refresh semantics remain stable.
+_Avoid_: treating reviewer or tester branches as merge targets, or selecting only custom worktree roles without the primary implementer
 
 **Role model selection**:
 The per-role preference for which model or model pattern the harness should use when launching that role's session.
@@ -195,10 +196,11 @@ An explicit lead action that sends one Escape key to a saved role pane with `pi-
 Interrupt validates the pane first, marks the stored role status blocked until the role is re-prompted or reports progress, never closes panes, and never targets the lead session.
 _Avoid_: treating interrupt as cleanup or using it to infer worker completion
 
-**Implementation branch**:
-The role-owned branch where source changes for a run are made and reviewed.
-By default this is the only branch intended to become mergeable.
-_Avoid_: treating reviewer or tester branches as merge targets
+**Implementation source branches**:
+Role-owned branches where source changes for a run are made and reviewed.
+The built-in `implementer` branch is the required primary source branch for any run with source-writing roles.
+Additional worktree-writing roles may have their own source branches, and `pi-herd merge-plan` reports all source branches without merging them.
+_Avoid_: treating reviewer or tester branches as merge targets, or treating merge planning as merge execution
 
 **Role worktree view**:
 An isolated worktree assigned to a role for inspecting, editing, or testing the run's source state.
@@ -271,9 +273,9 @@ Ambiguous validation errors stop without clearing saved state.
 Developer: What do the top-level status, wait, and collect commands do now?
 Domain expert: `pi-herd status` evaluates roles without writing state, `pi-herd wait` polls working or blocked roles and persists resolved role verdicts, and `pi-herd collect` persists verdicts, saves bounded pane logs, and writes `FINAL_SUMMARY.md` without closing the run lifecycle.
 Developer: How do repeated reviewer and tester passes get fresh source?
-Domain expert: The lead can run `pi-herd refresh reviewer` or `pi-herd refresh tester` to refresh the artifact-only role worktree from the implementation branch, while stale artifacts stop old `REVIEW.md` or `TEST_REPORT.md` files from counting as completion.
+Domain expert: The lead can run `pi-herd refresh reviewer` or `pi-herd refresh tester` to refresh the artifact-only role worktree from the primary implementation branch, while stale artifacts stop old `REVIEW.md` or `TEST_REPORT.md` files from counting as completion.
 Developer: What does `pi-herd merge-plan` do?
-Domain expert: It writes `MERGE_DECISION.md` with the implementation diff range, role verdict context, artifact excerpts, warnings, and manual merge next steps.
+Domain expert: It writes `MERGE_DECISION.md` with primary and additional source branch diff ranges, role verdict context, artifact excerpts, warnings, and manual merge next steps.
 It does not merge or change run state.
 Developer: Is `pi-herd cleanup` destructive by default?
 Domain expert: No.

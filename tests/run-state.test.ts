@@ -131,6 +131,31 @@ roles:
     await expect(createRun({ cwd: dir, goal: 'Unknown role', roles: ['audit_bot'] })).rejects.toThrow(/Role audit_bot is not defined in config roles\.definitions/);
   });
 
+  it('rejects selected worktree-writing roles when implementer is absent', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRoles(`
+roles:
+  default:
+    - implementer
+    - source_assistant
+  definitions:
+    implementer:
+      display_name: Implementer
+      expected_writes: worktree
+      required_artifacts:
+        - IMPLEMENTATION_NOTES.md
+    source_assistant:
+      display_name: Source Assistant
+      expected_writes: worktree
+      required_artifacts:
+        - SOURCE_NOTES.md
+`), 'utf8');
+
+    await expect(createRun({ cwd: dir, goal: 'Unowned source role', roles: ['source_assistant'] })).rejects.toThrow(
+      /Runs with worktree-writing roles must include the built-in implementer role as the primary source role/
+    );
+  });
+
   it('uses deterministic slug suffixes when a run id would collide', async () => {
     const now = new Date('2026-07-01T12:00:00.000Z');
     const first = await createRun({ cwd: dir, goal: 'Auth refresh', now });

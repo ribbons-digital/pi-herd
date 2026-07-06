@@ -122,6 +122,37 @@ describe('start orchestration', () => {
     expect(saved.roles.planner?.launch_metadata?.prompt_method).toBe('pane-send-text-enter');
   });
 
+  it('launches custom source roles from their own materialized worktree paths', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), SOURCE_ROLE_CONFIG, 'utf8');
+    const runId = '2026-07-01T12-00-00-launch-source-fanout';
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
+      [worktreeCommand('launch-source-fanout')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', runId, 'implementer'), branch: `pi-herd/${runId}/impl` }),
+      [`herdr worktree create --cwd DIR --branch pi-herd/${runId}/source_assistant --base main --path DIR/.worktrees/pi-herd/${runId}/source_assistant --label pi-herd launch-source-fanout source_assistant --no-focus --json`]: okJson({ workspace_id: 'source-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', runId, 'source_assistant'), branch: `pi-herd/${runId}/source_assistant` }),
+      [`herdr agent start pi-herd-${runId}-planner --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${runId}-planner --session-id ${runId}-planner`]: okJson({ pane_id: 'planner-pane', workspace_id: 'lead-ws', tab_id: 'planner-tab' }),
+      [`herdr pane send-text planner-pane You are the planner for pi-herd run ${runId}.\nGoal: Launch source fanout\nWrite your plan to DIR/.pi-herd/runs/${runId}/PLAN.md.\nDo not edit source files unless explicitly instructed by the lead.`]: { exitCode: 0, stdout: '', stderr: '' },
+      'herdr pane send-keys planner-pane enter': { exitCode: 0, stdout: '', stderr: '' },
+      [`herdr agent start pi-herd-${runId}-implementer --cwd DIR/.worktrees/pi-herd/${runId}/implementer --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${runId}-implementer --session-id ${runId}-implementer`]: okJson({ pane_id: 'impl-pane', workspace_id: 'lead-ws', tab_id: 'impl-tab' }),
+      [`herdr agent start pi-herd-${runId}-source_assistant --cwd DIR/.worktrees/pi-herd/${runId}/source_assistant --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${runId}-source_assistant --session-id ${runId}-source_assistant`]: okJson({ pane_id: 'source-pane', workspace_id: 'lead-ws', tab_id: 'source-tab' })
+    }));
+
+    const result = await startRun({
+      cwd: dir,
+      goal: 'Launch source fanout',
+      now: NOW,
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', HERDR_WORKSPACE_ID: 'lead-ws', HERDR_TAB_ID: 'lead-tab', PI_CODING_AGENT: 'true' }
+    });
+
+    expect(result.launched.map((launch) => launch.role)).toEqual(['lead', 'planner', 'implementer', 'source_assistant']);
+    expect(result.state.roles.implementer?.status).toBe('staged');
+    expect(result.state.roles.source_assistant?.status).toBe('staged');
+    expect(result.state.roles.source_assistant?.herdr_pane_id).toBe('source-pane');
+    expect(result.state.roles.source_assistant?.worktree_path).toBe(join(dir, '.worktrees/pi-herd', runId, 'source_assistant'));
+    expect(runner.calls).toContain(`herdr agent start pi-herd-${runId}-source_assistant --cwd ${join(dir, '.worktrees/pi-herd', runId, 'source_assistant')} --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${runId}-source_assistant --session-id ${runId}-source_assistant`);
+  });
+
   it('appends the pass-1 verdict instruction to the planner kickoff payload and persists the pass', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
@@ -422,6 +453,8 @@ function minimalState(): RunState {
     roles: {}
   };
 }
+
+const SOURCE_ROLE_CONFIG = `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: .pi-herd/runs\n  prompts_dir: .pi-herd/prompts\nroles:\n  default:\n    - planner\n    - implementer\n    - source_assistant\n  definitions:\n    planner:\n      display_name: Planner\n      expected_writes: artifacts\n      required_artifacts:\n        - PLAN.md\n    implementer:\n      display_name: Implementer\n      expected_writes: worktree\n      required_artifacts:\n        - IMPLEMENTATION_NOTES.md\n    source_assistant:\n      display_name: Source Assistant\n      expected_writes: worktree\n      required_artifacts:\n        - SOURCE_NOTES.md\n`;
 
 function baseResponses(overrides: Record<string, CommandResult>): Record<string, CommandResult> {
   return {

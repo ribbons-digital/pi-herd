@@ -68,6 +68,34 @@ describe('merge-plan and cleanup commands', () => {
     expect(saved.state_revision).toBeUndefined();
   });
 
+  it('writes multi-source merge guidance with every source branch', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), SOURCE_ROLE_CONFIG, 'utf8');
+    const runId = '2026-07-01T12-00-00-multi-source-merge';
+    const runner = new RecordingRunner({
+      [`git diff --stat main...pi-herd/${runId}/impl`]: okText(' impl.ts | 1 +\n'),
+      [`git diff --name-status main...pi-herd/${runId}/impl`]: okText('M\timpl.ts\n'),
+      [`git diff --stat main...pi-herd/${runId}/source_assistant`]: okText(' source.ts | 2 ++\n'),
+      [`git diff --name-status main...pi-herd/${runId}/source_assistant`]: okText('A\tsource.ts\n')
+    });
+    const { state } = await createRun({ cwd: dir, goal: 'Multi source merge', now: NOW, runner });
+
+    const result = await mergePlanRun({ cwd: dir, run: state.run_id, runner, now: NOW });
+
+    expect(result.text).toContain('Wrote');
+    const decision = await readFile(join(state.canonical_run_dir, 'MERGE_DECISION.md'), 'utf8');
+    expect(decision).toContain('## Sources');
+    expect(decision).toContain('### implementer');
+    expect(decision).toContain(`Branch: pi-herd/${runId}/impl`);
+    expect(decision).toContain(`Full diff command: git diff main...pi-herd/${runId}/impl`);
+    expect(decision).toContain('impl.ts | 1 +');
+    expect(decision).toContain('### source_assistant');
+    expect(decision).toContain(`Branch: pi-herd/${runId}/source_assistant`);
+    expect(decision).toContain(`Full diff command: git diff main...pi-herd/${runId}/source_assistant`);
+    expect(decision).toContain('source.ts | 2 ++');
+    expect(decision).toContain(`2. If approved, merge the listed source branches into the intended target branch manually: pi-herd/${runId}/impl, pi-herd/${runId}/source_assistant.`);
+  });
+
   it('reports cleanup candidates without mutating by default', async () => {
     const runner = new RecordingRunner();
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Dry cleanup', now: NOW, runner });
@@ -190,6 +218,24 @@ describe('merge-plan and cleanup commands', () => {
     await expect(cleanupRun({ cwd: dir, run: state.run_id, removeWorktrees: true, runner, now: NOW })).rejects.toThrow('Refusing to remove dirty reviewer worktree');
   });
 
+  it('removes custom source role worktrees during cleanup', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), SOURCE_ROLE_CONFIG, 'utf8');
+    const runner = new RecordingRunner();
+    const { state, statePath } = await createRun({ cwd: dir, goal: 'Custom source cleanup', now: NOW, runner });
+    await materializeRole(state, 'source_assistant', 'git');
+    await writeJsonAtomic(statePath, state);
+
+    const result = await cleanupRun({ cwd: dir, run: state.run_id, removeWorktrees: true, runner, now: NOW });
+
+    expect(result.text).toContain('Removed source_assistant git worktree');
+    expect(runner.calls).toContain(`git worktree remove ${state.roles.source_assistant!.worktree_path}`);
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.source_assistant?.worktree_status).toBe('pending');
+    expect(saved.roles.source_assistant?.worktree_path).toBeNull();
+    expect(saved.roles.source_assistant?.worktree_provider).toBeNull();
+  });
+
   it('uses Herdr workspace id for Herdr-provider worktree removal and never deletes branches', async () => {
     const runner = new RecordingRunner();
     const { state, statePath } = await createRun({ cwd: dir, goal: 'Herdr removal', now: NOW, runner });
@@ -277,7 +323,7 @@ describe('merge-plan and cleanup commands', () => {
   });
 });
 
-async function materializeRole(state: RunState, role: 'reviewer' | 'tester' | 'planner' | 'implementer', provider: 'git' | 'herdr'): Promise<void> {
+async function materializeRole(state: RunState, role: string, provider: 'git' | 'herdr'): Promise<void> {
   const worktreePath = join(dir, '.worktrees', 'pi-herd', state.run_id, role);
   await mkdir(worktreePath, { recursive: true });
   state.roles[role]!.worktree_path = worktreePath;
@@ -285,12 +331,16 @@ async function materializeRole(state: RunState, role: 'reviewer' | 'tester' | 'p
   state.roles[role]!.worktree_provider = provider;
 }
 
+const SOURCE_ROLE_CONFIG = `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: .pi-herd/runs\n  prompts_dir: .pi-herd/prompts\nroles:\n  default:\n    - implementer\n    - source_assistant\n  definitions:\n    implementer:\n      display_name: Implementer\n      expected_writes: worktree\n      required_artifacts:\n        - IMPLEMENTATION_NOTES.md\n    source_assistant:\n      display_name: Source Assistant\n      expected_writes: worktree\n      required_artifacts:\n        - SOURCE_NOTES.md\n`;
+
 function branchForCwd(cwd: string | undefined): string {
   if (!cwd) return 'main\n';
-  if (cwd.endsWith('/reviewer')) return `pi-herd/${basenameRun(cwd)}/reviewer\n`;
-  if (cwd.endsWith('/tester')) return `pi-herd/${basenameRun(cwd)}/tester\n`;
-  if (cwd.endsWith('/planner')) return `pi-herd/${basenameRun(cwd)}/planner\n`;
-  if (cwd.endsWith('/implementer')) return `pi-herd/${basenameRun(cwd)}/impl\n`;
+  const parts = cwd.split('/');
+  const role = parts[parts.length - 1];
+  if (parts.includes('.worktrees') && role) {
+    const branchRole = role === 'implementer' ? 'impl' : role;
+    return `pi-herd/${basenameRun(cwd)}/${branchRole}\n`;
+  }
   return 'main\n';
 }
 

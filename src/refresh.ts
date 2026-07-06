@@ -6,7 +6,7 @@ import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { OUTPUT_BUDGETS, type RoleName } from './defaults.js';
 import { firstLine } from './herdr.js';
 import { assertNoSymlinkPathComponents, materializeRoleWorktree, roleWorktreePath } from './worktree.js';
-import { resolveRunContext, updateRunState, type RunState } from './run-state.js';
+import { resolveRunContext, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 
 export interface RefreshOptions {
   cwd: string;
@@ -27,6 +27,14 @@ export interface DiffOptions {
 export interface CommandTextResult {
   state: RunState;
   text: string;
+}
+
+export interface SourceDiff {
+  role: RoleName;
+  branch: string;
+  range: string;
+  statLines: string[];
+  nameStatusLines: string[];
 }
 
 export async function refreshRole(options: RefreshOptions): Promise<CommandTextResult> {
@@ -144,17 +152,36 @@ export async function refreshRole(options: RefreshOptions): Promise<CommandTextR
 export async function diffRun(options: DiffOptions): Promise<CommandTextResult> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const diff = await implementationDiff(runner, resolved.state);
-  const lines = [
-    `Diff for ${resolved.state.run_id}`,
-    `Range: ${diff.range}`,
-    '',
-    '## Stat',
-    ...(diff.statLines.length ? diff.statLines : ['No changes.']),
-    '',
-    '## Files',
-    ...(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.'])
-  ];
+  const diffs = await sourceDiffs(runner, resolved.state);
+  if (diffs.length === 1) {
+    const diff = diffs[0];
+    const lines = [
+      `Diff for ${resolved.state.run_id}`,
+      `Range: ${diff.range}`,
+      '',
+      '## Stat',
+      ...(diff.statLines.length ? diff.statLines : ['No changes.']),
+      '',
+      '## Files',
+      ...(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.'])
+    ];
+    return { state: resolved.state, text: `${formatBoundedLines(lines)}\n` };
+  }
+  const lines = [`Diff for ${resolved.state.run_id}`];
+  for (const diff of diffs) {
+    lines.push(
+      '',
+      `## Source ${diff.role}`,
+      `Branch: ${diff.branch}`,
+      `Range: ${diff.range}`,
+      '',
+      '### Stat',
+      ...(diff.statLines.length ? diff.statLines : ['No changes.']),
+      '',
+      '### Files',
+      ...(diff.nameStatusLines.length ? diff.nameStatusLines : ['No changed files.'])
+    );
+  }
   return { state: resolved.state, text: `${formatBoundedLines(lines)}\n` };
 }
 
@@ -189,17 +216,53 @@ async function commitsAheadOfImplementation(
 }
 
 export async function implementationDiff(runner: CommandRunner, state: RunState): Promise<{ implementationBranch: string; range: string; statLines: string[]; nameStatusLines: string[] }> {
-  const implementationBranch = implementationBranchFor(state);
-  await assertRefExists(runner, state.repo_root, implementationBranch, 'implementation branch has not been created yet');
-  const range = `${state.base_ref}...${implementationBranch}`;
-  const stat = await git(runner, 'show implementation diff stat', ['diff', '--stat', range], state.repo_root);
-  const names = await git(runner, 'show implementation changed files', ['diff', '--name-status', range], state.repo_root);
+  const diff = (await sourceDiffs(runner, state))[0];
   return {
-    implementationBranch,
-    range,
-    statLines: stat.stdout.trim() ? stat.stdout.trimEnd().split(/\r?\n/) : [],
-    nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
+    implementationBranch: diff.branch,
+    range: diff.range,
+    statLines: diff.statLines,
+    nameStatusLines: diff.nameStatusLines
   };
+}
+
+export async function sourceDiffs(runner: CommandRunner, state: RunState): Promise<SourceDiff[]> {
+  const diffs: SourceDiff[] = [];
+  for (const record of sourceRoleRecords(state)) {
+    const branch = record.branch;
+    if (!branch) {
+      throw new Error(`Source role ${record.role} branch is unavailable.`);
+    }
+    await assertRefExists(runner, state.repo_root, branch, `${record.role} source branch has not been created yet`);
+    const range = `${state.base_ref}...${branch}`;
+    const stat = await git(runner, `show ${record.role} source diff stat`, ['diff', '--stat', range], state.repo_root);
+    const names = await git(runner, `show ${record.role} source changed files`, ['diff', '--name-status', range], state.repo_root);
+    diffs.push({
+      role: record.role,
+      branch,
+      range,
+      statLines: stat.stdout.trim() ? stat.stdout.trimEnd().split(/\r?\n/) : [],
+      nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
+    });
+  }
+  return diffs;
+}
+
+function sourceRoleRecords(state: RunState): RoleRecord[] {
+  const implementer = state.roles.implementer;
+  if (implementer?.expected_writes !== 'worktree' || !implementer.branch) {
+    throw new Error('Implementation branch is unavailable because the implementer role is not selected.');
+  }
+  const records: RoleRecord[] = [implementer];
+  for (const role of state.role_order ?? Object.keys(state.roles)) {
+    if (role === 'implementer') {
+      continue;
+    }
+    const record = state.roles[role];
+    if (record?.expected_writes === 'worktree') {
+      records.push(record);
+    }
+  }
+  return records;
 }
 
 export function implementationBranchFor(state: RunState): string {

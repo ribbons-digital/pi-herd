@@ -157,34 +157,54 @@ describe('config', () => {
     })).toThrow(/must reference roles\.definitions/);
   });
 
-  it('rejects custom worktree-writing roles while still allowing the built-in implementer', () => {
-    expect(validateConfig({
+  it('accepts custom worktree-writing roles alongside the built-in implementer', () => {
+    const config = validateConfig({
       ...legacyConfig(),
       roles: {
-        default: ['implementer'],
+        default: ['implementer', 'source_assistant'],
         definitions: {
           implementer: {
             display_name: 'Implementer',
             expected_writes: 'worktree',
             required_artifacts: ['IMPLEMENTATION_NOTES.md']
+          },
+          source_assistant: {
+            display_name: 'Source Assistant',
+            expected_writes: 'worktree',
+            required_artifacts: ['SOURCE_NOTES.md']
           }
         }
       }
-    }).roles.definitions.implementer?.expected_writes).toBe('worktree');
+    });
 
+    expect(config.roles.default).toEqual(['implementer', 'source_assistant']);
+    expect(config.roles.definitions.implementer?.expected_writes).toBe('worktree');
+    expect(config.roles.definitions.source_assistant).toEqual({
+      display_name: 'Source Assistant',
+      expected_writes: 'worktree',
+      required_artifacts: ['SOURCE_NOTES.md']
+    });
+  });
+
+  it.each(['planner', 'reviewer', 'tester'])('rejects %s configured as a worktree-writing source role', (role) => {
     expect(() => validateConfig({
       ...legacyConfig(),
       roles: {
-        default: ['implementation_writer'],
+        default: ['implementer', role],
         definitions: {
-          implementation_writer: {
-            display_name: 'Implementation Writer',
+          implementer: {
+            display_name: 'Implementer',
             expected_writes: 'worktree',
             required_artifacts: ['IMPLEMENTATION_NOTES.md']
+          },
+          [role]: {
+            display_name: role,
+            expected_writes: 'worktree',
+            required_artifacts: [`${role.toUpperCase()}.md`]
           }
         }
       }
-    })).toThrow(/cannot be worktree/);
+    })).toThrow(/expected_writes cannot be worktree because planner, reviewer, and tester keep built-in orchestration semantics/);
   });
 
   it('rejects an unknown default harness profile', () => {

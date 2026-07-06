@@ -319,10 +319,10 @@ Each role definition supplies the display name, expected write mode (`none`, `ar
 
 Custom roles can be selected with `--role <name>` or targeted later with `pi-herd send <name> ...` as long as they are defined in the config for the run.
 Per-role `models` and `thinking` maps accept those custom role names.
-The default built-in flow is still special-cased by role name: `planner` gets the kickoff prompt, `implementer` owns `pi-herd/<run>/impl`, and `reviewer` plus `tester` refresh from that implementation branch.
-Other roles get their own `pi-herd/<run>/<role>` branch metadata with no implementation source ref and are staged until launched by `send`.
-
-Implementation branch, diff, and refresh semantics remain based on the built-in `implementer`, `reviewer`, and `tester` role names until the parallel source-role fan-out slice.
+The default built-in flow is still special-cased by role name: `planner` gets the kickoff prompt, `implementer` owns the primary source branch at `pi-herd/<run>/impl`, and `reviewer` plus `tester` refresh from that primary implementation branch.
+Additional roles can use `expected_writes: worktree` to get their own source branches and worktrees at `pi-herd/<run>/<role>`.
+Runs with any worktree-writing role must include `implementer` so diff, refresh, and merge preparation retain a stable primary source branch.
+Artifact-only and none roles are staged until launched by `send`.
 
 Harness profiles can also set `provider`, `model`, per-role `models`, `thinking`, per-role `thinking`, and extra `args`.
 pi-herd passes these values through to the harness launch command and does not validate model availability.
@@ -550,14 +550,14 @@ Forced refresh saves recovery refs and dirty-work stashes where needed.
 
 ### `pi-herd diff`
 
-Show a bounded implementation diff summary.
+Show a bounded source diff summary.
 
 ```bash
 pi-herd diff
 pi-herd diff --run latest
 ```
 
-The diff uses the run base ref against the implementation branch.
+The diff uses the run base ref against the primary implementation branch and any additional worktree-writing source role branches.
 
 ### `pi-herd merge-plan`
 
@@ -570,7 +570,7 @@ pi-herd merge-plan --run latest
 ```
 
 `merge-plan` does not merge, push, or change run state.
-It records diff context, role verdicts, reviewer and tester excerpts, warnings, and manual next steps.
+It records primary and additional source branch diff context, role verdicts, reviewer and tester excerpts, warnings, and manual next steps.
 
 ### `pi-herd cleanup`
 

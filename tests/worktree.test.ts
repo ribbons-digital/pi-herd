@@ -87,6 +87,41 @@ describe('worktree orchestration', () => {
     expect(saved.roles.implementer?.worktree_provider).toBe('herdr');
   });
 
+  it('materializes implementer plus a custom source role with distinct branches and paths', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), SOURCE_ROLE_CONFIG, 'utf8');
+    const runId = '2026-07-01T12-00-00-source-fanout';
+    const implementerPath = join(dir, '.worktrees/pi-herd', runId, 'implementer');
+    const sourcePath = join(dir, '.worktrees/pi-herd', runId, 'source_assistant');
+    const runner = new RecordingRunner(baseResponses({
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-source-fanout/impl --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-source-fanout/implementer --label pi-herd source-fanout implementer --no-focus --json': herdrSuccess('impl-ws', implementerPath),
+      'herdr worktree create --cwd DIR --branch pi-herd/2026-07-01T12-00-00-source-fanout/source_assistant --base main --path DIR/.worktrees/pi-herd/2026-07-01T12-00-00-source-fanout/source_assistant --label pi-herd source-fanout source_assistant --no-focus --json': herdrSuccess('source-ws', sourcePath)
+    }));
+
+    const result = await createRun({ cwd: dir, now: RUN_NOW, goal: 'Source fanout', withWorktrees: true, runner });
+
+    expect(result.worktrees).toEqual([
+      {
+        role: 'implementer',
+        branch: `pi-herd/${runId}/impl`,
+        path: implementerPath,
+        provider: 'herdr',
+        herdr_workspace_id: 'impl-ws'
+      },
+      {
+        role: 'source_assistant',
+        branch: `pi-herd/${runId}/source_assistant`,
+        path: sourcePath,
+        provider: 'herdr',
+        herdr_workspace_id: 'source-ws'
+      }
+    ]);
+    expect(result.state.roles.implementer?.worktree_status).toBe('materialized');
+    expect(result.state.roles.source_assistant?.worktree_status).toBe('materialized');
+    expect(result.state.roles.implementer?.branch).not.toBe(result.state.roles.source_assistant?.branch);
+    expect(result.state.roles.implementer?.worktree_path).not.toBe(result.state.roles.source_assistant?.worktree_path);
+  });
+
   it('uses run ids for worktree branches and paths across repeated goals', async () => {
     const secondRunId = '2026-07-01T12-01-00-repeat-goal';
     const runner = new RecordingRunner(baseResponses({
@@ -409,6 +444,8 @@ describe('worktree orchestration', () => {
 function configWithRunsDir(runsDir: string): string {
   return `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: ${JSON.stringify(runsDir)}\n  prompts_dir: .pi-herd/prompts\n`;
 }
+
+const SOURCE_ROLE_CONFIG = `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: .pi-herd/runs\n  prompts_dir: .pi-herd/prompts\nroles:\n  default:\n    - implementer\n    - source_assistant\n  definitions:\n    implementer:\n      display_name: Implementer\n      expected_writes: worktree\n      required_artifacts:\n        - IMPLEMENTATION_NOTES.md\n    source_assistant:\n      display_name: Source Assistant\n      expected_writes: worktree\n      required_artifacts:\n        - SOURCE_NOTES.md\n`;
 
 function herdrCreateCommand(slug: string): string {
   const runId = `${RUN_PREFIX}-${slug}`;
