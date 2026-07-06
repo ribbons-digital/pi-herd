@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { createRun, listRunsForInvocation, readRunState, writeJsonAtomic, type LaunchMetadata, type RoleRecord, type RunCreateOptions, type RunCreateResult, type RunState } from './run-state.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { type RoleName } from './defaults.js';
 import type { HarnessProfile, PiHerdConfig, RoleStringMap } from './config.js';
 import { agentStart, describeFailure, firstLine, HERDR_DELIVERY_ACK_TIMEOUT_MS, paneGet, paneRun as runInPane, paneSendEnter, paneSendText, paneSplit, parseAgentStatus, parsePaneMetadata, verifyCurrentPane as verifyCurrentHerdrPane, waitAgentStatus, workspaceCreate } from './herdr.js';
 import { verdictInstruction } from './verdict.js';
@@ -19,7 +19,7 @@ export interface StartResult extends RunCreateResult {
 
 /** A visible launch reference persisted or reported after a successful launch step. */
 export interface LaunchRef {
-  role: 'lead' | BuiltInRole;
+  role: 'lead' | RoleName;
   paneId: string | null;
   sessionRef: string | null;
   launchMethod: LaunchMetadata['launch_method'];
@@ -46,7 +46,7 @@ export interface HerdrLaunchResult {
 export async function startRun(options: StartOptions): Promise<StartResult> {
   const runner = options.runner ?? nodeCommandRunner;
   await assertCurrentPaneIsNotActiveLead(options, runner);
-  const result = await createRun({ ...options, withWorktrees: startRequiresWorktrees(options), runner });
+  const result = await createRun({ ...options, withWorktrees: 'auto', runner });
   const statePath = result.statePath;
   const state = result.state;
   const launched: LaunchRef[] = [];
@@ -97,7 +97,10 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
       launched.push({ role: 'implementer', paneId: implementer.paneId, sessionRef: implementer.sessionRef, launchMethod: implementer.launchMethod });
     }
 
-    for (const role of ['reviewer', 'tester'] as const) {
+    for (const role of state.role_order ?? Object.keys(state.roles)) {
+      if (role === 'planner' || role === 'implementer') {
+        continue;
+      }
       const record = state.roles[role];
       if (record) {
         record.status = 'staged';
@@ -113,12 +116,6 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
     throw error;
   }
 }
-
-function startRequiresWorktrees(options: StartOptions): boolean {
-  const selectedRoles = options.roles?.length ? options.roles : ['planner', 'implementer', 'reviewer', 'tester'];
-  return selectedRoles.includes('implementer') || Boolean(options.plannerWorktree && selectedRoles.includes('planner'));
-}
-
 async function assertCurrentPaneIsNotActiveLead(options: StartOptions, runner: CommandRunner): Promise<void> {
   const env = options.env ?? process.env;
   if (env.HERDR_ENV !== '1' || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== 'true') {
@@ -165,10 +162,15 @@ export function formatStartText(result: StartResult): string {
 }
 
 /** Build the Pi command and launch metadata for a lead or worker role. */
-export function buildPiCommand(config: PiHerdConfig, role: 'lead' | BuiltInRole, state: RunState): PiCommandSpec {
+export function buildPiCommand(config: PiHerdConfig, role: 'lead' | RoleName, state: RunState): PiCommandSpec {
   const profile = config.harness.profiles[config.harness.default];
   if (!profile) {
     throw new Error(`Harness profile '${config.harness.default}' is not configured.`);
+  }
+  const record = role === 'lead' ? null : state.roles[role];
+  const definition = role === 'lead' ? null : config.roles.definitions[role];
+  if (role !== 'lead' && !record && !definition) {
+    throw new Error(`Role ${role} is not defined in config roles.definitions.`);
   }
   const sessionId = `${state.run_id}-${role}`;
   const name = `pi-herd-${state.run_id}-${role}`;
@@ -196,7 +198,7 @@ export function buildPiCommand(config: PiHerdConfig, role: 'lead' | BuiltInRole,
       model,
       provider,
       thinking,
-      expected_writes: role === 'lead' ? 'none' : ROLE_DEFAULTS[role].expectedWrites
+      expected_writes: record?.expected_writes ?? definition?.expected_writes ?? 'none'
     }
   };
 }
@@ -222,7 +224,7 @@ async function bindOrLaunchLead(state: RunState, config: PiHerdConfig, runner: C
 }
 
 /** Launch a worker role session inside the bound lead workspace. */
-export async function launchRoleSession(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole; cwd: string }): Promise<HerdrLaunchResult> {
+export async function launchRoleSession(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: RoleName; cwd: string }): Promise<HerdrLaunchResult> {
   const leadWorkspace = options.state.lead_binding.herdr_workspace_id;
   if (!leadWorkspace) {
     throw new Error('Lead workspace is missing; cannot launch worker session.');
@@ -230,7 +232,7 @@ export async function launchRoleSession(options: { state: RunState; config: PiHe
   return launchHarnessInHerdr({ ...options, workspaceId: leadWorkspace });
 }
 
-async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: 'lead' | BuiltInRole; cwd: string; workspaceId: string }): Promise<HerdrLaunchResult> {
+async function launchHarnessInHerdr(options: { state: RunState; config: PiHerdConfig; runner: CommandRunner; role: 'lead' | RoleName; cwd: string; workspaceId: string }): Promise<HerdrLaunchResult> {
   const spec = buildPiCommand(options.config, options.role, options.state);
   spec.metadata.cwd = options.cwd;
   const agent = await agentStart(options.runner, options.state.repo_root, {
@@ -299,13 +301,15 @@ async function createLeadWorkspace(runner: CommandRunner, state: RunState): Prom
 }
 
 async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: RunState): Promise<string | null> {
-  const planPath = join(state.canonical_run_dir, 'PLAN.md');
+  const planner = state.roles.planner;
+  const artifact = planner?.required_artifacts[0] ?? 'PLAN.md';
+  const planPath = join(state.canonical_run_dir, artifact);
   const prompt = `You are the planner for pi-herd run ${state.run_id}.\nGoal: ${state.goal}\nWrite your plan to ${planPath}.\nDo not edit source files unless explicitly instructed by the lead.\n\n${verdictInstruction(planPath, 1)}`;
   try {
     const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
-    state.roles.planner!.status = 'failed';
+    planner!.status = 'failed';
     throw error;
   }
 }
@@ -359,11 +363,11 @@ function plannerCwd(state: RunState): string {
   return state.roles.planner?.worktree_path ?? state.repo_root;
 }
 
-function modelForRole(profile: HarnessProfile, role: BuiltInRole): string | null {
+function modelForRole(profile: HarnessProfile, role: RoleName): string | null {
   return profile.models?.[role] ?? profile.model ?? null;
 }
 
-function thinkingForRole(profile: HarnessProfile, role?: BuiltInRole): string | null {
+function thinkingForRole(profile: HarnessProfile, role?: RoleName): string | null {
   if (typeof profile.thinking === 'string') {
     return profile.thinking;
   }

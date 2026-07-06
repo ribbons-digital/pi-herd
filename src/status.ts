@@ -3,7 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { describeFailure, notificationShow, paneGet, waitAgentStatus } from './herdr.js';
-import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
+import { OUTPUT_BUDGETS, type RoleName } from './defaults.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RoleStatus, type RunState } from './run-state.js';
 import { dirtyPaths } from './refresh.js';
 import { parseVerdictMarker, type VerdictMarker } from './verdict.js';
@@ -42,7 +42,7 @@ export interface RunSnapshot {
 }
 
 export interface RoleSnapshot {
-  role: BuiltInRole;
+  role: RoleName;
   stored_status: RoleStatus;
   evaluated_status: RoleStatus;
   signal: RoleSignal;
@@ -55,7 +55,7 @@ export interface RoleSnapshot {
 }
 
 export interface ArtifactStatus {
-  role: BuiltInRole;
+  role: RoleName;
   name: string;
   path: string;
   present: boolean;
@@ -69,7 +69,7 @@ export interface ArtifactStatus {
 type RoleSignal = 'idle' | 'working' | 'blocked' | 'done' | 'stopped' | 'unknown' | 'not-launched';
 
 interface RoleDecision {
-  role: BuiltInRole;
+  role: RoleName;
   nextStatus: RoleStatus;
   observedStatus: RoleStatus | null;
   observedLastActivityAt: string | null;
@@ -82,7 +82,7 @@ interface PersistRoleDecisionResult {
 }
 
 interface RoleTransition {
-  role: BuiltInRole;
+  role: RoleName;
   status: RoleStatus;
 }
 

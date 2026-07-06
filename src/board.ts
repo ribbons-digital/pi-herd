@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { listRunsForInvocation, type ActiveRunSummary, type RoleRecord, type RunState } from './run-state.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { BUILT_IN_ROLE_ORDER, type RoleName } from './defaults.js';
 import { statusRun, type RoleSnapshot, type RunSnapshot } from './status.js';
 
 export interface BoardCommandOptions {
@@ -17,7 +17,7 @@ export interface BoardCommandResult {
   exitCode: number;
 }
 
-const ROLE_ORDER: BuiltInRole[] = ['planner', 'implementer', 'reviewer', 'tester'];
+const LEGACY_ROLE_ORDER: RoleName[] = [...BUILT_IN_ROLE_ORDER];
 const MAX_BOARD_LINES = 180;
 const MAX_WARNINGS = 12;
 
@@ -86,7 +86,7 @@ export function formatBoard(state: RunState, snapshot: RunSnapshot): string {
     '## Roles'
   ];
 
-  for (const role of ROLE_ORDER) {
+  for (const role of orderedRoles(state)) {
     const record = state.roles[role];
     const roleSnapshot = snapshot.roles.find((candidate) => candidate.role === role);
     lines.push(...formatRole(role, record, roleSnapshot));
@@ -109,7 +109,7 @@ export function formatBoard(state: RunState, snapshot: RunSnapshot): string {
   return boundedBoard(lines);
 }
 
-function formatRole(role: BuiltInRole, record: RoleRecord | undefined, snapshot: RoleSnapshot | undefined): string[] {
+function formatRole(role: RoleName, record: RoleRecord | undefined, snapshot: RoleSnapshot | undefined): string[] {
   if (!record) {
     return [`- ${role}: not selected`];
   }
@@ -126,8 +126,7 @@ function formatRole(role: BuiltInRole, record: RoleRecord | undefined, snapshot:
       lines.push(`  - artifact ${artifact.name}: ${status}; ${artifact.path}`);
     }
   } else {
-    const defaults = ROLE_DEFAULTS[role].requiredArtifacts;
-    for (const artifact of defaults) {
+    for (const artifact of record.required_artifacts) {
       lines.push(`  - artifact ${artifact}: expected`);
     }
   }
@@ -139,14 +138,14 @@ function formatRole(role: BuiltInRole, record: RoleRecord | undefined, snapshot:
 
 function formatArtifactPaths(state: RunState, snapshot: RunSnapshot): string[] {
   const paths = new Set<string>();
-  for (const role of ROLE_ORDER) {
+  for (const role of orderedRoles(state)) {
     const record = state.roles[role];
     const roleSnapshot = snapshot.roles.find((candidate) => candidate.role === role);
     for (const artifact of roleSnapshot?.artifacts ?? []) {
       paths.add(artifact.path);
     }
     if (record && !roleSnapshot?.artifacts.length) {
-      for (const name of ROLE_DEFAULTS[role].requiredArtifacts) {
+      for (const name of record.required_artifacts) {
         paths.add(join(state.canonical_run_dir, name));
       }
     }
@@ -154,6 +153,17 @@ function formatArtifactPaths(state: RunState, snapshot: RunSnapshot): string[] {
   }
   if (snapshot.final_summary_path) paths.add(snapshot.final_summary_path);
   return paths.size ? Array.from(paths).map((path) => `- ${path}`) : ['- none'];
+}
+
+function orderedRoles(state: RunState): RoleName[] {
+  const ordered = state.role_order?.length ? state.role_order : LEGACY_ROLE_ORDER;
+  const roles = [...ordered];
+  for (const role of Object.keys(state.roles)) {
+    if (!roles.includes(role)) {
+      roles.push(role);
+    }
+  }
+  return roles;
 }
 
 export function nextBoardActions(state: RunState, snapshot: RunSnapshot): string[] {

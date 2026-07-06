@@ -7387,6 +7387,7 @@ var OUTPUT_BUDGETS = {
   paneReadLines: 200,
   artifactPreviewBytes: 24e3
 };
+var BUILT_IN_ROLE_ORDER = ["planner", "implementer", "reviewer", "tester"];
 var ROLE_DEFAULTS = {
   planner: {
     role: "planner",
@@ -7413,6 +7414,19 @@ var ROLE_DEFAULTS = {
     requiredArtifacts: ["TEST_REPORT.md"]
   }
 };
+var DEFAULT_ROLE_REGISTRY = {
+  default: [...BUILT_IN_ROLE_ORDER],
+  definitions: Object.fromEntries(
+    Object.entries(ROLE_DEFAULTS).map(([role, defaults]) => [
+      role,
+      {
+        display_name: defaults.displayName,
+        expected_writes: defaults.expectedWrites,
+        required_artifacts: [...defaults.requiredArtifacts]
+      }
+    ])
+  )
+};
 
 // src/config.ts
 function defaultConfig() {
@@ -7429,7 +7443,8 @@ function defaultConfig() {
     paths: {
       runs_dir: DEFAULT_RUNS_DIR,
       prompts_dir: DEFAULT_PROMPTS_DIR
-    }
+    },
+    roles: cloneRoleRegistry(DEFAULT_ROLE_REGISTRY)
   };
 }
 function serializeConfig(config = defaultConfig()) {
@@ -7523,7 +7538,8 @@ function validateConfig(value) {
     paths: {
       runs_dir: value.paths.runs_dir,
       prompts_dir: value.paths.prompts_dir
-    }
+    },
+    roles: validateRoleRegistry(value.roles)
   };
 }
 function resolveConfigPath(cwd, configPath) {
@@ -7554,8 +7570,81 @@ function cloneStringRecord(value) {
   }
   return clone;
 }
+function validateRoleRegistry(value) {
+  if (value === void 0) {
+    return cloneRoleRegistry(DEFAULT_ROLE_REGISTRY);
+  }
+  if (!isRecord(value)) {
+    throw new Error("Config roles must be a mapping when present.");
+  }
+  if (!isStringArray(value.default)) {
+    throw new Error("Config roles.default must be a string array.");
+  }
+  if (!isRecord(value.definitions)) {
+    throw new Error("Config roles.definitions must be a mapping.");
+  }
+  const definitions = /* @__PURE__ */ Object.create(null);
+  for (const [role, definition] of Object.entries(value.definitions)) {
+    assertSafeRoleName(role, `Config roles.definitions role '${role}'`);
+    if (!isRecord(definition)) {
+      throw new Error(`Config roles.definitions.${role} must be a mapping.`);
+    }
+    if (typeof definition.display_name !== "string" || definition.display_name.trim().length === 0) {
+      throw new Error(`Config roles.definitions.${role}.display_name must be a non-empty string.`);
+    }
+    if (!isExpectedWrites(definition.expected_writes)) {
+      throw new Error(`Config roles.definitions.${role}.expected_writes must be one of none, artifacts, or worktree.`);
+    }
+    if (definition.expected_writes === "worktree" && role !== "implementer") {
+      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree in schema_version 1; only the built-in implementer role is materialized automatically.`);
+    }
+    if (!isStringArray(definition.required_artifacts)) {
+      throw new Error(`Config roles.definitions.${role}.required_artifacts must be a string array.`);
+    }
+    for (const artifact of definition.required_artifacts) {
+      if (artifact.length === 0 || artifact.includes("..") || artifact.includes("/") || artifact.includes("\\") || artifact.startsWith(".") || artifact.includes(":")) {
+        throw new Error(`Config roles.definitions.${role}.required_artifacts entries must be top-level relative filenames without path traversal.`);
+      }
+    }
+    definitions[role] = {
+      display_name: definition.display_name,
+      expected_writes: definition.expected_writes,
+      required_artifacts: [...definition.required_artifacts]
+    };
+  }
+  const defaultRoles = value.default.map((role) => {
+    assertSafeRoleName(role, `Config roles.default role '${role}'`);
+    if (!Object.hasOwn(definitions, role)) {
+      throw new Error(`Config roles.default role '${role}' must reference roles.definitions.`);
+    }
+    return role;
+  });
+  return { default: defaultRoles, definitions };
+}
+function assertSafeRoleName(value, label = "Role name") {
+  if (!isSafeRoleName(value)) {
+    throw new Error(`${label} must use lowercase letters, numbers, underscores, or hyphens; start with a letter or number; and not contain path traversal or reserved object names.`);
+  }
+}
+function isSafeRoleName(value) {
+  return /^[a-z0-9][a-z0-9_-]*$/.test(value) && value !== "__proto__" && value !== "constructor" && value !== "prototype" && value !== "toString" && !value.includes("..") && !value.includes("/") && !value.includes("\\");
+}
+function isExpectedWrites(value) {
+  return value === "none" || value === "artifacts" || value === "worktree";
+}
+function cloneRoleRegistry(value) {
+  const definitions = /* @__PURE__ */ Object.create(null);
+  for (const [role, definition] of Object.entries(value.definitions)) {
+    definitions[role] = {
+      display_name: definition.display_name,
+      expected_writes: definition.expected_writes,
+      required_artifacts: [...definition.required_artifacts]
+    };
+  }
+  return { default: [...value.default], definitions };
+}
 function isSafeProfileName(value) {
-  return value !== "__proto__" && value !== "constructor" && value !== "toString";
+  return value !== "__proto__" && value !== "constructor" && value !== "prototype" && value !== "toString";
 }
 
 // src/doctor.ts
@@ -7758,9 +7847,11 @@ async function runInit(options) {
     await writeDefaultConfig(configPath);
     result.created.push(configPath);
   }
-  for (const [role, defaults] of Object.entries(ROLE_DEFAULTS)) {
+  const config = defaultConfig();
+  for (const role of config.roles.default) {
+    const definition = config.roles.definitions[role];
     const path = join(promptsDir, `${role}.md`);
-    const body = promptTemplate(defaults.displayName, defaults.expectedWrites, defaults.requiredArtifacts);
+    const body = promptTemplate(definition.display_name, definition.expected_writes, definition.required_artifacts);
     if (await exists(path)) {
       if (options.force) {
         await writeFile2(path, body, "utf8");
@@ -8243,7 +8334,16 @@ async function createRun(options) {
   const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
   await assertNoSymlinkPathComponents2(repoRoot, runsRoot);
   const cleanCheckIgnorePaths = [relative2(repoRoot, runsRoot), ".worktrees"];
-  if (options.withWorktrees) {
+  const harness = config.harness.default;
+  const roles = uniqueRoles(options.roles?.length ? options.roles : config.roles.default);
+  for (const role of roles) {
+    assertSafeRoleName(role);
+    if (!Object.hasOwn(config.roles.definitions, role)) {
+      throw new Error(`Role ${role} is not defined in config roles.definitions.`);
+    }
+  }
+  const shouldMaterializeWorktrees = options.withWorktrees === "auto" ? roles.includes("implementer") || Boolean(options.plannerWorktree && roles.includes("planner")) : Boolean(options.withWorktrees);
+  if (shouldMaterializeWorktrees) {
     await assertRepoClean(runner, repoRoot, cleanCheckIgnorePaths);
   }
   const now = options.now ?? /* @__PURE__ */ new Date();
@@ -8260,8 +8360,6 @@ async function createRun(options) {
   created.push(inboxDir);
   await mkdir2(logsDir, { recursive: true });
   created.push(logsDir);
-  const harness = config.harness.default;
-  const roles = uniqueRoles(options.roles?.length ? options.roles : ["planner", "implementer", "reviewer", "tester"]);
   const state = {
     schema_version: 1,
     run_id: runId,
@@ -8281,17 +8379,18 @@ async function createRun(options) {
       herdr_pane_id: null,
       session_ref: null
     },
+    role_order: roles,
     roles: /* @__PURE__ */ Object.create(null)
   };
   for (const role of roles) {
-    state.roles[role] = createRoleRecord(role, harness, runId);
+    state.roles[role] = createRoleRecord(role, config.roles.definitions[role], harness, runId);
   }
   await writeFile3(requestPath, formatRequest(state), "utf8");
   created.push(requestPath);
   await writeJsonAtomic(statePath, state);
   created.push(statePath);
   let worktrees = [];
-  if (options.withWorktrees) {
+  if (shouldMaterializeWorktrees) {
     try {
       worktrees = await materializeWorktrees({
         state,
@@ -8466,10 +8565,9 @@ function formatRunCreateText(result) {
 `;
 }
 function parseRole(value) {
-  if (value === "planner" || value === "implementer" || value === "reviewer" || value === "tester") {
-    return value;
-  }
-  throw new Error(`Unknown role '${value}'. Expected planner, implementer, reviewer, or tester.`);
+  const role = value.trim();
+  assertSafeRoleName(role);
+  return role;
 }
 async function loadConfigIfPresent(cwd, configPath) {
   const path = resolveConfigPath(cwd, configPath);
@@ -8571,8 +8669,7 @@ async function allocateRunDirectory(repoRoot, runsRoot, timestamp, baseSlug) {
   await mkdir2(runDir);
   return { runId, runSlug, runDir };
 }
-function createRoleRecord(role, harness, runId) {
-  const defaults = ROLE_DEFAULTS[role];
+function createRoleRecord(role, definition, harness, runId) {
   const implementationBranch = `pi-herd/${runId}/impl`;
   return {
     role,
@@ -8587,7 +8684,9 @@ function createRoleRecord(role, harness, runId) {
     herdr_tab_id: null,
     herdr_pane_id: null,
     session_ref: null,
-    required_artifacts: [...defaults.requiredArtifacts],
+    display_name: definition.display_name,
+    expected_writes: definition.expected_writes,
+    required_artifacts: [...definition.required_artifacts],
     last_activity_at: null,
     pass: 0
   };
@@ -8805,7 +8904,7 @@ function verdictInstruction(artifactPath, pass2) {
 async function startRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
   await assertCurrentPaneIsNotActiveLead(options, runner);
-  const result = await createRun({ ...options, withWorktrees: startRequiresWorktrees(options), runner });
+  const result = await createRun({ ...options, withWorktrees: "auto", runner });
   const statePath = result.statePath;
   const state = result.state;
   const launched = [];
@@ -8851,7 +8950,10 @@ async function startRun(options) {
       await writeJsonAtomic(statePath, state);
       launched.push({ role: "implementer", paneId: implementer.paneId, sessionRef: implementer.sessionRef, launchMethod: implementer.launchMethod });
     }
-    for (const role of ["reviewer", "tester"]) {
+    for (const role of state.role_order ?? Object.keys(state.roles)) {
+      if (role === "planner" || role === "implementer") {
+        continue;
+      }
       const record = state.roles[role];
       if (record) {
         record.status = "staged";
@@ -8866,10 +8968,6 @@ async function startRun(options) {
     await writeJsonAtomic(statePath, state);
     throw error;
   }
-}
-function startRequiresWorktrees(options) {
-  const selectedRoles = options.roles?.length ? options.roles : ["planner", "implementer", "reviewer", "tester"];
-  return selectedRoles.includes("implementer") || Boolean(options.plannerWorktree && selectedRoles.includes("planner"));
 }
 async function assertCurrentPaneIsNotActiveLead(options, runner) {
   const env = options.env ?? process.env;
@@ -8919,6 +9017,11 @@ function buildPiCommand(config, role, state) {
   if (!profile) {
     throw new Error(`Harness profile '${config.harness.default}' is not configured.`);
   }
+  const record = role === "lead" ? null : state.roles[role];
+  const definition = role === "lead" ? null : config.roles.definitions[role];
+  if (role !== "lead" && !record && !definition) {
+    throw new Error(`Role ${role} is not defined in config roles.definitions.`);
+  }
   const sessionId = `${state.run_id}-${role}`;
   const name = `pi-herd-${state.run_id}-${role}`;
   const args = [...profile.args ?? [], "--name", name, "--session-id", sessionId];
@@ -8945,7 +9048,7 @@ function buildPiCommand(config, role, state) {
       model,
       provider,
       thinking,
-      expected_writes: role === "lead" ? "none" : ROLE_DEFAULTS[role].expectedWrites
+      expected_writes: record?.expected_writes ?? definition?.expected_writes ?? "none"
     }
   };
 }
@@ -9036,7 +9139,9 @@ async function createLeadWorkspace(runner, state) {
   return { workspaceId };
 }
 async function sendPlannerKickoff(runner, paneId, state) {
-  const planPath = join3(state.canonical_run_dir, "PLAN.md");
+  const planner = state.roles.planner;
+  const artifact = planner?.required_artifacts[0] ?? "PLAN.md";
+  const planPath = join3(state.canonical_run_dir, artifact);
   const prompt = `You are the planner for pi-herd run ${state.run_id}.
 Goal: ${state.goal}
 Write your plan to ${planPath}.
@@ -9047,7 +9152,7 @@ ${verdictInstruction(planPath, 1)}`;
     const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
-    state.roles.planner.status = "failed";
+    planner.status = "failed";
     throw error;
   }
 }
@@ -9329,7 +9434,7 @@ async function ensureRolePane(options) {
     });
   }
   if (!record.herdr_pane_id || stalePane) {
-    if (!record.worktree_path && ROLE_DEFAULTS[options.role].expectedWrites === "worktree") {
+    if (!record.worktree_path && record.expected_writes === "worktree") {
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
     notes.push(`Activating ${options.role}: launching session.`);
@@ -9394,7 +9499,7 @@ function capabilityWarnings(record) {
   if (!record.herdr_pane_id && record.status !== "pending") {
     warnings.push(`${record.role} has no pane/session.`);
   }
-  if (ROLE_DEFAULTS[record.role].expectedWrites === "worktree" && !record.worktree_path) {
+  if (record.expected_writes === "worktree" && !record.worktree_path) {
     warnings.push(`${record.role} expects worktree writes but has no worktree path.`);
   }
   if (record.worktree_status === "pending" && (record.role === "reviewer" || record.role === "tester")) {
@@ -10130,7 +10235,7 @@ function isNodeErrorWithCode3(error, code) {
 }
 
 // src/board.ts
-var ROLE_ORDER = ["planner", "implementer", "reviewer", "tester"];
+var LEGACY_ROLE_ORDER = [...BUILT_IN_ROLE_ORDER];
 var MAX_BOARD_LINES = 180;
 var MAX_WARNINGS = 12;
 async function boardRun(options) {
@@ -10193,7 +10298,7 @@ function formatBoard(state, snapshot) {
     "",
     "## Roles"
   ];
-  for (const role of ROLE_ORDER) {
+  for (const role of orderedRoles(state)) {
     const record = state.roles[role];
     const roleSnapshot = snapshot.roles.find((candidate) => candidate.role === role);
     lines.push(...formatRole(role, record, roleSnapshot));
@@ -10229,8 +10334,7 @@ function formatRole(role, record, snapshot) {
       lines.push(`  - artifact ${artifact.name}: ${status}; ${artifact.path}`);
     }
   } else {
-    const defaults = ROLE_DEFAULTS[role].requiredArtifacts;
-    for (const artifact of defaults) {
+    for (const artifact of record.required_artifacts) {
       lines.push(`  - artifact ${artifact}: expected`);
     }
   }
@@ -10241,14 +10345,14 @@ function formatRole(role, record, snapshot) {
 }
 function formatArtifactPaths(state, snapshot) {
   const paths = /* @__PURE__ */ new Set();
-  for (const role of ROLE_ORDER) {
+  for (const role of orderedRoles(state)) {
     const record = state.roles[role];
     const roleSnapshot = snapshot.roles.find((candidate) => candidate.role === role);
     for (const artifact of roleSnapshot?.artifacts ?? []) {
       paths.add(artifact.path);
     }
     if (record && !roleSnapshot?.artifacts.length) {
-      for (const name of ROLE_DEFAULTS[role].requiredArtifacts) {
+      for (const name of record.required_artifacts) {
         paths.add(join6(state.canonical_run_dir, name));
       }
     }
@@ -10256,6 +10360,16 @@ function formatArtifactPaths(state, snapshot) {
   }
   if (snapshot.final_summary_path) paths.add(snapshot.final_summary_path);
   return paths.size ? Array.from(paths).map((path) => `- ${path}`) : ["- none"];
+}
+function orderedRoles(state) {
+  const ordered = state.role_order?.length ? state.role_order : LEGACY_ROLE_ORDER;
+  const roles = [...ordered];
+  for (const role of Object.keys(state.roles)) {
+    if (!roles.includes(role)) {
+      roles.push(role);
+    }
+  }
+  return roles;
 }
 function nextBoardActions(state, snapshot) {
   const runSelector = state.run_id;

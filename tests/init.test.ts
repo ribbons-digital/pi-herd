@@ -15,12 +15,17 @@ afterEach(async () => {
 });
 
 describe('init', () => {
-  it('creates compact config, prompts, runs directory, and ignore entries', async () => {
+  it('creates config with roles, prompts, runs directory, and ignore entries', async () => {
     const result = await runInit({ cwd: dir });
     expect(result.created.length).toBeGreaterThan(0);
 
     const config = await readFile(join(dir, '.pi-herd/config.yaml'), 'utf8');
-    expect(config).not.toContain('roles:');
+    expect(config).toContain('roles:');
+    expect(config).toContain('  default:');
+    expect(config).toContain('    - planner');
+    expect(config).toContain('    - implementer');
+    expect(config).toContain('display_name: Planner');
+    expect(config).toContain('expected_writes: worktree');
     expect(config).not.toContain('context:');
 
     const plannerPrompt = await readFile(join(dir, '.pi-herd/prompts/planner.md'), 'utf8');

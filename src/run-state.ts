@@ -2,9 +2,9 @@ import { access, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, wr
 import { constants } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
+import { assertSafeRoleName, defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, type RoleDefinition, type RoleName } from './defaults.js';
 import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
 import { firstLine, verifyCurrentPane } from './herdr.js';
 
@@ -17,11 +17,11 @@ export interface RunCreateOptions {
   cwd: string;
   goal: string;
   configPath?: string;
-  roles?: BuiltInRole[];
+  roles?: RoleName[];
   baseRef?: string;
   now?: Date;
-  /** Materialize the implementer worktree when the implementer role is selected. */
-  withWorktrees?: boolean;
+  /** Materialize role worktrees explicitly, or derive startup worktrees from selected roles after config validation. */
+  withWorktrees?: boolean | 'auto';
   /** Also materialize the planner worktree when worktree creation is enabled and the planner role is selected. */
   plannerWorktree?: boolean;
   runner?: CommandRunner;
@@ -49,7 +49,7 @@ export interface LeadBinding {
 }
 
 export interface RoleRecord {
-  role: BuiltInRole;
+  role: RoleName;
   status: RoleStatus;
   harness: string;
   branch?: string;
@@ -63,6 +63,8 @@ export interface RoleRecord {
   herdr_pane_id: string | null;
   session_ref: string | null;
   launch_metadata?: LaunchMetadata;
+  display_name?: string;
+  expected_writes?: 'none' | 'artifacts' | 'worktree';
   required_artifacts: string[];
   last_activity_at: string | null;
   /** Prompt pass counter; 0 until the first prompt is sent, missing on legacy state. */
@@ -98,7 +100,8 @@ export interface RunState {
   base_ref: string;
   canonical_run_dir: string;
   lead_binding: LeadBinding;
-  roles: Partial<Record<BuiltInRole, RoleRecord>>;
+  role_order?: RoleName[];
+  roles: Partial<Record<RoleName, RoleRecord>>;
 }
 
 /** Minimal run data used for run listing and active-run selection. */
@@ -124,7 +127,18 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   const runsRoot = resolveRunsRoot(repoRoot, config.paths.runs_dir || DEFAULT_RUNS_DIR);
   await assertNoSymlinkPathComponents(repoRoot, runsRoot);
   const cleanCheckIgnorePaths = [relative(repoRoot, runsRoot), '.worktrees'];
-  if (options.withWorktrees) {
+  const harness = config.harness.default;
+  const roles = uniqueRoles(options.roles?.length ? options.roles : config.roles.default);
+  for (const role of roles) {
+    assertSafeRoleName(role);
+    if (!Object.hasOwn(config.roles.definitions, role)) {
+      throw new Error(`Role ${role} is not defined in config roles.definitions.`);
+    }
+  }
+  const shouldMaterializeWorktrees = options.withWorktrees === 'auto'
+    ? roles.includes('implementer') || Boolean(options.plannerWorktree && roles.includes('planner'))
+    : Boolean(options.withWorktrees);
+  if (shouldMaterializeWorktrees) {
     await assertRepoClean(runner, repoRoot, cleanCheckIgnorePaths);
   }
   const now = options.now ?? new Date();
@@ -142,8 +156,6 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   await mkdir(logsDir, { recursive: true });
   created.push(logsDir);
 
-  const harness = config.harness.default;
-  const roles = uniqueRoles(options.roles?.length ? options.roles : ['planner', 'implementer', 'reviewer', 'tester']);
   const state: RunState = {
     schema_version: 1,
     run_id: runId,
@@ -163,11 +175,12 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
       herdr_pane_id: null,
       session_ref: null
     },
-    roles: Object.create(null) as Partial<Record<BuiltInRole, RoleRecord>>
+    role_order: roles,
+    roles: Object.create(null) as Partial<Record<RoleName, RoleRecord>>
   };
 
   for (const role of roles) {
-    state.roles[role] = createRoleRecord(role, harness, runId);
+    state.roles[role] = createRoleRecord(role, config.roles.definitions[role], harness, runId);
   }
 
   await writeFile(requestPath, formatRequest(state), 'utf8');
@@ -176,7 +189,7 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
   created.push(statePath);
 
   let worktrees: MaterializedWorktree[] = [];
-  if (options.withWorktrees) {
+  if (shouldMaterializeWorktrees) {
     try {
       worktrees = await materializeWorktrees({
         state,
@@ -388,12 +401,11 @@ export function formatRunCreateText(result: RunCreateResult): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** Parse a CLI role flag into a supported built-in Slice 2 role. */
-export function parseRole(value: string): BuiltInRole {
-  if (value === 'planner' || value === 'implementer' || value === 'reviewer' || value === 'tester') {
-    return value;
-  }
-  throw new Error(`Unknown role '${value}'. Expected planner, implementer, reviewer, or tester.`);
+/** Parse a CLI role flag into a safe configured role name. Definition checks happen when run config/state is loaded. */
+export function parseRole(value: string): RoleName {
+  const role = value.trim();
+  assertSafeRoleName(role);
+  return role;
 }
 
 /** Load config when present, otherwise return defaults for the provided cwd. */
@@ -508,8 +520,7 @@ async function allocateRunDirectory(repoRoot: string, runsRoot: string, timestam
   return { runId, runSlug, runDir };
 }
 
-function createRoleRecord(role: BuiltInRole, harness: string, runId: string): RoleRecord {
-  const defaults = ROLE_DEFAULTS[role];
+function createRoleRecord(role: RoleName, definition: RoleDefinition, harness: string, runId: string): RoleRecord {
   const implementationBranch = `pi-herd/${runId}/impl`;
   return {
     role,
@@ -524,7 +535,9 @@ function createRoleRecord(role: BuiltInRole, harness: string, runId: string): Ro
     herdr_tab_id: null,
     herdr_pane_id: null,
     session_ref: null,
-    required_artifacts: [...defaults.requiredArtifacts],
+    display_name: definition.display_name,
+    expected_writes: definition.expected_writes,
+    required_artifacts: [...definition.required_artifacts],
     last_activity_at: null,
     pass: 0
   };
@@ -540,7 +553,7 @@ function slugify(value: string): string {
   return slug || 'run';
 }
 
-function uniqueRoles(roles: BuiltInRole[]): BuiltInRole[] {
+function uniqueRoles(roles: RoleName[]): RoleName[] {
   return Array.from(new Set(roles));
 }
 

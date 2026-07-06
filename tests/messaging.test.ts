@@ -482,6 +482,40 @@ describe('messaging commands', () => {
     expect(saved.roles.reviewer?.status).toBe('working');
   });
 
+  it('launches a selected custom artifact role on first send without materializing a worktree', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), customAuditRoleConfig(), 'utf8');
+    const createRunner = new RecordingRunner(baseResponses({}));
+    const result = await createRun({ cwd: dir, goal: 'Audit implementation', now: NOW, runner: createRunner });
+    result.state.lead_binding.herdr_workspace_id = 'lead-ws';
+    result.state.lead_binding.herdr_pane_id = 'lead-pane';
+    await writeJsonAtomic(result.statePath, result.state);
+    const runner = new RecordingRunner(baseResponses({
+      [`herdr agent start pi-herd-${result.state.run_id}-audit_bot --cwd DIR --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${result.state.run_id}-audit_bot --session-id ${result.state.run_id}-audit_bot`]: okJson({ pane_id: 'audit-pane', workspace_id: 'lead-ws', tab_id: 'audit-tab' }),
+      'herdr wait agent-status audit-pane --status idle --timeout 15000': ok(),
+      'herdr pane send-text audit-pane Inspect implementation': ok(),
+      'herdr pane send-keys audit-pane enter': ok()
+    }));
+
+    const send = await sendMessage({ cwd: dir, run: result.state.run_id, role: 'audit_bot', message: 'Inspect implementation', runner });
+
+    expect(send.text).toContain('Activating audit_bot: launching session.');
+    expect(send.text).toContain('Sent message to audit_bot (audit-pane).');
+    expect(send.text).toContain('Pass 1: verdict instruction appended to the prompt.');
+    expect(runner.calls.some((call) => call.includes('worktree create'))).toBe(false);
+    const sendCall = runner.calls.find((call) => call.startsWith('herdr pane send-text audit-pane'));
+    expect(sendCall).toContain(`end ${join(result.state.canonical_run_dir, 'AUDIT.md')} with the line: pi-herd-verdict: done pass=1`);
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.roles.audit_bot).toMatchObject({
+      display_name: 'Audit Bot',
+      expected_writes: 'artifacts',
+      required_artifacts: ['AUDIT.md'],
+      herdr_pane_id: 'audit-pane',
+      worktree_path: null,
+      status: 'working'
+    });
+  });
+
   it('interrupts a launched role pane and marks the stored status blocked', async () => {
     const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({
@@ -567,6 +601,30 @@ function normalize(responses: Record<string, CommandResult>): Record<string, Com
   const normalized: Record<string, CommandResult> = {};
   for (const [key, value] of Object.entries(responses)) normalized[key.replaceAll(dir, 'DIR')] = value;
   return normalized;
+}
+
+function customAuditRoleConfig(): string {
+  return [
+    'schema_version: 1',
+    'harness:',
+    '  default: pi',
+    '  profiles:',
+    '    pi:',
+    '      command: pi',
+    'paths:',
+    '  runs_dir: .pi-herd/runs',
+    '  prompts_dir: .pi-herd/prompts',
+    'roles:',
+    '  default:',
+    '    - audit_bot',
+    '  definitions:',
+    '    audit_bot:',
+    '      display_name: Audit Bot',
+    '      expected_writes: artifacts',
+    '      required_artifacts:',
+    '        - AUDIT.md',
+    ''
+  ].join('\n');
 }
 
 function ok(): CommandResult {

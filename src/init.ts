@@ -1,8 +1,8 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { DEFAULT_PROMPTS_DIR, DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS } from './defaults.js';
-import { resolveConfigPath, writeDefaultConfig } from './config.js';
+import { DEFAULT_PROMPTS_DIR, DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR } from './defaults.js';
+import { defaultConfig, resolveConfigPath, writeDefaultConfig } from './config.js';
 
 export interface InitOptions {
   cwd: string;
@@ -42,9 +42,11 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     result.created.push(configPath);
   }
 
-  for (const [role, defaults] of Object.entries(ROLE_DEFAULTS)) {
+  const config = defaultConfig();
+  for (const role of config.roles.default) {
+    const definition = config.roles.definitions[role];
     const path = join(promptsDir, `${role}.md`);
-    const body = promptTemplate(defaults.displayName, defaults.expectedWrites, defaults.requiredArtifacts);
+    const body = promptTemplate(definition.display_name, definition.expected_writes, definition.required_artifacts);
     if (await exists(path)) {
       if (options.force) {
         await writeFile(path, body, 'utf8');
