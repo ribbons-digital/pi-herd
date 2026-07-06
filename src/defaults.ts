@@ -11,14 +11,24 @@ export const OUTPUT_BUDGETS = {
   artifactPreviewBytes: 24_000
 } as const;
 
+export type RoleName = string;
 export type BuiltInRole = 'planner' | 'implementer' | 'reviewer' | 'tester';
+export type ExpectedWrites = 'none' | 'artifacts' | 'worktree';
+
+export interface RoleDefinition {
+  display_name: string;
+  expected_writes: ExpectedWrites;
+  required_artifacts: string[];
+}
 
 export interface RoleDefault {
   role: BuiltInRole;
   displayName: string;
-  expectedWrites: 'none' | 'artifacts' | 'worktree';
+  expectedWrites: ExpectedWrites;
   requiredArtifacts: string[];
 }
+
+export const BUILT_IN_ROLE_ORDER: BuiltInRole[] = ['planner', 'implementer', 'reviewer', 'tester'];
 
 export const ROLE_DEFAULTS: Record<BuiltInRole, RoleDefault> = {
   planner: {
@@ -45,4 +55,18 @@ export const ROLE_DEFAULTS: Record<BuiltInRole, RoleDefault> = {
     expectedWrites: 'artifacts',
     requiredArtifacts: ['TEST_REPORT.md']
   }
+};
+
+export const DEFAULT_ROLE_REGISTRY = {
+  default: [...BUILT_IN_ROLE_ORDER] as RoleName[],
+  definitions: Object.fromEntries(
+    Object.entries(ROLE_DEFAULTS).map(([role, defaults]) => [
+      role,
+      {
+        display_name: defaults.displayName,
+        expected_writes: defaults.expectedWrites,
+        required_artifacts: [...defaults.requiredArtifacts]
+      }
+    ])
+  ) as Record<RoleName, RoleDefinition>
 };

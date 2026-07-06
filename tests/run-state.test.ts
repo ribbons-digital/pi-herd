@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createRun, listActiveRuns, listRunsForInvocation, resolveActiveRun, updateRunState, type RunState } from '../src/run-state.js';
+import { createRun, listActiveRuns, listRunsForInvocation, readRunState, resolveActiveRun, updateRunState, type RunState } from '../src/run-state.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +55,80 @@ describe('run state', () => {
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
     expect(saved.run_id).toBe(result.state.run_id);
     await expect(readFile(join(result.state.canonical_run_dir, 'inbox', 'missing.md'), 'utf8')).rejects.toThrow();
+  });
+
+  it('hydrates legacy built-in implementer write capability when reading state', async () => {
+    const result = await createRun({
+      cwd: dir,
+      goal: 'Legacy implementer state',
+      now: new Date('2026-07-01T12:00:00.000Z')
+    });
+    const legacy = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    delete legacy.roles.implementer!.expected_writes;
+    await writeFile(result.statePath, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8');
+
+    const hydrated = await readRunState(result.statePath);
+
+    expect(hydrated.roles.implementer?.expected_writes).toBe('worktree');
+  });
+
+  it('uses configured default roles, preserves their order, and carries custom role metadata', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRoles(`
+roles:
+  default:
+    - planner
+    - audit_bot
+  definitions:
+    planner:
+      display_name: Planner
+      expected_writes: artifacts
+      required_artifacts:
+        - PLAN.md
+    audit_bot:
+      display_name: Audit Bot
+      expected_writes: artifacts
+      required_artifacts:
+        - AUDIT.md
+`), 'utf8');
+
+    const result = await createRun({
+      cwd: dir,
+      goal: 'Audit only',
+      now: new Date('2026-07-01T12:00:00.000Z')
+    });
+
+    expect(result.state.role_order).toEqual(['planner', 'audit_bot']);
+    expect(Object.keys(result.state.roles)).toEqual(['planner', 'audit_bot']);
+    expect(result.state.roles.audit_bot).toMatchObject({
+      display_name: 'Audit Bot',
+      expected_writes: 'artifacts',
+      required_artifacts: ['AUDIT.md']
+    });
+    const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    expect(saved.role_order).toEqual(['planner', 'audit_bot']);
+    expect(saved.roles.audit_bot).toMatchObject({
+      display_name: 'Audit Bot',
+      expected_writes: 'artifacts',
+      required_artifacts: ['AUDIT.md']
+    });
+  });
+
+  it('rejects selected roles that are missing from config definitions', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), configWithRoles(`
+roles:
+  default:
+    - planner
+  definitions:
+    planner:
+      display_name: Planner
+      expected_writes: artifacts
+      required_artifacts:
+        - PLAN.md
+`), 'utf8');
+
+    await expect(createRun({ cwd: dir, goal: 'Unknown role', roles: ['audit_bot'] })).rejects.toThrow(/Role audit_bot is not defined in config roles\.definitions/);
   });
 
   it('uses deterministic slug suffixes when a run id would collide', async () => {
@@ -257,4 +331,8 @@ describe('run state', () => {
 
 function configWithRunsDir(runsDir: string): string {
   return `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: ${JSON.stringify(runsDir)}\n  prompts_dir: .pi-herd/prompts\n`;
+}
+
+function configWithRoles(rolesYaml: string): string {
+  return `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: .pi-herd/runs\n  prompts_dir: .pi-herd/prompts\n${rolesYaml}`;
 }

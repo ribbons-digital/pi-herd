@@ -1,8 +1,8 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { DEFAULT_PROMPTS_DIR, DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, ROLE_DEFAULTS } from './defaults.js';
-import { resolveConfigPath, writeDefaultConfig } from './config.js';
+import { DEFAULT_PROMPTS_DIR, DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR } from './defaults.js';
+import { loadConfig, resolveConfigPath, writeDefaultConfig } from './config.js';
 
 export interface InitOptions {
   cwd: string;
@@ -22,13 +22,9 @@ const GITIGNORE_LINES = [`/${DEFAULT_RUNS_DIR}/`, `/${DEFAULT_WORKTREES_DIR.repl
 export async function runInit(options: InitOptions): Promise<InitResult> {
   const configPath = resolveConfigPath(options.cwd, options.configPath);
   const configDir = dirname(configPath);
-  const runsDir = resolve(options.cwd, DEFAULT_RUNS_DIR);
-  const promptsDir = resolve(options.cwd, DEFAULT_PROMPTS_DIR);
   const result: InitResult = { configPath, created: [], updated: [], skipped: [] };
 
   await ensureDir(configDir, result);
-  await ensureDir(runsDir, result);
-  await ensureDir(promptsDir, result);
 
   if (await exists(configPath)) {
     if (options.force) {
@@ -42,9 +38,15 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     result.created.push(configPath);
   }
 
-  for (const [role, defaults] of Object.entries(ROLE_DEFAULTS)) {
+  const config = await loadConfig(configPath);
+  const runsDir = resolve(options.cwd, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  const promptsDir = resolve(options.cwd, config.paths.prompts_dir || DEFAULT_PROMPTS_DIR);
+  await ensureDir(runsDir, result);
+  await ensureDir(promptsDir, result);
+  for (const role of config.roles.default) {
+    const definition = config.roles.definitions[role];
     const path = join(promptsDir, `${role}.md`);
-    const body = promptTemplate(defaults.displayName, defaults.expectedWrites, defaults.requiredArtifacts);
+    const body = promptTemplate(definition.display_name, definition.expected_writes, definition.required_artifacts);
     if (await exists(path)) {
       if (options.force) {
         await writeFile(path, body, 'utf8');

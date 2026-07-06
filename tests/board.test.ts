@@ -107,6 +107,32 @@ describe('board command', () => {
     expect(nextBoardActions(state, snapshot)).toContain(`Review implementation changes: pi-herd diff --run ${state.run_id}`);
   });
 
+  it('respects an explicit empty role order without rendering legacy unselected roles', () => {
+    const state: RunState = {
+      schema_version: 1,
+      run_id: 'empty-roles',
+      run_slug: 'empty-roles',
+      goal: 'Plan later',
+      status: 'active',
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      repo_root: dir,
+      base_ref: 'main',
+      canonical_run_dir: join(dir, '.pi-herd/runs/empty-roles'),
+      lead_binding: { role: 'lead', harness: 'pi', herdr_workspace_id: null, herdr_tab_id: null, herdr_pane_id: null, session_ref: null },
+      role_order: [],
+      roles: {}
+    };
+
+    const text = formatBoard(state, minimalSnapshot(state));
+
+    expect(text).not.toContain('not selected');
+    expect(text).not.toContain('- planner:');
+    expect(text).not.toContain('- implementer:');
+    expect(text).not.toContain('- reviewer:');
+    expect(text).not.toContain('- tester:');
+  });
+
   it('caps warnings before board-level truncation', async () => {
     const { state } = await createWorkingRun('planner-pane');
     const snapshot = minimalSnapshot(state);

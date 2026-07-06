@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_RUNS_DIR, ROLE_DEFAULTS, type BuiltInRole } from './defaults.js';
+import { DEFAULT_RUNS_DIR, type RoleName } from './defaults.js';
 import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane, waitForRoleReady } from './start.js';
 import { describeFailure, paneGet, paneSendEscape } from './herdr.js';
 import { materializeRoleWorktree } from './worktree.js';
@@ -21,7 +21,7 @@ export interface RunCommandOptions {
 
 /** Options for sending a prompt to a selected role pane. */
 export interface SendOptions extends RunCommandOptions {
-  role: BuiltInRole;
+  role: RoleName;
   message: string;
   requireLead?: boolean;
 }
@@ -95,7 +95,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
 
 /** Options for interrupting a role pane. */
 export interface InterruptOptions extends RunCommandOptions {
-  role: BuiltInRole;
+  role: RoleName;
 }
 
 /** Send Escape to a role pane to stop its current work, marking the stored role status blocked until it is re-prompted. */
@@ -194,7 +194,7 @@ export async function leadCollect(options: RunCommandOptions): Promise<CommandRe
   return { state, text: `${lines.join('\n')}\n` };
 }
 
-async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; role: BuiltInRole }): Promise<{ notes: string[]; launchedNow: boolean }> {
+async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; role: RoleName }): Promise<{ notes: string[]; launchedNow: boolean }> {
   const record = options.state.roles[options.role];
   if (!record) {
     throw new Error(`Role ${options.role} is not selected for this run.`);
@@ -234,7 +234,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
     });
   }
   if (!record.herdr_pane_id || stalePane) {
-    if (!record.worktree_path && ROLE_DEFAULTS[options.role].expectedWrites === 'worktree') {
+    if (!record.worktree_path && record.expected_writes === 'worktree') {
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
     notes.push(`Activating ${options.role}: launching session.`);
@@ -304,7 +304,7 @@ function capabilityWarnings(record: RoleRecord): string[] {
   if (!record.herdr_pane_id && record.status !== 'pending') {
     warnings.push(`${record.role} has no pane/session.`);
   }
-  if (ROLE_DEFAULTS[record.role].expectedWrites === 'worktree' && !record.worktree_path) {
+  if (record.expected_writes === 'worktree' && !record.worktree_path) {
     warnings.push(`${record.role} expects worktree writes but has no worktree path.`);
   }
   if (record.worktree_status === 'pending' && (record.role === 'reviewer' || record.role === 'tester')) {
@@ -313,7 +313,7 @@ function capabilityWarnings(record: RoleRecord): string[] {
   return warnings;
 }
 
-async function artifactInventory(state: RunState): Promise<Array<{ role: BuiltInRole; name: string; path: string; present: boolean }>> {
+async function artifactInventory(state: RunState): Promise<Array<{ role: RoleName; name: string; path: string; present: boolean }>> {
   const artifacts = [];
   for (const role of roleEntries(state)) {
     for (const name of role.required_artifacts) {

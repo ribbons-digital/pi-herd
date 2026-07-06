@@ -139,6 +139,12 @@ describe('cli main', () => {
     expect(parsed).toMatchObject({ role: 'planner', message: 'hello', run: 'latest', config: 'herd.yaml' });
   });
 
+  it('parses safe custom send role names for config validation later in the command path', () => {
+    const parsed = parseSendArgs(['audit_bot', 'hello'], 'usage');
+
+    expect(parsed).toMatchObject({ role: 'audit_bot', message: 'hello' });
+  });
+
   it('treats tokens after the send separator as literal message text', () => {
     const parsed = parseSendArgs(['planner', '--run', 'latest', '--', '--', '--run', 'literal', '--config', 'text'], 'usage');
 
@@ -161,11 +167,11 @@ describe('cli main', () => {
     expect(stderr.mock.calls.flat().join('')).toContain('Usage: pi-herd interrupt <role> [--run RUN] [--config PATH]');
   });
 
-  it('rejects interrupt for unknown roles', async () => {
+  it('rejects interrupt for unsafe role names before run resolution', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    await expect(main(['interrupt', 'bogus'])).resolves.toBe(1);
-    expect(stderr.mock.calls.flat().join('')).toContain("Unknown role 'bogus'");
+    await expect(main(['interrupt', 'bad/role'])).resolves.toBe(1);
+    expect(stderr.mock.calls.flat().join('')).toContain('Role name must use lowercase letters');
   });
 });
 

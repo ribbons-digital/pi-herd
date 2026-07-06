@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
-import { CONFIG_SCHEMA_VERSION, DEFAULT_PROMPTS_DIR, DEFAULT_RUNS_DIR } from './defaults.js';
+import { CONFIG_SCHEMA_VERSION, DEFAULT_PROMPTS_DIR, DEFAULT_ROLE_REGISTRY, DEFAULT_RUNS_DIR, type ExpectedWrites, type RoleDefinition, type RoleName } from './defaults.js';
 
 export interface PiHerdConfig {
   schema_version: 1;
@@ -13,6 +13,12 @@ export interface PiHerdConfig {
     runs_dir: string;
     prompts_dir: string;
   };
+  roles: RoleRegistryConfig;
+}
+
+export interface RoleRegistryConfig {
+  default: RoleName[];
+  definitions: Record<RoleName, RoleDefinition>;
 }
 
 export type ProfileMap = Record<string, HarnessProfile>;
@@ -41,7 +47,8 @@ export function defaultConfig(): PiHerdConfig {
     paths: {
       runs_dir: DEFAULT_RUNS_DIR,
       prompts_dir: DEFAULT_PROMPTS_DIR
-    }
+    },
+    roles: cloneRoleRegistry(DEFAULT_ROLE_REGISTRY)
   };
 }
 
@@ -139,7 +146,8 @@ export function validateConfig(value: unknown): PiHerdConfig {
     paths: {
       runs_dir: value.paths.runs_dir,
       prompts_dir: value.paths.prompts_dir
-    }
+    },
+    roles: validateRoleRegistry(value.roles)
   };
 }
 
@@ -181,6 +189,101 @@ function cloneStringRecord(value: RoleStringMap | undefined): RoleStringMap | un
   return clone;
 }
 
+function validateRoleRegistry(value: unknown): RoleRegistryConfig {
+  if (value === undefined) {
+    return cloneRoleRegistry(DEFAULT_ROLE_REGISTRY);
+  }
+  if (!isRecord(value)) {
+    throw new Error('Config roles must be a mapping when present.');
+  }
+  if (!isStringArray(value.default)) {
+    throw new Error('Config roles.default must be a string array.');
+  }
+  if (value.default.length === 0) {
+    throw new Error('Config roles.default must include at least one role.');
+  }
+  if (!isRecord(value.definitions)) {
+    throw new Error('Config roles.definitions must be a mapping.');
+  }
+  const definitions = Object.create(null) as Record<RoleName, RoleDefinition>;
+  for (const [role, definition] of Object.entries(value.definitions)) {
+    assertSafeRoleName(role, `Config roles.definitions role '${role}'`);
+    if (!isRecord(definition)) {
+      throw new Error(`Config roles.definitions.${role} must be a mapping.`);
+    }
+    if (typeof definition.display_name !== 'string' || definition.display_name.trim().length === 0) {
+      throw new Error(`Config roles.definitions.${role}.display_name must be a non-empty string.`);
+    }
+    if (!isExpectedWrites(definition.expected_writes)) {
+      throw new Error(`Config roles.definitions.${role}.expected_writes must be one of none, artifacts, or worktree.`);
+    }
+    if (definition.expected_writes === 'worktree' && role !== 'implementer') {
+      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree in schema_version 1; only the built-in implementer role is materialized automatically.`);
+    }
+    if (!isStringArray(definition.required_artifacts)) {
+      throw new Error(`Config roles.definitions.${role}.required_artifacts must be a string array.`);
+    }
+    for (const artifact of definition.required_artifacts) {
+      if (
+        artifact.length === 0
+        || artifact.includes('..')
+        || artifact.includes('/')
+        || artifact.includes('\\')
+        || artifact.startsWith('.')
+        || artifact.includes(':')
+      ) {
+        throw new Error(`Config roles.definitions.${role}.required_artifacts entries must be top-level relative filenames without path traversal.`);
+      }
+    }
+    definitions[role] = {
+      display_name: definition.display_name,
+      expected_writes: definition.expected_writes,
+      required_artifacts: [...definition.required_artifacts]
+    };
+  }
+  const defaultRoles = value.default.map((role) => {
+    assertSafeRoleName(role, `Config roles.default role '${role}'`);
+    if (!Object.hasOwn(definitions, role)) {
+      throw new Error(`Config roles.default role '${role}' must reference roles.definitions.`);
+    }
+    return role;
+  });
+  return { default: defaultRoles, definitions };
+}
+
+export function assertSafeRoleName(value: string, label = 'Role name'): void {
+  if (!isSafeRoleName(value)) {
+    throw new Error(`${label} must use lowercase letters, numbers, underscores, or hyphens; start with a letter or number; and not contain path traversal or reserved object names.`);
+  }
+}
+
+export function isSafeRoleName(value: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/.test(value)
+    && value !== '__proto__'
+    && value !== 'constructor'
+    && value !== 'prototype'
+    && value !== 'toString'
+    && !value.includes('..')
+    && !value.includes('/')
+    && !value.includes('\\');
+}
+
+function isExpectedWrites(value: unknown): value is ExpectedWrites {
+  return value === 'none' || value === 'artifacts' || value === 'worktree';
+}
+
+function cloneRoleRegistry(value: RoleRegistryConfig): RoleRegistryConfig {
+  const definitions = Object.create(null) as Record<RoleName, RoleDefinition>;
+  for (const [role, definition] of Object.entries(value.definitions)) {
+    definitions[role] = {
+      display_name: definition.display_name,
+      expected_writes: definition.expected_writes,
+      required_artifacts: [...definition.required_artifacts]
+    };
+  }
+  return { default: [...value.default], definitions };
+}
+
 function isSafeProfileName(value: string): boolean {
-  return value !== '__proto__' && value !== 'constructor' && value !== 'toString';
+  return value !== '__proto__' && value !== 'constructor' && value !== 'prototype' && value !== 'toString';
 }

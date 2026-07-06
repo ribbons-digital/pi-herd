@@ -291,7 +291,38 @@ harness:
 paths:
   runs_dir: .pi-herd/runs
   prompts_dir: .pi-herd/prompts
+roles:
+  default: [planner, implementer, reviewer, tester]
+  definitions:
+    planner:
+      display_name: Planner
+      expected_writes: artifacts
+      required_artifacts: [PLAN.md]
+    implementer:
+      display_name: Implementer
+      expected_writes: worktree
+      required_artifacts: [IMPLEMENTATION_NOTES.md]
+    reviewer:
+      display_name: Reviewer
+      expected_writes: artifacts
+      required_artifacts: [REVIEW.md]
+    tester:
+      display_name: Tester
+      expected_writes: artifacts
+      required_artifacts: [TEST_REPORT.md]
 ```
+
+Existing config files without `roles` remain valid and use the same built-in registry and order.
+Role names must be safe slug-like names using lowercase letters, numbers, underscores, or hyphens.
+`roles.default` controls which roles a new run selects when no `--role` flags are passed, and every entry must reference `roles.definitions`.
+Each role definition supplies the display name, expected write mode (`none`, `artifacts`, or `worktree`), and required artifact list used by prompts, status, board, and harness launch metadata.
+
+Custom roles can be selected with `--role <name>` or targeted later with `pi-herd send <name> ...` as long as they are defined in the config for the run.
+Per-role `models` and `thinking` maps accept those custom role names.
+The default built-in flow is still special-cased by role name: `planner` gets the kickoff prompt, `implementer` owns `pi-herd/<run>/impl`, and `reviewer` plus `tester` refresh from that implementation branch.
+Other roles get their own `pi-herd/<run>/<role>` branch metadata with no implementation source ref and are staged until launched by `send`.
+
+Implementation branch, diff, and refresh semantics remain based on the built-in `implementer`, `reviewer`, and `tester` role names until the parallel source-role fan-out slice.
 
 Harness profiles can also set `provider`, `model`, per-role `models`, `thinking`, per-role `thinking`, and extra `args`.
 pi-herd passes these values through to the harness launch command and does not validate model availability.

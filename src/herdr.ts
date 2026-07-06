@@ -1,5 +1,5 @@
 import type { CommandResult, CommandRunner } from './command-runner.js';
-import type { BuiltInRole } from './defaults.js';
+import type { RoleName } from './defaults.js';
 
 export const HERDR_LAUNCH_TIMEOUT_MS = 30_000;
 export const HERDR_PROMPT_TIMEOUT_MS = 10_000;
@@ -17,7 +17,7 @@ export interface PaneMetadata {
 }
 
 export interface ParsedWorktreeCreateResult {
-  role: BuiltInRole;
+  role: RoleName;
   branch: string;
   path: string;
   provider: 'herdr';
@@ -138,7 +138,7 @@ export function parseAgentStatus(stdout: string): string | null {
   return stringFromRecords(records, ['agent_status', 'agentStatus']);
 }
 
-export function parseWorktreeCreateResult(stdout: string, options: { role: BuiltInRole; branch: string; path: string; isAbsolutePath: (path: string) => boolean; normalizePath: (path: string) => string }): ParsedWorktreeCreateResult | null {
+export function parseWorktreeCreateResult(stdout: string, options: { role: RoleName; branch: string; path: string; isAbsolutePath: (path: string) => boolean; normalizePath: (path: string) => string }): ParsedWorktreeCreateResult | null {
   const value = parseJsonRecord(stdout);
   for (const container of metadataContainers(value, ['result', 'data'])) {
     const workspaceId = stringFromNullableRecords([container, childRecord(container, 'workspace'), childRecord(container, 'worktree')], ['workspace_id', 'workspaceId', 'id', 'herdr_workspace_id']);

@@ -411,10 +411,10 @@ describe('Herdr plugin pane entrypoint', () => {
     expect(readline.close).toHaveBeenCalled();
   });
 
-  it('rejects an invalid send role', async () => {
+  it('rejects an unsafe send role name', async () => {
     const stdout = { write: vi.fn() };
     const readline = {
-      question: vi.fn().mockResolvedValueOnce('lead'),
+      question: vi.fn().mockResolvedValueOnce('bad/role'),
       close: vi.fn()
     };
 
@@ -428,7 +428,7 @@ describe('Herdr plugin pane entrypoint', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining("Unknown role 'lead'"));
+    expect(stdout.write).toHaveBeenCalledWith(expect.stringContaining('Role name must use lowercase letters'));
     expect(readline.close).toHaveBeenCalled();
   });
 });

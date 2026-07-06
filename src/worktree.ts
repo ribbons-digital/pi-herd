@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { CommandRunner } from './command-runner.js';
 import { firstLine, parseWorktreeCreateResult, worktreeCreate, HERDR_WORKTREE_CREATE_TIMEOUT_MS } from './herdr.js';
-import { DEFAULT_WORKTREES_DIR, type BuiltInRole } from './defaults.js';
+import { DEFAULT_WORKTREES_DIR, type RoleName } from './defaults.js';
 import type { RunState } from './run-state.js';
 
 /** Options for materializing Slice 3 role worktrees without launching panes or sessions. */
@@ -18,7 +18,7 @@ export interface WorktreeMaterializeOptions {
 
 /** A role worktree created by Herdr or raw git fallback. */
 export interface MaterializedWorktree {
-  role: BuiltInRole;
+  role: RoleName;
   branch: string;
   path: string;
   provider: 'herdr' | 'git';
@@ -43,7 +43,7 @@ export async function materializeWorktrees(options: WorktreeMaterializeOptions):
 }
 
 /** Materialize one role worktree, using source_ref for reviewer/tester activation when provided. */
-export async function materializeRoleWorktree(options: WorktreeMaterializeOptions & { role: BuiltInRole; baseRef?: string }): Promise<MaterializedWorktree> {
+export async function materializeRoleWorktree(options: WorktreeMaterializeOptions & { role: RoleName; baseRef?: string }): Promise<MaterializedWorktree> {
   if (!options.skipCleanCheck) {
     await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
   }
@@ -86,8 +86,8 @@ export async function materializeRoleWorktree(options: WorktreeMaterializeOption
   return result;
 }
 
-function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltInRole[] {
-  const roles: BuiltInRole[] = [];
+function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): RoleName[] {
+  const roles: RoleName[] = [];
   if (state.roles.implementer) {
     roles.push('implementer');
   }
@@ -97,7 +97,7 @@ function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): BuiltIn
   return roles;
 }
 
-export function roleWorktreePath(repoRoot: string, runId: string, role: BuiltInRole): string {
+export function roleWorktreePath(repoRoot: string, runId: string, role: RoleName): string {
   return resolve(repoRoot, DEFAULT_WORKTREES_DIR, 'pi-herd', runId, role);
 }
 
@@ -159,7 +159,7 @@ async function assertBranchAvailable(runner: CommandRunner, repoRoot: string, br
   throw new Error(`Could not check branch ${branch}: ${firstLine(result.stderr) || firstLine(result.stdout) || 'git show-ref failed'}`);
 }
 
-async function assertRefAvailable(runner: CommandRunner, repoRoot: string, ref: string, role: BuiltInRole): Promise<void> {
+async function assertRefAvailable(runner: CommandRunner, repoRoot: string, ref: string, role: RoleName): Promise<void> {
   const result = await runner.run('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoRoot });
   if (result.exitCode === 0) {
     return;
@@ -170,7 +170,7 @@ async function assertRefAvailable(runner: CommandRunner, repoRoot: string, ref: 
 async function createWorktreeHerdrFirst(options: {
   runner: CommandRunner;
   repoRoot: string;
-  role: BuiltInRole;
+  role: RoleName;
   runSlug: string;
   branch: string;
   baseRef: string;
@@ -212,7 +212,7 @@ async function createWorktreeHerdrFirst(options: {
 }
 
 function parseHerdrWorktreeResult(stdout: string, options: {
-  role: BuiltInRole;
+  role: RoleName;
   branch: string;
   path: string;
 }): MaterializedWorktree | null {

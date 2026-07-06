@@ -3,7 +3,7 @@ import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { OUTPUT_BUDGETS, type BuiltInRole } from './defaults.js';
+import { OUTPUT_BUDGETS, type RoleName } from './defaults.js';
 import { firstLine } from './herdr.js';
 import { assertNoSymlinkPathComponents, materializeRoleWorktree, roleWorktreePath } from './worktree.js';
 import { resolveRunContext, updateRunState, type RunState } from './run-state.js';
@@ -12,7 +12,7 @@ export interface RefreshOptions {
   cwd: string;
   configPath?: string;
   run?: string;
-  role: BuiltInRole;
+  role: RoleName;
   force?: boolean;
   runner?: CommandRunner;
 }
@@ -210,7 +210,7 @@ export function implementationBranchFor(state: RunState): string {
   return branch;
 }
 
-async function updateRoleWorktreeState(statePath: string, state: RunState, role: BuiltInRole): Promise<void> {
+async function updateRoleWorktreeState(statePath: string, state: RunState, role: RoleName): Promise<void> {
   const record = state.roles[role];
   await updateRunState(statePath, (fresh) => {
     const freshRecord = fresh.roles[role];
@@ -248,7 +248,7 @@ export async function assertExpectedRoleWorktree(
   worktreePath: string,
   branch: string | undefined,
   expectedPath: string,
-  role: BuiltInRole,
+  role: RoleName,
   repoRoot: string
 ): Promise<void> {
   if (resolve(worktreePath) !== resolve(expectedPath)) {
@@ -277,7 +277,7 @@ async function gitCommonDir(runner: CommandRunner, cwd: string): Promise<string>
   return resolve(result.stdout.trim());
 }
 
-async function stashDirtyWorktree(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
+async function stashDirtyWorktree(runner: CommandRunner, worktreePath: string, role: RoleName, runId: string): Promise<string> {
   await git(runner, 'stash dirty reviewer/tester worktree changes', ['stash', 'push', '--include-untracked', '--message', `pi-herd ${role} refresh backup ${runId}`], worktreePath);
   const result = await git(runner, 'resolve reviewer/tester dirty work stash', ['rev-parse', '--verify', 'refs/stash'], worktreePath);
   return result.stdout.trim();
@@ -300,7 +300,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function backupRefFor(runner: CommandRunner, worktreePath: string, role: BuiltInRole, runId: string): Promise<string> {
+export async function backupRefFor(runner: CommandRunner, worktreePath: string, role: RoleName, runId: string): Promise<string> {
   const head = await git(runner, 'resolve reviewer/tester worktree HEAD for backup ref', ['rev-parse', '--short=12', 'HEAD'], worktreePath);
   return `refs/pi-herd/backup/${role}/${runId}/${head.stdout.trim()}-${randomUUID()}`;
 }
