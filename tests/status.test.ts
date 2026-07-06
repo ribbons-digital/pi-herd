@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 import { collectRun, statusRun, waitRun } from '../src/status.js';
 import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
+import type { HarnessAdapter } from '../src/harness.js';
 
 let dir: string;
 const NOW = new Date('2026-07-01T12:00:00.000Z');
@@ -48,6 +49,35 @@ describe('status, wait, and collect commands', () => {
     expect(result.text).toContain('planner: stored=working; evaluated=incomplete; signal=idle');
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('working');
+  });
+
+  it('probes role activity through an injected harness adapter', async () => {
+    const { state } = await createWorkingRun('planner-pane');
+    const runner = new RecordingRunner(baseResponses({}));
+    const calls: string[] = [];
+    const harness: HarnessAdapter = {
+      verifyCurrentPane: async () => null,
+      bindOrLaunchLead: async () => {
+        throw new Error('not used');
+      },
+      launchRoleSession: async () => {
+        throw new Error('not used');
+      },
+      sendToPane: async () => ({ verification: 'verified', note: null }),
+      waitForRoleReady: async () => null,
+      validatePane: async () => ({ status: 'ok', result: ok() }),
+      interruptPane: async () => ok(),
+      readRoleSignal: async ({ record }) => {
+        calls.push(`signal:${record.role}:${record.herdr_pane_id}`);
+        return { signal: 'idle', warnings: [] };
+      }
+    };
+
+    const result = await statusRun({ cwd: dir, run: state.run_id, runner, now: NOW, harness });
+
+    expect(result.text).toContain('planner: stored=working; evaluated=incomplete; signal=idle');
+    expect(calls).toContain('signal:planner:planner-pane');
+    expect(runner.calls).not.toContain('herdr pane get planner-pane');
   });
 
   it('does not mark done when the activity signal is unknown even with valid artifacts', async () => {

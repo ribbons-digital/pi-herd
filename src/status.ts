@@ -2,11 +2,12 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { describeFailure, notificationShow, paneGet, waitAgentStatus } from './herdr.js';
+import { describeFailure, notificationShow } from './herdr.js';
 import { OUTPUT_BUDGETS, type RoleName } from './defaults.js';
 import { resolveRunContext, updateRunState, type RoleRecord, type RoleStatus, type RunState } from './run-state.js';
 import { dirtyPaths } from './refresh.js';
 import { parseVerdictMarker, type VerdictMarker } from './verdict.js';
+import { createHarnessAdapter, type HarnessAdapter, type HarnessRoleSignal } from './harness.js';
 
 export interface StatusCommandOptions {
   cwd: string;
@@ -15,6 +16,7 @@ export interface StatusCommandOptions {
   json?: boolean;
   runner?: CommandRunner;
   now?: Date;
+  harness?: HarnessAdapter;
 }
 
 export interface WaitCommandOptions extends StatusCommandOptions {
@@ -66,7 +68,7 @@ export interface ArtifactStatus {
   verdict?: VerdictMarker | null;
 }
 
-type RoleSignal = 'idle' | 'working' | 'blocked' | 'done' | 'stopped' | 'unknown' | 'not-launched';
+type RoleSignal = HarnessRoleSignal;
 
 interface RoleDecision {
   role: RoleName;
@@ -93,7 +95,7 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000;
 export async function statusRun(options: StatusCommandOptions): Promise<StatusCommandResult> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true);
+  const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true, options.harness);
   return {
     state: resolved.state,
     snapshot,
@@ -116,7 +118,7 @@ export async function waitRun(options: WaitCommandOptions): Promise<StatusComman
     const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
     latestStatePath = resolved.statePath;
     latestState = resolved.state;
-    latestSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true);
+    latestSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true, options.harness);
     const activeRoles = latestSnapshot.roles.filter((role) => isWaitTarget(role.stored_status));
     const resolvedRoles = activeRoles.filter((role) => role.evaluated_status === 'done' || role.evaluated_status === 'incomplete' || role.evaluated_status === 'blocked');
     if (!activeRoles.length || resolvedRoles.length === activeRoles.length) {
@@ -152,7 +154,7 @@ export async function waitRun(options: WaitCommandOptions): Promise<StatusComman
 export async function collectRun(options: StatusCommandOptions): Promise<StatusCommandResult> {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const initialSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true);
+  const initialSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? new Date(), true, options.harness);
   const persisted = await persistRoleDecisions(resolved.statePath, resolved.state, initialSnapshot);
   const logWarnings = await collectPaneLogs(persisted.state, runner);
   const snapshot = snapshotWithPersistedState(initialSnapshot, persisted.state);
@@ -170,12 +172,12 @@ export async function collectRun(options: StatusCommandOptions): Promise<StatusC
   };
 }
 
-export async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, probeSignals: boolean): Promise<RunSnapshot> {
+export async function buildSnapshot(state: RunState, runner: CommandRunner, now: Date, probeSignals: boolean, harness: HarnessAdapter = createHarnessAdapter()): Promise<RunSnapshot> {
   const roles: RoleSnapshot[] = [];
   const warnings: string[] = [];
   for (const record of roleEntries(state)) {
     const artifacts = await artifactStatuses(state, record);
-    const signalResult = probeSignals ? await readRoleSignal(runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
+    const signalResult = probeSignals ? await readRoleSignal(harness, runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
     const dirtyWarnings = await artifactOnlyWorktreeWarnings(runner, record);
     const verdict = currentPassVerdict(record, artifacts);
     const roleWarnings = [
@@ -266,27 +268,8 @@ function verdictNotes(record: RoleRecord, artifacts: ArtifactStatus[], verdict: 
   return notes;
 }
 
-async function readRoleSignal(runner: CommandRunner, state: RunState, record: RoleRecord): Promise<{ signal: RoleSignal; warnings: string[] }> {
-  if (!record.herdr_pane_id) {
-    return { signal: 'not-launched', warnings: [] };
-  }
-  const pane = await paneGet(runner, state.repo_root, record.herdr_pane_id);
-  if (pane.exitCode !== 0) {
-    if (isMissingPaneFailure(pane)) {
-      return { signal: 'stopped', warnings: [`pane ${record.herdr_pane_id} is missing; treating as stopped`] };
-    }
-    return { signal: 'unknown', warnings: [`could not validate pane ${record.herdr_pane_id}: ${describeFailure(pane, 'pane get failed')}`] };
-  }
-  for (const signal of ['done', 'blocked', 'idle', 'working'] as const) {
-    const result = await waitAgentStatus(runner, state.repo_root, record.herdr_pane_id, signal, DEFAULT_SIGNAL_TIMEOUT_MS);
-    if (result.exitCode === 0) {
-      return { signal, warnings: [] };
-    }
-    if (isCapabilityFailure(result)) {
-      return { signal: 'unknown', warnings: [`activity signal unavailable: ${describeFailure(result, 'wait agent-status failed')}`] };
-    }
-  }
-  return { signal: 'unknown', warnings: [] };
+async function readRoleSignal(harness: HarnessAdapter, runner: CommandRunner, state: RunState, record: RoleRecord): Promise<{ signal: RoleSignal; warnings: string[] }> {
+  return harness.readRoleSignal({ runner, state, record, timeoutMs: DEFAULT_SIGNAL_TIMEOUT_MS });
 }
 
 async function artifactStatuses(state: RunState, record: RoleRecord): Promise<ArtifactStatus[]> {
@@ -497,18 +480,6 @@ function signalFromStoredStatus(status: RoleStatus): RoleSignal {
   return 'unknown';
 }
 
-function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): boolean {
-  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
-    return false;
-  }
-  return [/\bmissing\s+pane\b/, /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/, /\b(no such|not found)\s+[^\n]*\bpane\b/].some((pattern) => pattern.test(output));
-}
-
-function isCapabilityFailure(result: Awaited<ReturnType<typeof waitAgentStatus>>): boolean {
-  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  return result.error?.code === 'ENOENT' || /\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output);
-}
 
 function positiveInteger(value: number, name: string): number {
   if (!Number.isInteger(value) || value <= 0) {

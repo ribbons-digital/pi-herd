@@ -4,8 +4,8 @@ import { join, relative } from 'node:path';
 import { type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
 import { DEFAULT_RUNS_DIR, type RoleName } from './defaults.js';
-import { applyRoleLaunch, launchRoleSession, sendToPane, verifyCurrentPane, waitForRoleReady } from './start.js';
-import { describeFailure, paneGet, paneSendEscape } from './herdr.js';
+import { createHarnessAdapter, applyRoleLaunch, type HarnessAdapter } from './harness.js';
+import { describeFailure } from './herdr.js';
 import { materializeRoleWorktree } from './worktree.js';
 import { loadConfigIfPresent, resolveRunContext, resolveRunsRoot, updateRunState, type RoleRecord, type RunState } from './run-state.js';
 import { verdictInstruction } from './verdict.js';
@@ -17,6 +17,7 @@ export interface RunCommandOptions {
   run?: string;
   env?: NodeJS.ProcessEnv;
   runner?: CommandRunner;
+  harness?: HarnessAdapter;
 }
 
 /** Options for sending a prompt to a selected role pane. */
@@ -35,6 +36,7 @@ export interface CommandResultText {
 /** Send a prompt to a role, validating saved panes and activating or relaunching roles when needed. */
 export async function sendMessage(options: SendOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
+  const harness = options.harness ?? createHarnessAdapter();
   const resolved = await resolveRunState(options, runner);
   const state = resolved.state;
   const record = state.roles[options.role];
@@ -42,16 +44,16 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     throw new Error(`Role ${options.role} is not selected for run ${state.run_id}.`);
   }
   if (options.requireLead) {
-    await assertCurrentLead(state, runner, options.env ?? process.env);
+    await assertCurrentLead(state, runner, harness, options.env ?? process.env);
   }
   const config = await loadConfigIfPresent(options.configPath ? options.cwd : state.repo_root, options.configPath);
-  const activation = await ensureRolePane({ state, statePath: resolved.statePath, config, runner, role: options.role });
+  const activation = await ensureRolePane({ state, statePath: resolved.statePath, config, runner, harness, role: options.role });
   const paneId = record.herdr_pane_id;
   if (!paneId) {
     throw new Error(`Role ${options.role} has no pane after activation.`);
   }
   if (activation.launchedNow) {
-    const readyWarning = await waitForRoleReady(runner, state.repo_root, paneId, options.role);
+    const readyWarning = await harness.waitForRoleReady(runner, state.repo_root, paneId, options.role);
     if (readyWarning) {
       activation.notes.push(readyWarning);
     }
@@ -71,7 +73,7 @@ export async function sendMessage(options: SendOptions): Promise<CommandResultTe
     ? `${options.message}\n\n${verdictInstruction(join(state.canonical_run_dir, artifactName), reservedPass)}`
     : options.message;
   // Skipped passes are safe: older-pass verdicts become stale when a later pass is reserved.
-  const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
+  const delivery = await harness.sendToPane(runner, state.repo_root, paneId, prompt);
   const updated = await updateRunState(resolved.statePath, (fresh) => {
     const freshRecord = fresh.roles[options.role];
     if (!freshRecord) return;
@@ -101,6 +103,7 @@ export interface InterruptOptions extends RunCommandOptions {
 /** Send Escape to a role pane to stop its current work, marking the stored role status blocked until it is re-prompted. */
 export async function interruptRole(options: InterruptOptions): Promise<CommandResultText> {
   const runner = options.runner ?? nodeCommandRunner;
+  const harness = options.harness ?? createHarnessAdapter();
   const resolved = await resolveRunState(options, runner);
   const state = resolved.state;
   const record = state.roles[options.role];
@@ -111,14 +114,14 @@ export async function interruptRole(options: InterruptOptions): Promise<CommandR
   if (!paneId) {
     throw new Error(`Role ${options.role} has no launched pane to interrupt.`);
   }
-  const pane = await paneGet(runner, state.repo_root, paneId);
-  if (pane.exitCode !== 0) {
-    if (!pane.timedOut && !pane.error && isMissingPaneFailure(pane)) {
+  const pane = await harness.validatePane(runner, state.repo_root, paneId);
+  if (pane.status !== 'ok') {
+    if (pane.status === 'missing') {
       throw new Error(`Role ${options.role} pane ${paneId} is missing; nothing to interrupt.`);
     }
-    throw new Error(`Could not validate ${options.role} pane ${paneId}: ${describeFailure(pane, 'pane get failed')}`);
+    throw new Error(`Could not validate ${options.role} pane ${paneId}: ${describeFailure(pane.result, 'pane get failed')}`);
   }
-  const escape = await paneSendEscape(runner, state.repo_root, paneId);
+  const escape = await harness.interruptPane(runner, state.repo_root, paneId);
   if (escape.exitCode !== 0) {
     throw new Error(`Could not send Escape to ${options.role} pane ${paneId}: ${describeFailure(escape, 'pane send-keys failed')}`);
   }
@@ -194,7 +197,7 @@ export async function leadCollect(options: RunCommandOptions): Promise<CommandRe
   return { state, text: `${lines.join('\n')}\n` };
 }
 
-async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; role: RoleName }): Promise<{ notes: string[]; launchedNow: boolean }> {
+async function ensureRolePane(options: { state: RunState; statePath: string; config: PiHerdConfig; runner: CommandRunner; harness: HarnessAdapter; role: RoleName }): Promise<{ notes: string[]; launchedNow: boolean }> {
   const record = options.state.roles[options.role];
   if (!record) {
     throw new Error(`Role ${options.role} is not selected for this run.`);
@@ -203,10 +206,10 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
   let launchedNow = false;
   let stalePane = false;
   if (record.herdr_pane_id) {
-    const pane = await paneGet(options.runner, options.state.repo_root, record.herdr_pane_id);
-    if (pane.exitCode !== 0) {
-      if (pane.timedOut || pane.error || !isMissingPaneFailure(pane)) {
-        throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane, 'pane get failed')}`);
+    const pane = await options.harness.validatePane(options.runner, options.state.repo_root, record.herdr_pane_id);
+    if (pane.status !== 'ok') {
+      if (pane.status !== 'missing') {
+        throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane.result, 'pane get failed')}`);
       }
       notes.push(`Detected stale pane for ${options.role}; relaunching.`);
       stalePane = true;
@@ -238,7 +241,7 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
     notes.push(`Activating ${options.role}: launching session.`);
-    const launch = await launchRoleSession({
+    const launch = await options.harness.launchRoleSession({
       state: options.state,
       config: options.config,
       runner: options.runner,
@@ -265,17 +268,6 @@ async function ensureRolePane(options: { state: RunState; statePath: string; con
   return { notes, launchedNow };
 }
 
-function isMissingPaneFailure(result: Awaited<ReturnType<typeof paneGet>>): boolean {
-  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
-    return false;
-  }
-  return [
-    /\bmissing\s+pane\b/,
-    /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/,
-    /\b(no such|not found)\s+[^\n]*\bpane\b/
-  ].some((pattern) => pattern.test(output));
-}
 
 async function resolveRunState(options: RunCommandOptions, runner: CommandRunner): Promise<{ state: RunState; statePath: string }> {
   return resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, env: options.env, runner });
@@ -285,11 +277,11 @@ function hasCurrentPaneEnv(env: NodeJS.ProcessEnv): env is NodeJS.ProcessEnv & {
   return env.HERDR_ENV === '1' && Boolean(env.HERDR_PANE_ID) && env.PI_CODING_AGENT === 'true';
 }
 
-async function assertCurrentLead(state: RunState, runner: CommandRunner, env: NodeJS.ProcessEnv): Promise<void> {
+async function assertCurrentLead(state: RunState, runner: CommandRunner, harness: HarnessAdapter, env: NodeJS.ProcessEnv): Promise<void> {
   if (!hasCurrentPaneEnv(env)) {
     throw new Error('Lead command must run from the bound Pi lead pane.');
   }
-  const verified = await verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
+  const verified = await harness.verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
   if (!verified || state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
     throw new Error('Lead command must run from the bound Pi lead pane for this run.');
   }

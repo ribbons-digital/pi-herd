@@ -6,6 +6,7 @@ import { buildPiCommand, startRun } from '../src/start.js';
 import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 import type { RunState } from '../src/run-state.js';
 import { defaultConfig } from '../src/config.js';
+import type { HarnessAdapter } from '../src/harness.js';
 
 let dir: string;
 const NOW = new Date('2026-07-01T12:00:00.000Z');
@@ -70,6 +71,45 @@ describe('start orchestration', () => {
     expect(planner.args).toContain('high');
     expect(reviewer.args).toContain('opus');
     expect(planner.metadata.expected_writes).toBe('artifacts');
+  });
+
+  it('can start a run through an injected harness adapter seam', async () => {
+    const runner = new RecordingRunner(baseResponses({
+      [worktreeCommand('launch-sessions')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', RUN_ID, 'implementer'), branch: `pi-herd/${RUN_ID}/impl` })
+    }));
+    const harnessCalls: string[] = [];
+    const harness: HarnessAdapter = {
+      verifyCurrentPane: async () => null,
+      bindOrLaunchLead: async ({ state }) => {
+        harnessCalls.push(`lead:${state.run_id}`);
+        return { workspaceId: 'lead-ws', tabId: 'lead-tab', paneId: 'lead-pane', sessionRef: null, launchMethod: 'bound-current-pane', metadata: { launch_method: 'bound-current-pane', expected_writes: 'none' } };
+      },
+      launchRoleSession: async ({ role, cwd }) => {
+        harnessCalls.push(`launch:${role}:${cwd}`);
+        return { workspaceId: 'lead-ws', tabId: `${role}-tab`, paneId: `${role}-pane`, sessionRef: `${RUN_ID}-${role}`, launchMethod: 'herdr-agent-start', metadata: { launch_method: 'herdr-agent-start', expected_writes: role === 'planner' ? 'artifacts' : 'worktree' } };
+      },
+      sendToPane: async (_runner, cwd, paneId, message) => {
+        harnessCalls.push(`send:${cwd}:${paneId}:${message.split('\\n')[0]}`);
+        return { verification: 'verified', note: null };
+      },
+      waitForRoleReady: async (_runner, cwd, paneId, role) => {
+        harnessCalls.push(`ready:${cwd}:${paneId}:${role}`);
+        return null;
+      },
+      validatePane: async () => ({ status: 'ok', result: { exitCode: 0, stdout: '', stderr: '' } }),
+      interruptPane: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      readRoleSignal: async () => ({ signal: 'unknown', warnings: [] })
+    };
+
+    const result = await startRun({ cwd: dir, goal: 'Launch sessions', now: NOW, runner, env: {}, harness });
+
+    expect(result.state.lead_binding.herdr_pane_id).toBe('lead-pane');
+    expect(result.state.roles.planner?.herdr_pane_id).toBe('planner-pane');
+    expect(result.state.roles.implementer?.herdr_pane_id).toBe('implementer-pane');
+    expect(harnessCalls).toContain(`lead:${RUN_ID}`);
+    expect(harnessCalls).toContain(`ready:${dir}:planner-pane:planner`);
+    expect(harnessCalls.some((call) => call.startsWith(`send:${dir}:planner-pane:`))).toBe(true);
+    expect(runner.calls.some((call) => call.startsWith('herdr agent start'))).toBe(false);
   });
 
   it('binds current lead, launches planner and staged implementer, and leaves reviewer/tester slot-only', async () => {
