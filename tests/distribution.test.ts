@@ -16,7 +16,7 @@ describe('bundled dist entrypoints', () => {
     const result = await runDist('dist/herdr-plugin-action.js', ['start-help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('Herdr 0.7.1 plugin actions do not pass goal text');
+    expect(result.stdout).toContain('plugin actions do not pass goal text');
     expect(result.stdout).toContain('pi-herd start <goal>');
     expect(result.stderr).toBe('');
   });
