@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runDoctor, formatDoctorText } from './doctor.js';
@@ -550,7 +551,12 @@ export function parseSendArgs(args: string[], usage: string): ParsedSendArgs {
   return { role, message, run, config, help: false };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isDirectCliEntrypoint(): boolean {
+  const entrypoint = process.argv[1];
+  return Boolean(entrypoint && ['cli.ts', 'cli.js'].includes(basename(entrypoint)) && import.meta.url === pathToFileURL(entrypoint).href);
+}
+
+if (isDirectCliEntrypoint()) {
   main().then((code) => {
     process.exitCode = code;
   }, (error) => {

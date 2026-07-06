@@ -35,6 +35,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check committed dist freshness
+        run: test -z "$(git status --porcelain -- dist)"
+
       - name: Lint
         run: pnpm lint
 
