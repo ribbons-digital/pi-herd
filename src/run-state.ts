@@ -135,8 +135,12 @@ export async function createRun(options: RunCreateOptions): Promise<RunCreateRes
       throw new Error(`Role ${role} is not defined in config roles.definitions.`);
     }
   }
+  const selectedSourceRoles = roles.filter((role) => config.roles.definitions[role].expected_writes === 'worktree');
+  if (selectedSourceRoles.length && !selectedSourceRoles.includes('implementer')) {
+    throw new Error('Runs with worktree-writing roles must include the built-in implementer role as the primary source role.');
+  }
   const shouldMaterializeWorktrees = options.withWorktrees === 'auto'
-    ? roles.includes('implementer') || Boolean(options.plannerWorktree && roles.includes('planner'))
+    ? selectedSourceRoles.length > 0 || Boolean(options.plannerWorktree && roles.includes('planner'))
     : Boolean(options.withWorktrees);
   if (shouldMaterializeWorktrees) {
     await assertRepoClean(runner, repoRoot, cleanCheckIgnorePaths);

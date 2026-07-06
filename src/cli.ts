@@ -45,8 +45,8 @@ Commands:
   board      Show a read-only run board optimized for a Herdr pane.
   wait       Wait for working roles to resolve and persist role verdicts.
   collect    Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
-  refresh    Refresh reviewer/tester worktrees from the implementation branch.
-  diff       Show implementation branch changes against the run base ref.
+  refresh    Refresh reviewer/tester worktrees from the primary implementation branch.
+  diff       Show source branch changes against the run base ref.
   merge-plan Write MERGE_DECISION.md with manual merge context.
   cleanup    Report or apply safe run cleanup actions.
   lead       Lead-session shortcuts for status, brief, collect, and send.

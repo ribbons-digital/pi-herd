@@ -85,26 +85,29 @@ export async function startRun(options: StartOptions): Promise<StartResult> {
       await writeJsonAtomic(statePath, state);
     }
 
-    if (state.roles.implementer) {
-      if (!state.roles.implementer.worktree_path) {
-        throw new Error('Implementer worktree was not materialized; cannot launch staged implementer session.');
+    for (const role of state.role_order ?? Object.keys(state.roles)) {
+      const record = state.roles[role];
+      if (!record || role === 'planner' || record.expected_writes !== 'worktree') {
+        continue;
       }
-      const implementer = await launchRoleSession({ state, config: result.config, runner, role: 'implementer', cwd: state.roles.implementer.worktree_path });
-      applyRoleLaunch(state.roles.implementer, implementer);
-      state.roles.implementer.status = 'staged';
+      if (!record.worktree_path) {
+        const label = role === 'implementer' ? 'Implementer' : `Source role ${role}`;
+        throw new Error(`${label} worktree was not materialized; cannot launch staged source session.`);
+      }
+      const source = await launchRoleSession({ state, config: result.config, runner, role, cwd: record.worktree_path });
+      applyRoleLaunch(record, source);
+      record.status = 'staged';
       state.updated_at = new Date().toISOString();
       await writeJsonAtomic(statePath, state);
-      launched.push({ role: 'implementer', paneId: implementer.paneId, sessionRef: implementer.sessionRef, launchMethod: implementer.launchMethod });
+      launched.push({ role, paneId: source.paneId, sessionRef: source.sessionRef, launchMethod: source.launchMethod });
     }
 
     for (const role of state.role_order ?? Object.keys(state.roles)) {
-      if (role === 'planner' || role === 'implementer') {
+      const record = state.roles[role];
+      if (!record || role === 'planner' || record.expected_writes === 'worktree') {
         continue;
       }
-      const record = state.roles[role];
-      if (record) {
-        record.status = 'staged';
-      }
+      record.status = 'staged';
     }
     state.updated_at = new Date().toISOString();
     await writeJsonAtomic(statePath, state);

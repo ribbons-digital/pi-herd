@@ -308,6 +308,34 @@ describe('refresh and diff commands', () => {
     expect(result.text).toContain(`Range: main...${state.roles.implementer!.branch}`);
     expect(result.text).toContain('src/file.ts | 2 ++');
     expect(result.text).toContain('M\tsrc/file.ts');
+    expect(result.text).not.toContain('## Source implementer');
+    expect(result.text).not.toContain('Branch:');
+  });
+
+  it('renders one source section per worktree-writing role when multiple sources are selected', async () => {
+    await mkdir(join(dir, '.pi-herd'), { recursive: true });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), SOURCE_ROLE_CONFIG, 'utf8');
+    const runId = '2026-07-01T12-00-00-diff-source-fanout';
+    const runner = new RecordingRunner({
+      [`git diff --stat main...pi-herd/${runId}/impl`]: okText(' impl.ts | 1 +\n'),
+      [`git diff --name-status main...pi-herd/${runId}/impl`]: okText('M\timpl.ts\n'),
+      [`git diff --stat main...pi-herd/${runId}/source_assistant`]: okText(' source.ts | 2 ++\n'),
+      [`git diff --name-status main...pi-herd/${runId}/source_assistant`]: okText('A\tsource.ts\n')
+    });
+    const { state } = await createRun({ cwd: dir, goal: 'Diff source fanout', now: NOW, runner });
+
+    const result = await diffRun({ cwd: dir, run: state.run_id, runner });
+
+    expect(result.text).toContain('## Source implementer');
+    expect(result.text).toContain(`Branch: pi-herd/${runId}/impl`);
+    expect(result.text).toContain(`Range: main...pi-herd/${runId}/impl`);
+    expect(result.text).toContain('impl.ts | 1 +');
+    expect(result.text).toContain('M\timpl.ts');
+    expect(result.text).toContain('## Source source_assistant');
+    expect(result.text).toContain(`Branch: pi-herd/${runId}/source_assistant`);
+    expect(result.text).toContain(`Range: main...pi-herd/${runId}/source_assistant`);
+    expect(result.text).toContain('source.ts | 2 ++');
+    expect(result.text).toContain('A\tsource.ts');
   });
 });
 
@@ -320,6 +348,8 @@ async function createMaterializedRun(goal: string) {
   state.roles.reviewer!.worktree_path = worktreePath;
   return { runner, state, statePath };
 }
+
+const SOURCE_ROLE_CONFIG = `schema_version: 1\nharness:\n  default: pi\n  profiles:\n    pi:\n      command: pi\npaths:\n  runs_dir: .pi-herd/runs\n  prompts_dir: .pi-herd/prompts\nroles:\n  default:\n    - implementer\n    - source_assistant\n  definitions:\n    implementer:\n      display_name: Implementer\n      expected_writes: worktree\n      required_artifacts:\n        - IMPLEMENTATION_NOTES.md\n    source_assistant:\n      display_name: Source Assistant\n      expected_writes: worktree\n      required_artifacts:\n        - SOURCE_NOTES.md\n`;
 
 function expectedRoleWorktreePath(state: RunState, role: 'reviewer' | 'tester'): string {
   return join(dir, '.worktrees', 'pi-herd', state.run_id, role);

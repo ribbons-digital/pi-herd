@@ -217,8 +217,8 @@ function validateRoleRegistry(value: unknown): RoleRegistryConfig {
     if (!isExpectedWrites(definition.expected_writes)) {
       throw new Error(`Config roles.definitions.${role}.expected_writes must be one of none, artifacts, or worktree.`);
     }
-    if (definition.expected_writes === 'worktree' && role !== 'implementer') {
-      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree in schema_version 1; only the built-in implementer role is materialized automatically.`);
+    if (definition.expected_writes === 'worktree' && (role === 'planner' || role === 'reviewer' || role === 'tester')) {
+      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree because planner, reviewer, and tester keep built-in orchestration semantics.`);
     }
     if (!isStringArray(definition.required_artifacts)) {
       throw new Error(`Config roles.definitions.${role}.required_artifacts must be a string array.`);

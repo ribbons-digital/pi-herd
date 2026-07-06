@@ -7598,8 +7598,8 @@ function validateRoleRegistry(value) {
     if (!isExpectedWrites(definition.expected_writes)) {
       throw new Error(`Config roles.definitions.${role}.expected_writes must be one of none, artifacts, or worktree.`);
     }
-    if (definition.expected_writes === "worktree" && role !== "implementer") {
-      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree in schema_version 1; only the built-in implementer role is materialized automatically.`);
+    if (definition.expected_writes === "worktree" && (role === "planner" || role === "reviewer" || role === "tester")) {
+      throw new Error(`Config roles.definitions.${role}.expected_writes cannot be worktree because planner, reviewer, and tester keep built-in orchestration semantics.`);
     }
     if (!isStringArray(definition.required_artifacts)) {
       throw new Error(`Config roles.definitions.${role}.required_artifacts must be a string array.`);
@@ -8212,10 +8212,13 @@ async function materializeRoleWorktree(options) {
 }
 function rolesToMaterialize(state, plannerWorktree) {
   const roles = [];
-  if (state.roles.implementer) {
-    roles.push("implementer");
+  for (const role of state.role_order ?? Object.keys(state.roles)) {
+    const record = state.roles[role];
+    if (record?.expected_writes === "worktree") {
+      roles.push(role);
+    }
   }
-  if (plannerWorktree && state.roles.planner) {
+  if (plannerWorktree && state.roles.planner && !roles.includes("planner")) {
     roles.push("planner");
   }
   return roles;
@@ -8345,7 +8348,11 @@ async function createRun(options) {
       throw new Error(`Role ${role} is not defined in config roles.definitions.`);
     }
   }
-  const shouldMaterializeWorktrees = options.withWorktrees === "auto" ? roles.includes("implementer") || Boolean(options.plannerWorktree && roles.includes("planner")) : Boolean(options.withWorktrees);
+  const selectedSourceRoles = roles.filter((role) => config.roles.definitions[role].expected_writes === "worktree");
+  if (selectedSourceRoles.length && !selectedSourceRoles.includes("implementer")) {
+    throw new Error("Runs with worktree-writing roles must include the built-in implementer role as the primary source role.");
+  }
+  const shouldMaterializeWorktrees = options.withWorktrees === "auto" ? selectedSourceRoles.length > 0 || Boolean(options.plannerWorktree && roles.includes("planner")) : Boolean(options.withWorktrees);
   if (shouldMaterializeWorktrees) {
     await assertRepoClean(runner, repoRoot, cleanCheckIgnorePaths);
   }
@@ -8951,25 +8958,28 @@ async function startRun(options) {
       state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
       await writeJsonAtomic(statePath, state);
     }
-    if (state.roles.implementer) {
-      if (!state.roles.implementer.worktree_path) {
-        throw new Error("Implementer worktree was not materialized; cannot launch staged implementer session.");
-      }
-      const implementer = await launchRoleSession({ state, config: result.config, runner, role: "implementer", cwd: state.roles.implementer.worktree_path });
-      applyRoleLaunch(state.roles.implementer, implementer);
-      state.roles.implementer.status = "staged";
-      state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      await writeJsonAtomic(statePath, state);
-      launched.push({ role: "implementer", paneId: implementer.paneId, sessionRef: implementer.sessionRef, launchMethod: implementer.launchMethod });
-    }
     for (const role of state.role_order ?? Object.keys(state.roles)) {
-      if (role === "planner" || role === "implementer") {
+      const record = state.roles[role];
+      if (!record || role === "planner" || record.expected_writes !== "worktree") {
         continue;
       }
-      const record = state.roles[role];
-      if (record) {
-        record.status = "staged";
+      if (!record.worktree_path) {
+        const label = role === "implementer" ? "Implementer" : `Source role ${role}`;
+        throw new Error(`${label} worktree was not materialized; cannot launch staged source session.`);
       }
+      const source = await launchRoleSession({ state, config: result.config, runner, role, cwd: record.worktree_path });
+      applyRoleLaunch(record, source);
+      record.status = "staged";
+      state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      await writeJsonAtomic(statePath, state);
+      launched.push({ role, paneId: source.paneId, sessionRef: source.sessionRef, launchMethod: source.launchMethod });
+    }
+    for (const role of state.role_order ?? Object.keys(state.roles)) {
+      const record = state.roles[role];
+      if (!record || role === "planner" || record.expected_writes === "worktree") {
+        continue;
+      }
+      record.status = "staged";
     }
     state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
     await writeJsonAtomic(statePath, state);
@@ -9387,7 +9397,7 @@ async function leadBrief(options) {
     ...inbox.length ? inbox.map((item) => `- ${item}`) : ["- none"],
     ...warnings.length ? ["", "## Warnings", ...warnings.map((warning) => `- ${warning}`)] : [],
     "",
-    "Next: send work to staged roles, wait or collect active workers, refresh reviewer/tester between passes, or diff implementation changes."
+    "Next: send work to staged roles, wait or collect active workers, refresh reviewer/tester between passes, or diff source branch changes."
   ];
   return { state, text: `${truncate(lines.join("\n"), 8e3)}
 ` };
@@ -9674,17 +9684,37 @@ ${formatBoundedLines(dirty)}`);
 async function diffRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const diff = await implementationDiff(runner, resolved.state);
-  const lines = [
-    `Diff for ${resolved.state.run_id}`,
-    `Range: ${diff.range}`,
-    "",
-    "## Stat",
-    ...diff.statLines.length ? diff.statLines : ["No changes."],
-    "",
-    "## Files",
-    ...diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."]
-  ];
+  const diffs = await sourceDiffs(runner, resolved.state);
+  if (diffs.length === 1) {
+    const diff = diffs[0];
+    const lines2 = [
+      `Diff for ${resolved.state.run_id}`,
+      `Range: ${diff.range}`,
+      "",
+      "## Stat",
+      ...diff.statLines.length ? diff.statLines : ["No changes."],
+      "",
+      "## Files",
+      ...diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."]
+    ];
+    return { state: resolved.state, text: `${formatBoundedLines(lines2)}
+` };
+  }
+  const lines = [`Diff for ${resolved.state.run_id}`];
+  for (const diff of diffs) {
+    lines.push(
+      "",
+      `## Source ${diff.role}`,
+      `Branch: ${diff.branch}`,
+      `Range: ${diff.range}`,
+      "",
+      "### Stat",
+      ...diff.statLines.length ? diff.statLines : ["No changes."],
+      "",
+      "### Files",
+      ...diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."]
+    );
+  }
   return { state: resolved.state, text: `${formatBoundedLines(lines)}
 ` };
 }
@@ -9712,18 +9742,43 @@ async function commitsAheadOfImplementation(runner, worktreePath, implementation
   }
   return { count, lines: logResult.stdout.trim() ? logResult.stdout.trimEnd().split(/\r?\n/) : [`${count} commit(s)`] };
 }
-async function implementationDiff(runner, state) {
-  const implementationBranch = implementationBranchFor(state);
-  await assertRefExists(runner, state.repo_root, implementationBranch, "implementation branch has not been created yet");
-  const range = `${state.base_ref}...${implementationBranch}`;
-  const stat3 = await git(runner, "show implementation diff stat", ["diff", "--stat", range], state.repo_root);
-  const names = await git(runner, "show implementation changed files", ["diff", "--name-status", range], state.repo_root);
-  return {
-    implementationBranch,
-    range,
-    statLines: stat3.stdout.trim() ? stat3.stdout.trimEnd().split(/\r?\n/) : [],
-    nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
-  };
+async function sourceDiffs(runner, state) {
+  return Promise.all(sourceRoleRecords(state).map(async (record) => {
+    const branch = record.branch;
+    if (!branch) {
+      throw new Error(`Source role ${record.role} branch is unavailable.`);
+    }
+    await assertRefExists(runner, state.repo_root, branch, `${record.role} source branch has not been created yet`);
+    const range = `${state.base_ref}...${branch}`;
+    const [stat3, names] = await Promise.all([
+      git(runner, `show ${record.role} source diff stat`, ["diff", "--stat", range], state.repo_root),
+      git(runner, `show ${record.role} source changed files`, ["diff", "--name-status", range], state.repo_root)
+    ]);
+    return {
+      role: record.role,
+      branch,
+      range,
+      statLines: stat3.stdout.trim() ? stat3.stdout.trimEnd().split(/\r?\n/) : [],
+      nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
+    };
+  }));
+}
+function sourceRoleRecords(state) {
+  const implementer = state.roles.implementer;
+  if (implementer?.expected_writes !== "worktree" || !implementer.branch) {
+    throw new Error("Implementation branch is unavailable because the implementer role is not selected.");
+  }
+  const records = [implementer];
+  for (const role of state.role_order ?? Object.keys(state.roles)) {
+    if (role === "implementer") {
+      continue;
+    }
+    const record = state.roles[role];
+    if (record?.expected_writes === "worktree") {
+      records.push(record);
+    }
+  }
+  return records;
 }
 function implementationBranchFor(state) {
   const branch = state.roles.implementer?.branch;
@@ -10428,9 +10483,9 @@ async function mergePlanRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner, includeAllForExplicitRun: true });
   const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true);
-  const diff = await implementationDiff(runner, resolved.state);
+  const diffs = await sourceDiffs(runner, resolved.state);
   const mergeDecisionPath = `${resolved.state.canonical_run_dir}/MERGE_DECISION.md`;
-  const content = await formatMergeDecision(resolved.state, snapshot, diff, options.now ?? /* @__PURE__ */ new Date());
+  const content = await formatMergeDecision(resolved.state, snapshot, diffs, options.now ?? /* @__PURE__ */ new Date());
   await writeText(mergeDecisionPath, content);
   const result = {
     state: resolved.state,
@@ -10441,7 +10496,7 @@ async function mergePlanRun(options) {
     exitCode: 0
   };
   if (options.json) {
-    result.text = `${JSON.stringify({ run_id: resolved.state.run_id, path: mergeDecisionPath, snapshot }, null, 2)}
+    result.text = `${JSON.stringify({ run_id: resolved.state.run_id, path: mergeDecisionPath, sources: diffs, snapshot }, null, 2)}
 `;
   }
   return result;
@@ -10578,10 +10633,12 @@ Re-run with --force to preserve and remove it.`);
   }
   return { actions, warnings, removed };
 }
-async function formatMergeDecision(state, snapshot, diff, now) {
+async function formatMergeDecision(state, snapshot, diffs, now) {
   const reviewerExcerpt = await artifactExcerpt(state, "REVIEW.md");
   const testerExcerpt = await artifactExcerpt(state, "TEST_REPORT.md");
   const finalSummaryExists = await exists4(`${state.canonical_run_dir}/FINAL_SUMMARY.md`);
+  const sourceLines = diffs.length === 1 ? singleSourceLines(state, diffs[0]) : multiSourceLines(state, diffs);
+  const mergeStep = diffs.length === 1 ? `2. If approved, merge ${diffs[0].branch} into the intended target branch manually.` : `2. If approved, merge the listed source branches into the intended target branch manually: ${diffs.map((diff) => diff.branch).join(", ")}.`;
   const lines = [
     "# Merge Decision",
     "",
@@ -10591,20 +10648,7 @@ async function formatMergeDecision(state, snapshot, diff, now) {
     `Goal: ${state.goal}`,
     `Status: ${state.status}`,
     "",
-    "## Source",
-    "",
-    `Base ref: ${state.base_ref}`,
-    `Implementation branch: ${diff.implementationBranch}`,
-    `Diff range: ${diff.range}`,
-    `Full diff command: git diff ${diff.range}`,
-    "",
-    "## Diff stat",
-    "",
-    ...boundedMarkdownLines(diff.statLines.length ? diff.statLines : ["No changes."]),
-    "",
-    "## Changed files",
-    "",
-    ...boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."]),
+    ...sourceLines,
     "",
     "## Role context",
     "",
@@ -10628,14 +10672,58 @@ async function formatMergeDecision(state, snapshot, diff, now) {
     "",
     "## Manual next steps",
     "",
-    "1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the implementation diff.",
-    `2. If approved, merge ${diff.implementationBranch} into the intended target branch manually.`,
+    "1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the source diff.",
+    mergeStep,
     "3. Run project validation in the target branch after merge.",
     "4. Run `pi-herd cleanup --complete` after the run is accepted, or `pi-herd cleanup --abandon` if it is not.",
     ""
   ];
   return `${lines.join("\n")}
 `;
+}
+function singleSourceLines(state, diff) {
+  return [
+    "## Source",
+    "",
+    `Base ref: ${state.base_ref}`,
+    `Implementation branch: ${diff.branch}`,
+    `Diff range: ${diff.range}`,
+    `Full diff command: git diff ${diff.range}`,
+    "",
+    "## Diff stat",
+    "",
+    ...boundedMarkdownLines(diff.statLines.length ? diff.statLines : ["No changes."]),
+    "",
+    "## Changed files",
+    "",
+    ...boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."])
+  ];
+}
+function multiSourceLines(state, diffs) {
+  const lines = [
+    "## Sources",
+    "",
+    `Base ref: ${state.base_ref}`
+  ];
+  for (const diff of diffs) {
+    lines.push(
+      "",
+      `### ${diff.role}`,
+      "",
+      `Branch: ${diff.branch}`,
+      `Diff range: ${diff.range}`,
+      `Full diff command: git diff ${diff.range}`,
+      "",
+      "#### Diff stat",
+      "",
+      ...boundedMarkdownLines(diff.statLines.length ? diff.statLines : ["No changes."]),
+      "",
+      "#### Changed files",
+      "",
+      ...boundedMarkdownLines(diff.nameStatusLines.length ? diff.nameStatusLines : ["No changed files."])
+    );
+  }
+  return lines;
 }
 async function cleanupDirtyPaths(runner, worktreePath) {
   const result = await git(runner, "check cleanup worktree status", ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"], worktreePath);
@@ -10759,8 +10847,8 @@ Commands:
   board      Show a read-only run board optimized for a Herdr pane.
   wait       Wait for working roles to resolve and persist role verdicts.
   collect    Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
-  refresh    Refresh reviewer/tester worktrees from the implementation branch.
-  diff       Show implementation branch changes against the run base ref.
+  refresh    Refresh reviewer/tester worktrees from the primary implementation branch.
+  diff       Show source branch changes against the run base ref.
   merge-plan Write MERGE_DECISION.md with manual merge context.
   cleanup    Report or apply safe run cleanup actions.
   lead       Lead-session shortcuts for status, brief, collect, and send.

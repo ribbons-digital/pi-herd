@@ -6,7 +6,7 @@ import { firstLine, parseWorktreeCreateResult, worktreeCreate, HERDR_WORKTREE_CR
 import { DEFAULT_WORKTREES_DIR, type RoleName } from './defaults.js';
 import type { RunState } from './run-state.js';
 
-/** Options for materializing Slice 3 role worktrees without launching panes or sessions. */
+/** Options for materializing role worktrees without launching task prompts. */
 export interface WorktreeMaterializeOptions {
   state: RunState;
   runner: CommandRunner;
@@ -25,7 +25,7 @@ export interface MaterializedWorktree {
   herdr_workspace_id: string | null;
 }
 
-/** Materialize the implementer worktree and optionally the planner worktree. */
+/** Materialize selected source-role worktrees and optionally the planner worktree. */
 export async function materializeWorktrees(options: WorktreeMaterializeOptions): Promise<MaterializedWorktree[]> {
   if (!options.skipCleanCheck) {
     await assertRepoClean(options.runner, options.state.repo_root, options.cleanCheckIgnorePaths);
@@ -88,10 +88,13 @@ export async function materializeRoleWorktree(options: WorktreeMaterializeOption
 
 function rolesToMaterialize(state: RunState, plannerWorktree?: boolean): RoleName[] {
   const roles: RoleName[] = [];
-  if (state.roles.implementer) {
-    roles.push('implementer');
+  for (const role of state.role_order ?? Object.keys(state.roles)) {
+    const record = state.roles[role];
+    if (record?.expected_writes === 'worktree') {
+      roles.push(role);
+    }
   }
-  if (plannerWorktree && state.roles.planner) {
+  if (plannerWorktree && state.roles.planner && !roles.includes('planner')) {
     roles.push('planner');
   }
   return roles;
