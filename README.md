@@ -168,7 +168,7 @@ Inspect the run:
 /herd diff
 ```
 
-`/herd diff` is read-only and shows diff stat plus changed files against the run base ref.
+`/herd diff` is read-only and shows diff stat plus changed files for each source branch against the run base ref.
 
 Send work to a role:
 
@@ -321,6 +321,7 @@ Custom roles can be selected with `--role <name>` or targeted later with `pi-her
 Per-role `models` and `thinking` maps accept those custom role names.
 The default built-in flow is still special-cased by role name: `planner` gets the kickoff prompt, `implementer` owns the primary source branch at `pi-herd/<run>/impl`, and `reviewer` plus `tester` refresh from that primary implementation branch.
 Additional roles can use `expected_writes: worktree` to get their own source branches and worktrees at `pi-herd/<run>/<role>`.
+The built-in `planner`, `reviewer`, and `tester` roles cannot be configured as worktree-writing source roles because they keep their built-in orchestration semantics.
 Runs with any worktree-writing role must include `implementer` so diff, refresh, and merge preparation retain a stable primary source branch.
 Artifact-only and none roles are staged until launched by `send`.
 
@@ -371,7 +372,7 @@ Useful flags:
 
 - `--role ROLE` selects one role and can be repeated.
 - `--base-ref REF` overrides base branch or commit detection.
-- `--with-worktrees` creates the implementation worktree.
+- `--with-worktrees` creates worktrees for every selected worktree-writing source role.
 - `--planner-worktree` also creates a planner worktree and implies `--with-worktrees`.
 - `--json` prints machine-readable state.
 - `--config PATH` uses a custom config path.
@@ -418,8 +419,8 @@ pi-herd start "replace legacy auth refresh flow" --base-ref main --json
 ```
 
 The planner receives an initial kickoff prompt.
-The implementer launches as a staged session when selected.
-Reviewer and tester remain staged until first activation.
+The implementer and any additional selected worktree-writing source roles launch as staged sessions.
+Reviewer, tester, and other artifact-only or no-write roles remain staged until first activation.
 When started from a detectable Pi pane in Herdr, pi-herd checks active runs before creating artifacts.
 If the current verified pane is already the lead for an active run, start fails and leaves the duplicate run directory uncreated.
 
@@ -537,7 +538,7 @@ Use `cleanup` for run lifecycle closure.
 
 ### `pi-herd refresh`
 
-Materialize or refresh reviewer and tester worktrees from the implementation branch.
+Materialize or refresh reviewer and tester worktrees from the primary implementation branch.
 
 ```bash
 pi-herd refresh reviewer
@@ -672,7 +673,7 @@ The alias exists because Pi prompt templates expand after extension slash-comman
 Use terminal `pi-herd start ...` for advanced start flags.
 `/herd doctor` shows checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` maps to read-only `pi-herd lead collect`.
-`/herd diff` maps to read-only `pi-herd diff` and shows diff stat plus changed files against the run base ref.
+`/herd diff` maps to read-only `pi-herd diff` and shows diff stat plus changed files for each source branch against the run base ref.
 `/herd wait` maps to `pi-herd wait --timeout-ms MS --poll-interval-ms 2000` and records role verdicts in run state on success, unresolved verdicts, and timeout, same as terminal `pi-herd wait`.
 It defaults to 60000 ms, accepts `--timeout-ms MS`, and keeps the Pi-extension poll interval fixed at 2000 ms.
 Use terminal `pi-herd collect` when you want to write `FINAL_SUMMARY.md`.

@@ -43,7 +43,7 @@ The extension also registers `/herd-start <goal>` as a prompt-native alias for `
 `/herd-start` exists because Pi prompt templates expand after extension slash-command dispatch and do not re-dispatch expanded `/herd ...` text as commands.
 `/herd doctor` presents checks-failed reports as warnings when the CLI returns diagnostics on stdout, preserving any stderr warning text with the report.
 `/herd collect` stays read-only.
-`/herd diff` stays read-only and shows diff stat plus changed files against the run base ref.
+`/herd diff` stays read-only and shows diff stat plus changed files for each source branch against the run base ref.
 `/herd wait` waits up to 60 seconds by default, accepts `--timeout-ms MS`, polls every 2 seconds, records role verdicts in run state like terminal `pi-herd wait`, and presents timeout or unresolved-verdict snapshots as warnings rather than hard failures.
 The Pi extension keeps the wait poll interval fixed at 2000 ms.
 `/herd send` parses `--run` only as a trailing selector, preserves dash-prefixed message text without a `--` sentinel, and strips one matching outer quote pair from the message when present.
@@ -134,8 +134,8 @@ _Avoid_: assuming cleanup is destructive unless an explicit action flag is passe
 
 **Staged worker**:
 A worker session slot whose pane may exist but whose task prompt has not been activated yet.
-Reviewer and tester worktrees may be materialized lazily when the role is activated or refreshed, and custom artifact roles may stay staged without any source worktree.
-_Avoid_: starting implementer, reviewer, tester, or custom worker sessions before the lead explicitly sends them work
+Reviewer and tester worktrees may be materialized lazily when the role is activated or refreshed, custom source roles may launch as staged sessions in their own worktrees, and custom artifact roles may stay staged without any source worktree.
+_Avoid_: starting reviewer, tester, artifact-only, or no-write worker task prompts before the lead explicitly sends them work
 
 **Harness profile**:
 A configuration section that describes how pi-herd launches a specific harness and passes role-specific options such as model, provider, thinking level, and tool policy.
@@ -204,11 +204,11 @@ _Avoid_: treating reviewer or tester branches as merge targets, or treating merg
 
 **Role worktree view**:
 An isolated worktree assigned to a role for inspecting, editing, or testing the run's source state.
-`pi-herd run create --with-worktrees` materializes the implementer worktree and can also materialize the planner worktree with `--planner-worktree`.
-`pi-herd start` materializes the implementer worktree when the implementer role is selected, and it can also materialize the planner worktree with `--planner-worktree`.
-Reviewer and tester worktrees should be materialized or refreshed from the implementation branch rather than sharing the implementer's worktree.
+`pi-herd run create --with-worktrees` materializes every selected worktree-writing source role and can also materialize the planner worktree with `--planner-worktree`.
+`pi-herd start` materializes and launches staged sessions for selected worktree-writing source roles, and it can also materialize the planner worktree with `--planner-worktree`.
+Reviewer and tester worktrees should be materialized or refreshed from the primary implementation branch rather than sharing the implementer's worktree.
 The first send to reviewer or tester can activate that role by creating the role worktree, launching the session, waiting briefly for readiness, and sending the prompt.
-Other selected custom roles launch from the repository root or their pre-existing worktree path and do not source from the implementation branch.
+Selected custom artifact-only and no-write roles launch from the repository root or their pre-existing worktree path and do not source from the implementation branch.
 `pi-herd refresh reviewer` and `pi-herd refresh tester` refresh artifact-only role worktrees between passes and refuse dirty, committed, or working-role refreshes unless forced with backup protection.
 _Avoid_: multiple workers operating in the same source worktree by default
 
@@ -260,13 +260,13 @@ Domain expert: Not by default.
 The reviewer should leave a worker request for the lead, and the lead decides whether to send work to the tester.
 Developer: Should reviewer and tester use the implementer's worktree?
 Domain expert: No.
-They should get isolated role worktree views refreshed from the implementation branch.
-Developer: What does Slice 3 create when I pass `--with-worktrees`?
-Domain expert: It creates the implementer worktree, optionally creates the planner worktree with `--planner-worktree`, and keeps reviewer, tester, and custom artifact roles pending.
+They should get isolated role worktree views refreshed from the primary implementation branch.
+Developer: What does `--with-worktrees` create?
+Domain expert: It creates worktrees for the selected worktree-writing source roles, optionally creates the planner worktree with `--planner-worktree`, and keeps reviewer, tester, and custom artifact-only or no-write roles pending.
 Developer: What does `pi-herd start` launch now?
-Domain expert: It binds the current verified Pi/Herdr pane as lead or creates a lead workspace and session, launches the planner with a kickoff prompt, launches the implementer as staged when selected, and leaves reviewer, tester, and custom selected roles as staged slots without task prompts.
+Domain expert: It binds the current verified Pi/Herdr pane as lead or creates a lead workspace and session, launches the planner with a kickoff prompt, launches selected worktree-writing source roles as staged sessions, and leaves reviewer, tester, artifact-only, and no-write selected roles as staged slots without task prompts.
 Developer: What does first send to reviewer or tester do now?
-Domain expert: It materializes that role worktree from the implementation branch, launches the role session, waits briefly for readiness, persists state, submits the prompt, and marks the role working without deciding whether it is done.
+Domain expert: It materializes that role worktree from the primary implementation branch, launches the role session, waits briefly for readiness, persists state, submits the prompt, and marks the role working without deciding whether it is done.
 Developer: What if a saved worker pane has disappeared?
 Domain expert: pi-herd validates the pane before sending and relaunches only when Herdr clearly reports the pane is missing.
 Ambiguous validation errors stop without clearing saved state.
@@ -284,7 +284,7 @@ It needs `--close-panes`, `--remove-worktrees`, `--complete`, or `--abandon` to 
 Developer: What does the optional Pi extension expose first?
 Domain expert: It registers `/herd` for lead-session shortcuts: `init`, `doctor`, `start`, `status`, `brief`, read-only `collect`, read-only `diff`, bounded `wait`, `send`, and `help`.
 It also registers `/herd-start <goal>` as a prompt-native alias for `/herd start <goal>` because Pi prompt templates do not re-dispatch expanded slash commands.
-`/herd wait` uses a default 60-second timeout, accepts `--timeout-ms MS`, keeps a fixed 2-second poll interval, and records role verdicts in run state like terminal `pi-herd wait`, while `/herd diff` only reports stat and changed files.
+`/herd wait` uses a default 60-second timeout, accepts `--timeout-ms MS`, keeps a fixed 2-second poll interval, and records role verdicts in run state like terminal `pi-herd wait`, while `/herd diff` only reports stat and changed files for source branches.
 It maps operational subcommands to existing CLI helpers, keeps orchestration state in CLI-owned run artifacts, and does not expose agent-callable tools or destructive cleanup and merge operations.
 Developer: How should I start a run from Pi inside Herdr?
 Domain expert: Use `/herd start <goal>` or `/herd-start <goal>` for a simple goal.

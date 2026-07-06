@@ -10317,7 +10317,7 @@ async function leadBrief(options) {
     ...inbox.length ? inbox.map((item) => `- ${item}`) : ["- none"],
     ...warnings.length ? ["", "## Warnings", ...warnings.map((warning) => `- ${warning}`)] : [],
     "",
-    "Next: send work to staged roles, wait or collect active workers, refresh reviewer/tester between passes, or diff implementation changes."
+    "Next: send work to staged roles, wait or collect active workers, refresh reviewer/tester between passes, or diff source branch changes."
   ];
   return { state, text: `${truncate(lines.join("\n"), 8e3)}
 ` };
@@ -10677,7 +10677,7 @@ async function formatMergeDecision(state, snapshot, diffs, now) {
     "",
     "## Manual next steps",
     "",
-    "1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the implementation diff.",
+    "1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the source diff.",
     mergeStep,
     "3. Run project validation in the target branch after merge.",
     "4. Run `pi-herd cleanup --complete` after the run is accepted, or `pi-herd cleanup --abandon` if it is not.",
@@ -10852,8 +10852,8 @@ Commands:
   board      Show a read-only run board optimized for a Herdr pane.
   wait       Wait for working roles to resolve and persist role verdicts.
   collect    Persist verdicts, collect pane logs, and write FINAL_SUMMARY.md.
-  refresh    Refresh reviewer/tester worktrees from the implementation branch.
-  diff       Show implementation branch changes against the run base ref.
+  refresh    Refresh reviewer/tester worktrees from the primary implementation branch.
+  diff       Show source branch changes against the run base ref.
   merge-plan Write MERGE_DECISION.md with manual merge context.
   cleanup    Report or apply safe run cleanup actions.
   lead       Lead-session shortcuts for status, brief, collect, and send.

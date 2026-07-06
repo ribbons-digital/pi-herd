@@ -245,7 +245,7 @@ async function formatMergeDecision(
     '',
     '## Manual next steps',
     '',
-    '1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the implementation diff.',
+    '1. Inspect this file, FINAL_SUMMARY.md, REVIEW.md, TEST_REPORT.md, and the source diff.',
     mergeStep,
     '3. Run project validation in the target branch after merge.',
     '4. Run `pi-herd cleanup --complete` after the run is accepted, or `pi-herd cleanup --abandon` if it is not.',

@@ -6,7 +6,7 @@ import { firstLine, parseWorktreeCreateResult, worktreeCreate, HERDR_WORKTREE_CR
 import { DEFAULT_WORKTREES_DIR, type RoleName } from './defaults.js';
 import type { RunState } from './run-state.js';
 
-/** Options for materializing Slice 3 role worktrees without launching panes or sessions. */
+/** Options for materializing role worktrees without launching task prompts. */
 export interface WorktreeMaterializeOptions {
   state: RunState;
   runner: CommandRunner;
