@@ -6,6 +6,7 @@ import type { CommandResult, CommandRunner } from '../src/command-runner.js';
 import { interruptRole, sendMessage, leadStatus, leadCollect, leadBrief } from '../src/messaging.js';
 import { sendToPane } from '../src/start.js';
 import { createRun, writeJsonAtomic, type RunState } from '../src/run-state.js';
+import type { HarnessAdapter } from '../src/harness.js';
 
 let dir: string;
 const NOW = new Date('2026-07-01T12:00:00.000Z');
@@ -130,6 +131,41 @@ describe('messaging commands', () => {
     const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
     expect(saved.roles.planner?.status).toBe('working');
     expect(saved.roles.planner?.last_activity_at).toBeTruthy();
+  });
+
+  it('routes sendMessage through an injected harness adapter', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    const runner = new RecordingRunner(baseResponses({}));
+    const calls: string[] = [];
+    const harness: HarnessAdapter = {
+      verifyCurrentPane: async () => null,
+      bindOrLaunchLead: async () => {
+        throw new Error('not used');
+      },
+      launchRoleSession: async () => {
+        throw new Error('not used');
+      },
+      sendToPane: async (_runner, cwd, paneId, message) => {
+        calls.push(`send:${cwd}:${paneId}:${message}`);
+        return { verification: 'verified', note: null };
+      },
+      waitForRoleReady: async () => null,
+      validatePane: async (_runner, cwd, paneId) => {
+        calls.push(`validate:${cwd}:${paneId}`);
+        return { status: 'ok', result: ok() };
+      },
+      interruptPane: async () => ok(),
+      readRoleSignal: async () => ({ signal: 'unknown', warnings: [] })
+    };
+
+    const result = await sendMessage({ cwd: dir, run: state.run_id, role: 'planner', message: 'Continue planning', runner, harness });
+
+    expect(result.text).toContain('Delivery verified: planner reported working.');
+    expect(calls[0]).toBe(`validate:${dir}:planner-pane`);
+    expect(calls[1]).toContain(`send:${dir}:planner-pane:Continue planning`);
+    expect(runner.calls).not.toContain('herdr pane get planner-pane');
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as RunState;
+    expect(saved.roles.planner?.status).toBe('working');
   });
 
   it('warns about unverified delivery while still marking the role working', async () => {

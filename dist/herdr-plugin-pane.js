@@ -8999,6 +8999,266 @@ function verdictInstruction(artifactPath, pass2) {
   return `[pi-herd] When pass ${pass2} is complete, end ${artifactPath} with the line: pi-herd-verdict: done pass=${pass2} <one-line summary> (use blocked instead of done if you cannot proceed).`;
 }
 
+// src/harness.ts
+function createHarnessAdapter() {
+  return PI_HERDR_HARNESS_ADAPTER;
+}
+var PI_HERDR_HARNESS_ADAPTER = {
+  verifyCurrentPane,
+  bindOrLaunchLead,
+  launchRoleSession,
+  sendToPane,
+  waitForRoleReady,
+  validatePane,
+  interruptPane: paneSendEscape,
+  readRoleSignal
+};
+function buildPiCommand(config, role, state) {
+  const profile = config.harness.profiles[config.harness.default];
+  if (!profile) {
+    throw new Error(`Harness profile '${config.harness.default}' is not configured.`);
+  }
+  const record = role === "lead" ? null : state.roles[role];
+  const definition = role === "lead" ? null : config.roles.definitions[role];
+  if (role !== "lead" && !record && !definition) {
+    throw new Error(`Role ${role} is not defined in config roles.definitions.`);
+  }
+  const sessionId = `${state.run_id}-${role}`;
+  const name = `pi-herd-${state.run_id}-${role}`;
+  const args = [...profile.args ?? [], "--name", name, "--session-id", sessionId];
+  const provider = profile.provider ?? null;
+  const model = role === "lead" ? profile.model ?? null : modelForRole(profile, role);
+  const thinking = role === "lead" ? thinkingForRole(profile, void 0) : thinkingForRole(profile, role);
+  if (provider) {
+    args.push("--provider", provider);
+  }
+  if (model) {
+    args.push("--model", model);
+  }
+  if (thinking) {
+    args.push("--thinking", thinking);
+  }
+  return {
+    command: profile.command,
+    args,
+    sessionId,
+    metadata: {
+      agent_name: name,
+      command: profile.command,
+      args: [...args],
+      model,
+      provider,
+      thinking,
+      expected_writes: record?.expected_writes ?? definition?.expected_writes ?? "none"
+    }
+  };
+}
+async function bindOrLaunchLead(options) {
+  if (options.env.HERDR_ENV === "1" && options.env.HERDR_PANE_ID && options.env.PI_CODING_AGENT === "true") {
+    const verified = await verifyCurrentPane(options.runner, options.state.repo_root, options.env.HERDR_PANE_ID);
+    if (verified) {
+      return {
+        workspaceId: verified.workspaceId ?? options.env.HERDR_WORKSPACE_ID ?? null,
+        tabId: verified.tabId ?? options.env.HERDR_TAB_ID ?? null,
+        paneId: options.env.HERDR_PANE_ID,
+        sessionRef: null,
+        launchMethod: "bound-current-pane",
+        metadata: { launch_method: "bound-current-pane", expected_writes: "none" }
+      };
+    }
+  }
+  const workspace = await createLeadWorkspace(options.runner, options.state);
+  const launched = await launchHarnessInHerdr({ state: options.state, config: options.config, runner: options.runner, role: "lead", cwd: options.state.repo_root, workspaceId: workspace.workspaceId });
+  return { ...launched, workspaceId: launched.workspaceId ?? workspace.workspaceId };
+}
+async function launchRoleSession(options) {
+  const leadWorkspace = options.state.lead_binding.herdr_workspace_id;
+  if (!leadWorkspace) {
+    throw new Error("Lead workspace is missing; cannot launch worker session.");
+  }
+  return launchHarnessInHerdr({ ...options, workspaceId: leadWorkspace });
+}
+async function launchHarnessInHerdr(options) {
+  const spec = buildPiCommand(options.config, options.role, options.state);
+  spec.metadata.cwd = options.cwd;
+  const agent = await agentStart(options.runner, options.state.repo_root, {
+    name: spec.metadata.agent_name ?? `pi-herd-${options.state.run_id}-${options.role}`,
+    sessionCwd: options.cwd,
+    workspaceId: options.workspaceId,
+    command: spec.command,
+    args: spec.args
+  });
+  if (agent.exitCode === 0) {
+    const parsed = parsePaneMetadata(agent.stdout);
+    if (parsed.paneId) {
+      return { workspaceId: parsed.workspaceId ?? options.workspaceId, tabId: parsed.tabId, paneId: parsed.paneId, sessionRef: spec.sessionId, launchMethod: "herdr-agent-start", metadata: { ...spec.metadata, launch_method: "herdr-agent-start" } };
+    }
+    throw new Error(`Could not launch ${options.role}. Herdr agent start returned unusable metadata.`);
+  }
+  if (agent.timedOut) {
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start timed out")}.`);
+  }
+  const parentPaneId = options.state.lead_binding.herdr_pane_id;
+  if (!parentPaneId) {
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start failed")}. Pane fallback requires a lead pane.`);
+  }
+  const split = await paneSplit(options.runner, options.state.repo_root, { parentPaneId, sessionCwd: options.cwd });
+  if (split.exitCode !== 0) {
+    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start failed")}. Pane split: ${describeFailure(split, "pane split failed")}`);
+  }
+  const pane = parsePaneMetadata(split.stdout).paneId;
+  if (!pane) {
+    throw new Error(`Could not launch ${options.role}. Herdr pane split returned unusable metadata.`);
+  }
+  const paneRun2 = await paneRun(options.runner, options.state.repo_root, pane, spec.command, spec.args);
+  if (paneRun2.exitCode !== 0) {
+    throw new Error(`Could not launch ${options.role}. Pane run: ${describeFailure(paneRun2, "pane run failed")}`);
+  }
+  return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.sessionId, launchMethod: "herdr-pane-run", metadata: { ...spec.metadata, launch_method: "herdr-pane-run" } };
+}
+function applyRoleLaunch(record, launch) {
+  if (record.worktree_provider === "herdr" && record.herdr_workspace_id && !record.worktree_herdr_workspace_id) {
+    record.worktree_herdr_workspace_id = record.herdr_workspace_id;
+  }
+  record.herdr_workspace_id = launch.workspaceId;
+  record.herdr_tab_id = launch.tabId;
+  record.herdr_pane_id = launch.paneId;
+  record.session_ref = launch.sessionRef;
+  record.status = "staged";
+  record.launch_metadata = { ...record.launch_metadata ?? {}, ...launch.metadata ?? {}, launch_method: launch.launchMethod };
+}
+async function createLeadWorkspace(runner, state) {
+  const result = await workspaceCreate(runner, state.repo_root, { repoRoot: state.repo_root, label: `pi-herd ${state.run_slug} lead` });
+  if (result.exitCode !== 0) {
+    throw new Error(`Could not create lead workspace: ${describeFailure(result, "herdr workspace create failed")}`);
+  }
+  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? workspaceIdFromJson(result.stdout) ?? firstToken(result.stdout);
+  if (!workspaceId) {
+    throw new Error("Could not create lead workspace. Herdr returned unusable metadata.");
+  }
+  return { workspaceId };
+}
+async function sendToPane(runner, cwd, paneId, message) {
+  const before = await paneGet(runner, cwd, paneId);
+  const preStatus = before.exitCode === 0 ? parseAgentStatus(before.stdout) : null;
+  const text = await paneSendText(runner, cwd, paneId, message);
+  if (text.exitCode !== 0) {
+    throw new Error(`Could not send pane text: ${describeFailure(text, "pane send-text failed")}`);
+  }
+  const enter = await paneSendEnter(runner, cwd, paneId);
+  if (enter.exitCode !== 0) {
+    throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, "pane send-keys failed")}`);
+  }
+  if (preStatus === "working") {
+    return { verification: "ambiguous", note: `pane ${paneId} was already working before the prompt was submitted, so delivery could not be independently verified.` };
+  }
+  const provenNonWorking = preStatus === "idle" || preStatus === "blocked" || preStatus === "done";
+  const ack = await waitAgentStatus(runner, cwd, paneId, "working", HERDR_DELIVERY_ACK_TIMEOUT_MS);
+  if (ack.exitCode === 0) {
+    if (provenNonWorking) {
+      return { verification: "verified", note: null };
+    }
+    return { verification: "ambiguous", note: `pane ${paneId} reported working after submit, but its pre-send agent status was unknown, so the transition could not be proven.` };
+  }
+  return { verification: "unverified", note: `pane ${paneId} did not report working within ${HERDR_DELIVERY_ACK_TIMEOUT_MS / 1e3}s after submit; inspect the pane before re-sending because a retry may duplicate the prompt.` };
+}
+async function waitForRoleReady(runner, cwd, paneId, role) {
+  const result = await waitAgentStatus(runner, cwd, paneId, "idle");
+  if (result.exitCode === 0) {
+    return null;
+  }
+  return `${role} pane did not report idle before first prompt; sent anyway (${describeFailure(result, "wait agent-status idle failed")}).`;
+}
+async function validatePane(runner, cwd, paneId) {
+  const result = await paneGet(runner, cwd, paneId);
+  if (result.exitCode === 0) {
+    return { status: "ok", result };
+  }
+  const missing = !result.timedOut && !result.error && isMissingPaneFailure(result);
+  return { status: missing ? "missing" : "unknown", result };
+}
+async function readRoleSignal(options) {
+  const paneId = options.record.herdr_pane_id;
+  if (!paneId) {
+    return { signal: "not-launched", warnings: [] };
+  }
+  const pane = await paneGet(options.runner, options.state.repo_root, paneId);
+  if (pane.exitCode !== 0) {
+    if (isMissingPaneFailure(pane)) {
+      return { signal: "stopped", warnings: [`pane ${paneId} is missing; treating as stopped`] };
+    }
+    return { signal: "unknown", warnings: [`could not validate pane ${paneId}: ${describeFailure(pane, "pane get failed")}`] };
+  }
+  for (const signal of ["done", "blocked", "idle", "working"]) {
+    const result = await waitAgentStatus(options.runner, options.state.repo_root, paneId, signal, options.timeoutMs);
+    if (result.exitCode === 0) {
+      return { signal, warnings: [] };
+    }
+    if (isCapabilityFailure(result)) {
+      return { signal: "unknown", warnings: [`activity signal unavailable: ${describeFailure(result, "wait agent-status failed")}`] };
+    }
+  }
+  return { signal: "unknown", warnings: [] };
+}
+function isMissingPaneFailure(result) {
+  const output = `${result.stderr}
+${result.stdout}`.toLowerCase();
+  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
+    return false;
+  }
+  return [
+    /\bmissing\s+pane\b/,
+    /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/,
+    /\b(no such|not found)\s+[^\n]*\bpane\b/
+  ].some((pattern) => pattern.test(output));
+}
+function isCapabilityFailure(result) {
+  const output = `${result.stderr}
+${result.stdout}`.toLowerCase();
+  return result.error?.code === "ENOENT" || /\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output);
+}
+function modelForRole(profile, role) {
+  return profile.models?.[role] ?? profile.model ?? null;
+}
+function thinkingForRole(profile, role) {
+  if (typeof profile.thinking === "string") return profile.thinking;
+  if (!isRoleMap(profile.thinking)) return null;
+  return role ? profile.thinking[role] ?? null : profile.thinking.lead ?? null;
+}
+function isRoleMap(value) {
+  return Boolean(value && typeof value === "object");
+}
+function workspaceIdFromJson(stdout) {
+  try {
+    const value = JSON.parse(stdout);
+    if (!value || typeof value !== "object") return null;
+    const record = value;
+    if (typeof record.workspace_id === "string") return record.workspace_id;
+    if (typeof record.workspaceId === "string") return record.workspaceId;
+    return workspaceIdFromWorkspaceContainers(record);
+  } catch {
+    return null;
+  }
+}
+function workspaceIdFromWorkspaceContainers(record) {
+  const result = record.result;
+  if (result && typeof result === "object") {
+    const nested = workspaceIdFromWorkspaceContainers(result);
+    if (nested) return nested;
+  }
+  const workspace = record.workspace;
+  if (workspace && typeof workspace === "object") {
+    const workspaceRecord = workspace;
+    if (typeof workspaceRecord.id === "string") return workspaceRecord.id;
+    if (typeof workspaceRecord.workspace_id === "string") return workspaceRecord.workspace_id;
+    if (typeof workspaceRecord.workspaceId === "string") return workspaceRecord.workspaceId;
+  }
+  return null;
+}
+function firstToken(value) {
+  return firstLine(value)?.split(/\s+/)[0] ?? null;
+}
+
 // src/status.ts
 var DEFAULT_SIGNAL_TIMEOUT_MS = 250;
 var DEFAULT_WAIT_TIMEOUT_MS = 6e4;
@@ -9006,7 +9266,7 @@ var DEFAULT_POLL_INTERVAL_MS = 2e3;
 async function statusRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true);
+  const snapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true, options.harness);
   return {
     state: resolved.state,
     snapshot,
@@ -9028,7 +9288,7 @@ async function waitRun(options) {
     const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
     latestStatePath = resolved.statePath;
     latestState = resolved.state;
-    latestSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true);
+    latestSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true, options.harness);
     const activeRoles = latestSnapshot.roles.filter((role) => isWaitTarget(role.stored_status));
     const resolvedRoles = activeRoles.filter((role) => role.evaluated_status === "done" || role.evaluated_status === "incomplete" || role.evaluated_status === "blocked");
     if (!activeRoles.length || resolvedRoles.length === activeRoles.length) {
@@ -9065,7 +9325,7 @@ async function waitRun(options) {
 async function collectRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
   const resolved = await resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, runner });
-  const initialSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true);
+  const initialSnapshot = await buildSnapshot(resolved.state, runner, options.now ?? /* @__PURE__ */ new Date(), true, options.harness);
   const persisted = await persistRoleDecisions(resolved.statePath, resolved.state, initialSnapshot);
   const logWarnings = await collectPaneLogs(persisted.state, runner);
   const snapshot = snapshotWithPersistedState(initialSnapshot, persisted.state);
@@ -9084,12 +9344,12 @@ async function collectRun(options) {
     exitCode: hasIncomplete ? 3 : 0
   };
 }
-async function buildSnapshot(state, runner, now, probeSignals) {
+async function buildSnapshot(state, runner, now, probeSignals, harness = createHarnessAdapter()) {
   const roles = [];
   const warnings = [];
   for (const record of roleEntries(state)) {
     const artifacts = await artifactStatuses(state, record);
-    const signalResult = probeSignals ? await readRoleSignal(runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
+    const signalResult = probeSignals ? await readRoleSignal2(harness, runner, state, record) : { signal: signalFromStoredStatus(record.status), warnings: [] };
     const dirtyWarnings = await artifactOnlyWorktreeWarnings(runner, record);
     const verdict = currentPassVerdict(record, artifacts);
     const roleWarnings = [
@@ -9171,27 +9431,8 @@ function verdictNotes(record, artifacts, verdict, signal) {
   }
   return notes;
 }
-async function readRoleSignal(runner, state, record) {
-  if (!record.herdr_pane_id) {
-    return { signal: "not-launched", warnings: [] };
-  }
-  const pane = await paneGet(runner, state.repo_root, record.herdr_pane_id);
-  if (pane.exitCode !== 0) {
-    if (isMissingPaneFailure(pane)) {
-      return { signal: "stopped", warnings: [`pane ${record.herdr_pane_id} is missing; treating as stopped`] };
-    }
-    return { signal: "unknown", warnings: [`could not validate pane ${record.herdr_pane_id}: ${describeFailure(pane, "pane get failed")}`] };
-  }
-  for (const signal of ["done", "blocked", "idle", "working"]) {
-    const result = await waitAgentStatus(runner, state.repo_root, record.herdr_pane_id, signal, DEFAULT_SIGNAL_TIMEOUT_MS);
-    if (result.exitCode === 0) {
-      return { signal, warnings: [] };
-    }
-    if (isCapabilityFailure(result)) {
-      return { signal: "unknown", warnings: [`activity signal unavailable: ${describeFailure(result, "wait agent-status failed")}`] };
-    }
-  }
-  return { signal: "unknown", warnings: [] };
+async function readRoleSignal2(harness, runner, state, record) {
+  return harness.readRoleSignal({ runner, state, record, timeoutMs: DEFAULT_SIGNAL_TIMEOUT_MS });
 }
 async function artifactStatuses(state, record) {
   const statuses = [];
@@ -9382,19 +9623,6 @@ function signalFromStoredStatus(status) {
   if (status === "blocked") return "blocked";
   if (status === "working") return "working";
   return "unknown";
-}
-function isMissingPaneFailure(result) {
-  const output = `${result.stderr}
-${result.stdout}`.toLowerCase();
-  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
-    return false;
-  }
-  return [/\bmissing\s+pane\b/, /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/, /\b(no such|not found)\s+[^\n]*\bpane\b/].some((pattern) => pattern.test(output));
-}
-function isCapabilityFailure(result) {
-  const output = `${result.stderr}
-${result.stdout}`.toLowerCase();
-  return result.error?.code === "ENOENT" || /\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output);
 }
 function positiveInteger(value, name) {
   if (!Number.isInteger(value) || value <= 0) {
@@ -9842,14 +10070,15 @@ Follow the lead session's instructions and leave questions in the lead inbox ins
 import { join as join5 } from "node:path";
 async function startRun(options) {
   const runner = options.runner ?? nodeCommandRunner;
-  await assertCurrentPaneIsNotActiveLead(options, runner);
+  const harness = options.harness ?? createHarnessAdapter();
+  await assertCurrentPaneIsNotActiveLead(options, runner, harness);
   const result = await createRun({ ...options, withWorktrees: "auto", runner });
   const statePath = result.statePath;
   const state = result.state;
   const launched = [];
   const warnings = [];
   try {
-    const lead = await bindOrLaunchLead(state, result.config, runner, options.env ?? process.env);
+    const lead = await harness.bindOrLaunchLead({ state, config: result.config, runner, env: options.env ?? process.env });
     state.lead_binding.herdr_workspace_id = lead.workspaceId;
     state.lead_binding.herdr_tab_id = lead.tabId;
     state.lead_binding.herdr_pane_id = lead.paneId;
@@ -9858,16 +10087,16 @@ async function startRun(options) {
     await writeJsonAtomic(statePath, state);
     launched.push({ role: "lead", paneId: lead.paneId, sessionRef: lead.sessionRef, launchMethod: lead.launchMethod });
     if (state.roles.planner) {
-      const planner = await launchRoleSession({ state, config: result.config, runner, role: "planner", cwd: plannerCwd(state) });
+      const planner = await harness.launchRoleSession({ state, config: result.config, runner, role: "planner", cwd: plannerCwd(state) });
       applyRoleLaunch(state.roles.planner, planner);
       state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
       await writeJsonAtomic(statePath, state);
       launched.push({ role: "planner", paneId: planner.paneId, sessionRef: planner.sessionRef, launchMethod: planner.launchMethod });
-      const plannerReady = await waitForRoleReady(runner, state.repo_root, planner.paneId, "planner");
+      const plannerReady = await harness.waitForRoleReady(runner, state.repo_root, planner.paneId, "planner");
       if (plannerReady) {
         warnings.push(plannerReady);
       }
-      const kickoffNote = await sendPlannerKickoff(runner, planner.paneId, state);
+      const kickoffNote = await sendPlannerKickoff(harness, runner, planner.paneId, state);
       if (kickoffNote) {
         warnings.push(kickoffNote);
       }
@@ -9887,7 +10116,7 @@ async function startRun(options) {
         const label = role === "implementer" ? "Implementer" : `Source role ${role}`;
         throw new Error(`${label} worktree was not materialized; cannot launch staged source session.`);
       }
-      const source = await launchRoleSession({ state, config: result.config, runner, role, cwd: record.worktree_path });
+      const source = await harness.launchRoleSession({ state, config: result.config, runner, role, cwd: record.worktree_path });
       applyRoleLaunch(record, source);
       record.status = "staged";
       state.updated_at = (/* @__PURE__ */ new Date()).toISOString();
@@ -9911,7 +10140,7 @@ async function startRun(options) {
     throw error;
   }
 }
-async function assertCurrentPaneIsNotActiveLead(options, runner) {
+async function assertCurrentPaneIsNotActiveLead(options, runner, harness) {
   const env = options.env ?? process.env;
   if (env.HERDR_ENV !== "1" || !env.HERDR_PANE_ID || env.PI_CODING_AGENT !== "true") {
     return;
@@ -9930,7 +10159,7 @@ async function assertCurrentPaneIsNotActiveLead(options, runner) {
     if (state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
       continue;
     }
-    const verified = await verifyCurrentPane2(runner, state.repo_root, env.HERDR_PANE_ID);
+    const verified = await harness.verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
     if (!verified) {
       continue;
     }
@@ -9954,133 +10183,7 @@ function formatStartText(result) {
   return `${lines.join("\n")}
 `;
 }
-function buildPiCommand(config, role, state) {
-  const profile = config.harness.profiles[config.harness.default];
-  if (!profile) {
-    throw new Error(`Harness profile '${config.harness.default}' is not configured.`);
-  }
-  const record = role === "lead" ? null : state.roles[role];
-  const definition = role === "lead" ? null : config.roles.definitions[role];
-  if (role !== "lead" && !record && !definition) {
-    throw new Error(`Role ${role} is not defined in config roles.definitions.`);
-  }
-  const sessionId = `${state.run_id}-${role}`;
-  const name = `pi-herd-${state.run_id}-${role}`;
-  const args = [...profile.args ?? [], "--name", name, "--session-id", sessionId];
-  const provider = profile.provider ?? null;
-  const model = role === "lead" ? profile.model ?? null : modelForRole(profile, role);
-  const thinking = role === "lead" ? thinkingForRole(profile, void 0) : thinkingForRole(profile, role);
-  if (provider) {
-    args.push("--provider", provider);
-  }
-  if (model) {
-    args.push("--model", model);
-  }
-  if (thinking) {
-    args.push("--thinking", thinking);
-  }
-  return {
-    command: profile.command,
-    args,
-    sessionId,
-    metadata: {
-      agent_name: name,
-      command: profile.command,
-      args: [...args],
-      model,
-      provider,
-      thinking,
-      expected_writes: record?.expected_writes ?? definition?.expected_writes ?? "none"
-    }
-  };
-}
-async function bindOrLaunchLead(state, config, runner, env) {
-  if (env.HERDR_ENV === "1" && env.HERDR_PANE_ID && env.PI_CODING_AGENT === "true") {
-    const verified = await verifyCurrentPane2(runner, state.repo_root, env.HERDR_PANE_ID);
-    if (verified) {
-      return {
-        workspaceId: verified.workspaceId ?? env.HERDR_WORKSPACE_ID ?? null,
-        tabId: verified.tabId ?? env.HERDR_TAB_ID ?? null,
-        paneId: env.HERDR_PANE_ID,
-        sessionRef: null,
-        launchMethod: "bound-current-pane",
-        metadata: { launch_method: "bound-current-pane", expected_writes: "none" }
-      };
-    }
-  }
-  const workspace = await createLeadWorkspace(runner, state);
-  const launched = await launchHarnessInHerdr({ state, config, runner, role: "lead", cwd: state.repo_root, workspaceId: workspace.workspaceId });
-  return { ...launched, workspaceId: launched.workspaceId ?? workspace.workspaceId };
-}
-async function launchRoleSession(options) {
-  const leadWorkspace = options.state.lead_binding.herdr_workspace_id;
-  if (!leadWorkspace) {
-    throw new Error("Lead workspace is missing; cannot launch worker session.");
-  }
-  return launchHarnessInHerdr({ ...options, workspaceId: leadWorkspace });
-}
-async function launchHarnessInHerdr(options) {
-  const spec = buildPiCommand(options.config, options.role, options.state);
-  spec.metadata.cwd = options.cwd;
-  const agent = await agentStart(options.runner, options.state.repo_root, {
-    name: spec.metadata.agent_name ?? `pi-herd-${options.state.run_id}-${options.role}`,
-    sessionCwd: options.cwd,
-    workspaceId: options.workspaceId,
-    command: spec.command,
-    args: spec.args
-  });
-  if (agent.exitCode === 0) {
-    const parsed = parsePaneMetadata(agent.stdout);
-    if (parsed.paneId) {
-      return { workspaceId: parsed.workspaceId ?? options.workspaceId, tabId: parsed.tabId, paneId: parsed.paneId, sessionRef: spec.sessionId, launchMethod: "herdr-agent-start", metadata: { ...spec.metadata, launch_method: "herdr-agent-start" } };
-    }
-    throw new Error(`Could not launch ${options.role}. Herdr agent start returned unusable metadata.`);
-  }
-  if (agent.timedOut) {
-    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start timed out")}.`);
-  }
-  const parentPaneId = options.state.lead_binding.herdr_pane_id;
-  if (!parentPaneId) {
-    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start failed")}. Pane fallback requires a lead pane.`);
-  }
-  const split = await paneSplit(options.runner, options.state.repo_root, { parentPaneId, sessionCwd: options.cwd });
-  if (split.exitCode !== 0) {
-    throw new Error(`Could not launch ${options.role}. Herdr: ${describeFailure(agent, "agent start failed")}. Pane split: ${describeFailure(split, "pane split failed")}`);
-  }
-  const pane = parsePaneMetadata(split.stdout).paneId;
-  if (!pane) {
-    throw new Error(`Could not launch ${options.role}. Herdr pane split returned unusable metadata.`);
-  }
-  const paneRun2 = await paneRun(options.runner, options.state.repo_root, pane, spec.command, spec.args);
-  if (paneRun2.exitCode !== 0) {
-    throw new Error(`Could not launch ${options.role}. Pane run: ${describeFailure(paneRun2, "pane run failed")}`);
-  }
-  return { workspaceId: options.workspaceId, tabId: parsePaneMetadata(split.stdout).tabId, paneId: pane, sessionRef: spec.sessionId, launchMethod: "herdr-pane-run", metadata: { ...spec.metadata, launch_method: "herdr-pane-run" } };
-}
-function applyRoleLaunch(record, launch) {
-  if (record.worktree_provider === "herdr" && record.herdr_workspace_id && !record.worktree_herdr_workspace_id) {
-    record.worktree_herdr_workspace_id = record.herdr_workspace_id;
-  }
-  record.herdr_workspace_id = launch.workspaceId;
-  record.herdr_tab_id = launch.tabId;
-  record.herdr_pane_id = launch.paneId;
-  record.session_ref = launch.sessionRef;
-  record.status = "staged";
-  record.launch_metadata = { ...record.launch_metadata ?? {}, ...launch.metadata ?? {}, launch_method: launch.launchMethod };
-}
-var verifyCurrentPane2 = verifyCurrentPane;
-async function createLeadWorkspace(runner, state) {
-  const result = await workspaceCreate(runner, state.repo_root, { repoRoot: state.repo_root, label: `pi-herd ${state.run_slug} lead` });
-  if (result.exitCode !== 0) {
-    throw new Error(`Could not create lead workspace: ${describeFailure(result, "herdr workspace create failed")}`);
-  }
-  const workspaceId = parsePaneMetadata(result.stdout).workspaceId ?? workspaceIdFromJson(result.stdout) ?? firstToken(result.stdout);
-  if (!workspaceId) {
-    throw new Error("Could not create lead workspace. Herdr returned unusable metadata.");
-  }
-  return { workspaceId };
-}
-async function sendPlannerKickoff(runner, paneId, state) {
+async function sendPlannerKickoff(harness, runner, paneId, state) {
   const planner = state.roles.planner;
   const artifact = planner?.required_artifacts[0] ?? "PLAN.md";
   const planPath = join5(state.canonical_run_dir, artifact);
@@ -10091,96 +10194,15 @@ Do not edit source files unless explicitly instructed by the lead.
 
 ${verdictInstruction(planPath, 1)}`;
   try {
-    const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
+    const delivery = await harness.sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
     if (planner) planner.status = "failed";
     throw error;
   }
 }
-async function sendToPane(runner, cwd, paneId, message) {
-  const before = await paneGet(runner, cwd, paneId);
-  const preStatus = before.exitCode === 0 ? parseAgentStatus(before.stdout) : null;
-  const text = await paneSendText(runner, cwd, paneId, message);
-  if (text.exitCode !== 0) {
-    throw new Error(`Could not send pane text: ${describeFailure(text, "pane send-text failed")}`);
-  }
-  const enter = await paneSendEnter(runner, cwd, paneId);
-  if (enter.exitCode !== 0) {
-    throw new Error(`Could not submit pane text after text was inserted; pane may contain unsubmitted text and retry may duplicate it: ${describeFailure(enter, "pane send-keys failed")}`);
-  }
-  if (preStatus === "working") {
-    return { verification: "ambiguous", note: `pane ${paneId} was already working before the prompt was submitted, so delivery could not be independently verified.` };
-  }
-  const provenNonWorking = preStatus === "idle" || preStatus === "blocked" || preStatus === "done";
-  const ack = await waitAgentStatus(runner, cwd, paneId, "working", HERDR_DELIVERY_ACK_TIMEOUT_MS);
-  if (ack.exitCode === 0) {
-    if (provenNonWorking) {
-      return { verification: "verified", note: null };
-    }
-    return { verification: "ambiguous", note: `pane ${paneId} reported working after submit, but its pre-send agent status was unknown, so the transition could not be proven.` };
-  }
-  return { verification: "unverified", note: `pane ${paneId} did not report working within ${HERDR_DELIVERY_ACK_TIMEOUT_MS / 1e3}s after submit; inspect the pane before re-sending because a retry may duplicate the prompt.` };
-}
-async function waitForRoleReady(runner, cwd, paneId, role) {
-  const result = await waitAgentStatus(runner, cwd, paneId, "idle");
-  if (result.exitCode === 0) {
-    return null;
-  }
-  return `${role} pane did not report idle before first prompt; sent anyway (${describeFailure(result, "wait agent-status idle failed")}).`;
-}
 function plannerCwd(state) {
   return state.roles.planner?.worktree_path ?? state.repo_root;
-}
-function modelForRole(profile, role) {
-  return profile.models?.[role] ?? profile.model ?? null;
-}
-function thinkingForRole(profile, role) {
-  if (typeof profile.thinking === "string") {
-    return profile.thinking;
-  }
-  if (role && isRoleMap(profile.thinking)) {
-    return profile.thinking[role] ?? null;
-  }
-  return null;
-}
-function isRoleMap(value) {
-  return Boolean(value && typeof value === "object");
-}
-function workspaceIdFromJson(stdout) {
-  try {
-    const parsed = JSON.parse(stdout);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    return workspaceIdFromWorkspaceContainers(parsed);
-  } catch {
-    return null;
-  }
-}
-function workspaceIdFromWorkspaceContainers(record) {
-  for (const key of ["workspace"]) {
-    const child = record[key];
-    if (child && typeof child === "object" && !Array.isArray(child)) {
-      const id = child.id;
-      if (typeof id === "string" && id.length > 0) {
-        return id;
-      }
-    }
-  }
-  for (const key of ["result", "data"]) {
-    const child = record[key];
-    if (child && typeof child === "object" && !Array.isArray(child)) {
-      const id = workspaceIdFromWorkspaceContainers(child);
-      if (id) {
-        return id;
-      }
-    }
-  }
-  return null;
-}
-function firstToken(value) {
-  return firstLine(value)?.split(/\s+/)[0] ?? null;
 }
 
 // src/messaging.ts
@@ -10189,6 +10211,7 @@ import { constants as constants6 } from "node:fs";
 import { join as join6, relative as relative3 } from "node:path";
 async function sendMessage(options) {
   const runner = options.runner ?? nodeCommandRunner;
+  const harness = options.harness ?? createHarnessAdapter();
   const resolved = await resolveRunState(options, runner);
   const state = resolved.state;
   const record = state.roles[options.role];
@@ -10196,16 +10219,16 @@ async function sendMessage(options) {
     throw new Error(`Role ${options.role} is not selected for run ${state.run_id}.`);
   }
   if (options.requireLead) {
-    await assertCurrentLead(state, runner, options.env ?? process.env);
+    await assertCurrentLead(state, runner, harness, options.env ?? process.env);
   }
   const config = await loadConfigIfPresent(options.configPath ? options.cwd : state.repo_root, options.configPath);
-  const activation = await ensureRolePane({ state, statePath: resolved.statePath, config, runner, role: options.role });
+  const activation = await ensureRolePane({ state, statePath: resolved.statePath, config, runner, harness, role: options.role });
   const paneId = record.herdr_pane_id;
   if (!paneId) {
     throw new Error(`Role ${options.role} has no pane after activation.`);
   }
   if (activation.launchedNow) {
-    const readyWarning = await waitForRoleReady(runner, state.repo_root, paneId, options.role);
+    const readyWarning = await harness.waitForRoleReady(runner, state.repo_root, paneId, options.role);
     if (readyWarning) {
       activation.notes.push(readyWarning);
     }
@@ -10224,7 +10247,7 @@ async function sendMessage(options) {
   const prompt = artifactName ? `${options.message}
 
 ${verdictInstruction(join6(state.canonical_run_dir, artifactName), reservedPass)}` : options.message;
-  const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
+  const delivery = await harness.sendToPane(runner, state.repo_root, paneId, prompt);
   const updated = await updateRunState(resolved.statePath, (fresh) => {
     const freshRecord = fresh.roles[options.role];
     if (!freshRecord) return;
@@ -10245,6 +10268,7 @@ ${verdictInstruction(join6(state.canonical_run_dir, artifactName), reservedPass)
 }
 async function interruptRole(options) {
   const runner = options.runner ?? nodeCommandRunner;
+  const harness = options.harness ?? createHarnessAdapter();
   const resolved = await resolveRunState(options, runner);
   const state = resolved.state;
   const record = state.roles[options.role];
@@ -10255,14 +10279,14 @@ async function interruptRole(options) {
   if (!paneId) {
     throw new Error(`Role ${options.role} has no launched pane to interrupt.`);
   }
-  const pane = await paneGet(runner, state.repo_root, paneId);
-  if (pane.exitCode !== 0) {
-    if (!pane.timedOut && !pane.error && isMissingPaneFailure2(pane)) {
+  const pane = await harness.validatePane(runner, state.repo_root, paneId);
+  if (pane.status !== "ok") {
+    if (pane.status === "missing") {
       throw new Error(`Role ${options.role} pane ${paneId} is missing; nothing to interrupt.`);
     }
-    throw new Error(`Could not validate ${options.role} pane ${paneId}: ${describeFailure(pane, "pane get failed")}`);
+    throw new Error(`Could not validate ${options.role} pane ${paneId}: ${describeFailure(pane.result, "pane get failed")}`);
   }
-  const escape = await paneSendEscape(runner, state.repo_root, paneId);
+  const escape = await harness.interruptPane(runner, state.repo_root, paneId);
   if (escape.exitCode !== 0) {
     throw new Error(`Could not send Escape to ${options.role} pane ${paneId}: ${describeFailure(escape, "pane send-keys failed")}`);
   }
@@ -10345,10 +10369,10 @@ async function ensureRolePane(options) {
   let launchedNow = false;
   let stalePane = false;
   if (record.herdr_pane_id) {
-    const pane = await paneGet(options.runner, options.state.repo_root, record.herdr_pane_id);
-    if (pane.exitCode !== 0) {
-      if (pane.timedOut || pane.error || !isMissingPaneFailure2(pane)) {
-        throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane, "pane get failed")}`);
+    const pane = await options.harness.validatePane(options.runner, options.state.repo_root, record.herdr_pane_id);
+    if (pane.status !== "ok") {
+      if (pane.status !== "missing") {
+        throw new Error(`Could not validate ${options.role} pane ${record.herdr_pane_id}: ${describeFailure(pane.result, "pane get failed")}`);
       }
       notes.push(`Detected stale pane for ${options.role}; relaunching.`);
       stalePane = true;
@@ -10380,7 +10404,7 @@ async function ensureRolePane(options) {
       throw new Error(`Role ${options.role} needs a worktree before launch.`);
     }
     notes.push(`Activating ${options.role}: launching session.`);
-    const launch = await launchRoleSession({
+    const launch = await options.harness.launchRoleSession({
       state: options.state,
       config: options.config,
       runner: options.runner,
@@ -10406,29 +10430,17 @@ async function ensureRolePane(options) {
   }
   return { notes, launchedNow };
 }
-function isMissingPaneFailure2(result) {
-  const output = `${result.stderr}
-${result.stdout}`.toLowerCase();
-  if (/\b(unknown command|unknown flag|unrecognized|unsupported)\b/.test(output)) {
-    return false;
-  }
-  return [
-    /\bmissing\s+pane\b/,
-    /\bpane\s+[^\n]*\b(missing|not found|does not exist)\b/,
-    /\b(no such|not found)\s+[^\n]*\bpane\b/
-  ].some((pattern) => pattern.test(output));
-}
 async function resolveRunState(options, runner) {
   return resolveRunContext({ cwd: options.cwd, run: options.run, configPath: options.configPath, env: options.env, runner });
 }
 function hasCurrentPaneEnv(env) {
   return env.HERDR_ENV === "1" && Boolean(env.HERDR_PANE_ID) && env.PI_CODING_AGENT === "true";
 }
-async function assertCurrentLead(state, runner, env) {
+async function assertCurrentLead(state, runner, harness, env) {
   if (!hasCurrentPaneEnv(env)) {
     throw new Error("Lead command must run from the bound Pi lead pane.");
   }
-  const verified = await verifyCurrentPane2(runner, state.repo_root, env.HERDR_PANE_ID);
+  const verified = await harness.verifyCurrentPane(runner, state.repo_root, env.HERDR_PANE_ID);
   if (!verified || state.lead_binding.herdr_pane_id !== env.HERDR_PANE_ID) {
     throw new Error("Lead command must run from the bound Pi lead pane for this run.");
   }
