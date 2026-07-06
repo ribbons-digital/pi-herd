@@ -9743,25 +9743,25 @@ async function commitsAheadOfImplementation(runner, worktreePath, implementation
   return { count, lines: logResult.stdout.trim() ? logResult.stdout.trimEnd().split(/\r?\n/) : [`${count} commit(s)`] };
 }
 async function sourceDiffs(runner, state) {
-  const diffs = [];
-  for (const record of sourceRoleRecords(state)) {
+  return Promise.all(sourceRoleRecords(state).map(async (record) => {
     const branch = record.branch;
     if (!branch) {
       throw new Error(`Source role ${record.role} branch is unavailable.`);
     }
     await assertRefExists(runner, state.repo_root, branch, `${record.role} source branch has not been created yet`);
     const range = `${state.base_ref}...${branch}`;
-    const stat3 = await git(runner, `show ${record.role} source diff stat`, ["diff", "--stat", range], state.repo_root);
-    const names = await git(runner, `show ${record.role} source changed files`, ["diff", "--name-status", range], state.repo_root);
-    diffs.push({
+    const [stat3, names] = await Promise.all([
+      git(runner, `show ${record.role} source diff stat`, ["diff", "--stat", range], state.repo_root),
+      git(runner, `show ${record.role} source changed files`, ["diff", "--name-status", range], state.repo_root)
+    ]);
+    return {
       role: record.role,
       branch,
       range,
       statLines: stat3.stdout.trim() ? stat3.stdout.trimEnd().split(/\r?\n/) : [],
       nameStatusLines: names.stdout.trim() ? names.stdout.trimEnd().split(/\r?\n/) : []
-    });
-  }
-  return diffs;
+    };
+  }));
 }
 function sourceRoleRecords(state) {
   const implementer = state.roles.implementer;
