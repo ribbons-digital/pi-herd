@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { createInterface, type Interface } from 'node:readline/promises';
 import { stdin as defaultStdin, stdout as defaultStdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -193,7 +194,12 @@ function parsePaneArgs(args: string[]): string | undefined {
   return run;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isDirectPluginPaneEntrypoint(): boolean {
+  const entrypoint = process.argv[1];
+  return Boolean(entrypoint && ['herdr-plugin-pane.ts', 'herdr-plugin-pane.js'].includes(basename(entrypoint)) && import.meta.url === pathToFileURL(entrypoint).href);
+}
+
+if (isDirectPluginPaneEntrypoint()) {
   runHerdrPluginPane({ argv: process.argv.slice(2) }).then((exitCode) => {
     process.exitCode = exitCode;
   }).catch((error: unknown) => {

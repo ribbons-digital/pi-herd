@@ -11,7 +11,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc --noEmit && esbuild src/cli.ts src/herdr-plugin-action.ts src/herdr-plugin-pane.ts src/pi-extension.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --outbase=src \"--banner:js=import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\"",
     "dev": "tsx src/cli.ts",
     "lint": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run"
@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
+    "esbuild": "^0.28.1",
     "smol-toml": "^1.7.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

@@ -1,4 +1,4 @@
-import { delimiter, dirname, isAbsolute, resolve } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { main as cliMain } from './cli.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
@@ -226,7 +226,12 @@ function startUsageText(): string {
   return 'Herdr 0.7.1 plugin actions do not pass goal text to actions. Run `pi-herd start <goal>` from the project checkout.\n';
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isDirectPluginActionEntrypoint(): boolean {
+  const entrypoint = process.argv[1];
+  return Boolean(entrypoint && ['herdr-plugin-action.ts', 'herdr-plugin-action.js'].includes(basename(entrypoint)) && import.meta.url === pathToFileURL(entrypoint).href);
+}
+
+if (isDirectPluginActionEntrypoint()) {
   runHerdrPluginAction({ argv: process.argv.slice(2) }).then((exitCode) => {
     process.exitCode = exitCode;
   }).catch((error: unknown) => {

@@ -32,9 +32,9 @@ Install these tools first:
 
 - Git.
 - Node.js.
-- pnpm.
 - Herdr 0.7.1 or newer.
 - Pi, with the Herdr Pi integration installed.
+- pnpm, when building or developing from a local checkout.
 
 After installing or linking the CLI, check your environment from a project checkout:
 
@@ -64,8 +64,9 @@ Install pi-herd with Herdr:
 herdr plugin install ribbons-digital/pi-herd
 ```
 
-Herdr runs the manifest build commands and registers the plugin actions and panes.
-This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for the Herdr plugin marketplace.
+Herdr registers the committed prebuilt `dist` files, so plugin install does not run `pnpm install` or `pnpm build` on the user's machine.
+The Herdr plugin is supported on Linux and macOS until Windows is verified.
+This repository is public and tagged with the GitHub topic `herdr-plugin`, so it is eligible for Herdr plugin discovery.
 
 ### Link a local checkout as a Herdr plugin
 
@@ -566,6 +567,7 @@ Important safety rules:
 ## Herdr plugin actions and panes
 
 The root `herdr-plugin.toml` declares plugin id `ribbons-digital.pi-herd`.
+The manifest supports Linux and macOS plugin installs until Windows is verified.
 
 Available actions:
 
@@ -684,7 +686,8 @@ A repository appears in the marketplace when all of these are true:
 - The repository contains a `herdr-plugin.toml` manifest at the root or in an installable subdirectory.
 
 This repository is public, has a root `herdr-plugin.toml`, and has the `herdr-plugin` topic.
-The marketplace should pick it up automatically on its next refresh.
+Public discovery is separate from owner licensing and publishing decisions, and this package remains private and UNLICENSED until the owner changes that.
+The marketplace should pick it up automatically on its next refresh when discovery requirements are met.
 
 Install command for users:
 

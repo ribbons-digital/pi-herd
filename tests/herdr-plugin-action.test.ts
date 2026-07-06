@@ -19,7 +19,8 @@ interface PluginManifest {
   name: string;
   version: string;
   min_herdr_version: string;
-  build: Array<{ command: string[] }>;
+  platforms: string[];
+  build?: Array<{ command: string[] }>;
   actions: Array<{ id: string; title: string; contexts: string[]; command: string[] }>;
   panes: Array<{ id: string; title: string; command: string[] }>;
 }
@@ -30,7 +31,7 @@ afterEach(() => {
 });
 
 describe('Herdr plugin manifest', () => {
-  it('declares the expected metadata, pnpm build commands, and actions', async () => {
+  it('declares the expected metadata, supported platforms, actions, and panes', async () => {
     const manifestText = await readFile(join(repoRoot, 'herdr-plugin.toml'), 'utf8');
     const manifest = parseToml(manifestText) as unknown as PluginManifest;
 
@@ -38,10 +39,8 @@ describe('Herdr plugin manifest', () => {
     expect(manifest.name).toBe('pi-herd');
     expect(manifest.version).toBe('0.1.0');
     expect(manifest.min_herdr_version).toBe('0.7.1');
-    expect(manifest.build.map((entry) => entry.command)).toEqual([
-      ['pnpm', 'install', '--frozen-lockfile'],
-      ['pnpm', 'build']
-    ]);
+    expect(manifest.platforms).toEqual(['linux', 'macos']);
+    expect(manifest.build).toBeUndefined();
 
     expect(manifest.actions.map((action) => action.id)).toEqual(['doctor', 'start', 'status', 'collect', 'cleanup']);
     for (const action of manifest.actions) {
