@@ -309,7 +309,7 @@ async function sendPlannerKickoff(runner: CommandRunner, paneId: string, state: 
     const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
-    planner!.status = 'failed';
+    if (planner) planner.status = 'failed';
     throw error;
   }
 }

@@ -51,14 +51,74 @@ describe('init', () => {
 
   it('does not overwrite config or prompts without force', async () => {
     await runInit({ cwd: dir });
-    await writeFile(join(dir, '.pi-herd/config.yaml'), 'custom: true\n', 'utf8');
+    const customConfig = [
+      'schema_version: 1',
+      'harness:',
+      '  default: pi',
+      '  profiles:',
+      '    pi:',
+      '      command: pi',
+      'paths:',
+      '  runs_dir: .pi-herd/runs',
+      '  prompts_dir: .pi-herd/prompts',
+      'roles:',
+      '  default:',
+      '    - planner',
+      '  definitions:',
+      '    planner:',
+      '      display_name: Custom Planner',
+      '      expected_writes: artifacts',
+      '      required_artifacts:',
+      '        - CUSTOM_PLAN.md',
+      ''
+    ].join('\n');
+    await writeFile(join(dir, '.pi-herd/config.yaml'), customConfig, 'utf8');
     await writeFile(join(dir, '.pi-herd/prompts/planner.md'), 'custom prompt\n', 'utf8');
 
     const result = await runInit({ cwd: dir });
 
     expect(result.skipped).toContain(join(dir, '.pi-herd/config.yaml'));
-    await expect(readFile(join(dir, '.pi-herd/config.yaml'), 'utf8')).resolves.toBe('custom: true\n');
+    await expect(readFile(join(dir, '.pi-herd/config.yaml'), 'utf8')).resolves.toBe(customConfig);
     await expect(readFile(join(dir, '.pi-herd/prompts/planner.md'), 'utf8')).resolves.toBe('custom prompt\n');
+  });
+
+  it('uses existing config roles and prompt path when creating prompts on a later init', async () => {
+    await runInit({ cwd: dir });
+    await writeFile(join(dir, '.pi-herd/config.yaml'), [
+      'schema_version: 1',
+      'harness:',
+      '  default: pi',
+      '  profiles:',
+      '    pi:',
+      '      command: pi',
+      'paths:',
+      '  runs_dir: .pi-herd/runs',
+      '  prompts_dir: custom-prompts',
+      'roles:',
+      '  default:',
+      '    - audit_bot',
+      '  definitions:',
+      '    audit_bot:',
+      '      display_name: Audit Bot',
+      '      expected_writes: artifacts',
+      '      required_artifacts:',
+      '        - AUDIT.md',
+      '    observer:',
+      '      display_name: Observer',
+      '      expected_writes: none',
+      '      required_artifacts: []',
+      ''
+    ].join('\n'), 'utf8');
+
+    const result = await runInit({ cwd: dir });
+
+    const auditPromptPath = join(dir, 'custom-prompts/audit_bot.md');
+    expect(result.skipped).toContain(join(dir, '.pi-herd/config.yaml'));
+    expect(result.created).toContain(auditPromptPath);
+    await expect(readFile(auditPromptPath, 'utf8')).resolves.toContain('# Audit Bot prompt template');
+    await expect(readFile(auditPromptPath, 'utf8')).resolves.toContain('Expected writes: artifacts.');
+    await expect(readFile(auditPromptPath, 'utf8')).resolves.toContain('Required artifact(s): AUDIT.md.');
+    await expect(readFile(join(dir, 'custom-prompts/observer.md'), 'utf8')).rejects.toThrow();
   });
 
   it('overwrites config and prompts with force', async () => {

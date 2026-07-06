@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { randomUUID } from 'node:crypto';
 import { assertSafeRoleName, defaultConfig, loadConfig, resolveConfigPath, type PiHerdConfig } from './config.js';
 import { nodeCommandRunner, type CommandRunner } from './command-runner.js';
-import { DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, type RoleDefinition, type RoleName } from './defaults.js';
+import { DEFAULT_ROLE_REGISTRY, DEFAULT_RUNS_DIR, DEFAULT_WORKTREES_DIR, type RoleDefinition, type RoleName } from './defaults.js';
 import { assertRepoClean, materializeWorktrees, type MaterializedWorktree } from './worktree.js';
 import { firstLine, verifyCurrentPane } from './herdr.js';
 
@@ -759,7 +759,17 @@ function sleep(ms: number): Promise<void> {
 
 /** Read a persisted run state JSON file. */
 export async function readRunState(path: string): Promise<RunState> {
-  return JSON.parse(await readFile(path, 'utf8')) as RunState;
+  const state = JSON.parse(await readFile(path, 'utf8')) as RunState;
+  hydrateLegacyRoleRecords(state);
+  return state;
+}
+
+function hydrateLegacyRoleRecords(state: RunState): void {
+  for (const record of Object.values(state.roles)) {
+    if (record && record.expected_writes === undefined) {
+      record.expected_writes = DEFAULT_ROLE_REGISTRY.definitions[record.role]?.expected_writes ?? 'none';
+    }
+  }
 }
 
 function toSummary(state: RunState): ActiveRunSummary {

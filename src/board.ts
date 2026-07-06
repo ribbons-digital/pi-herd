@@ -156,7 +156,7 @@ function formatArtifactPaths(state: RunState, snapshot: RunSnapshot): string[] {
 }
 
 function orderedRoles(state: RunState): RoleName[] {
-  const ordered = state.role_order?.length ? state.role_order : LEGACY_ROLE_ORDER;
+  const ordered = state.role_order ?? LEGACY_ROLE_ORDER;
   const roles = [...ordered];
   for (const role of Object.keys(state.roles)) {
     if (!roles.includes(role)) {

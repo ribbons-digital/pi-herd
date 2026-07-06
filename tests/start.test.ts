@@ -259,6 +259,29 @@ describe('start orchestration', () => {
     expect(runner.calls.some((call) => call.startsWith('git status '))).toBe(false);
   });
 
+  it('starts an implementer-only run without entering the planner kickoff path', async () => {
+    const runId = '2026-07-01T12-00-00-implementer-only';
+    const runner = new RecordingRunner(baseResponses({
+      'herdr pane current --current': okJson(envelopedPane('cli:pane:current', { pane_id: 'lead-pane', workspace_id: 'lead-ws', tab_id: 'lead-tab' })),
+      [worktreeCommand('implementer-only')]: okJson({ workspace_id: 'impl-wt-ws', checkout_path: join(dir, '.worktrees/pi-herd', runId, 'implementer'), branch: `pi-herd/${runId}/impl` }),
+      [`herdr agent start pi-herd-${runId}-implementer --cwd DIR/.worktrees/pi-herd/${runId}/implementer --workspace lead-ws --split down --no-focus -- pi --name pi-herd-${runId}-implementer --session-id ${runId}-implementer`]: okJson({ pane_id: 'impl-pane', workspace_id: 'lead-ws', tab_id: 'impl-tab' })
+    }));
+
+    const result = await startRun({
+      cwd: dir,
+      goal: 'Implementer only',
+      now: NOW,
+      roles: ['implementer'],
+      runner,
+      env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', HERDR_WORKSPACE_ID: 'lead-ws', HERDR_TAB_ID: 'lead-tab', PI_CODING_AGENT: 'true' }
+    });
+
+    expect(result.state.roles.planner).toBeUndefined();
+    expect(result.state.roles.implementer?.herdr_pane_id).toBe('impl-pane');
+    expect(runner.calls.some((call) => call.includes('-planner'))).toBe(false);
+    expect(runner.calls.some((call) => call.startsWith('herdr pane send-text'))).toBe(false);
+  });
+
   it('warns and still sends planner kickoff when readiness wait times out', async () => {
     const runner = new RecordingRunner(baseResponses({
       'herdr workspace create --cwd DIR --label pi-herd slow-planner lead --no-focus': okJson({ workspace_id: 'new-lead-ws' }),
@@ -354,7 +377,7 @@ describe('start orchestration', () => {
       now: NOW,
       runner,
       env: { HERDR_ENV: '1', HERDR_PANE_ID: 'lead-pane', PI_CODING_AGENT: 'true' }
-    })).rejects.toThrow(/send failed/);
+    })).rejects.toThrow(/Could not send pane text: send failed/);
 
     const state = JSON.parse(await readFile(join(dir, '.pi-herd/runs/2026-07-01T12-00-00-kickoff-fails/state.json'), 'utf8')) as RunState;
     expect(state.status).toBe('failed');

@@ -222,6 +222,16 @@ describe('messaging commands', () => {
     expect(saved.roles.planner?.last_activity_at).toBeNull();
   });
 
+  it('uses hydrated legacy implementer write capability before launching a role', async () => {
+    const { state, statePath } = await createStartedRun({ plannerPane: 'planner-pane' });
+    delete state.roles.implementer!.expected_writes;
+    await writeJsonAtomic(statePath, state);
+    const runner = new RecordingRunner(baseResponses({}));
+
+    await expect(sendMessage({ cwd: dir, run: state.run_id, role: 'implementer', message: 'Implement this', runner })).rejects.toThrow(/Role implementer needs a worktree before launch/);
+    expect(runner.calls.some((call) => call.includes('agent start'))).toBe(false);
+  });
+
   it('requires lead commands to run from the bound lead pane', async () => {
     const { state } = await createStartedRun({ plannerPane: 'planner-pane' });
     const runner = new RecordingRunner(baseResponses({}));

@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createRun, listActiveRuns, listRunsForInvocation, resolveActiveRun, updateRunState, type RunState } from '../src/run-state.js';
+import { createRun, listActiveRuns, listRunsForInvocation, readRunState, resolveActiveRun, updateRunState, type RunState } from '../src/run-state.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +55,21 @@ describe('run state', () => {
     const saved = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
     expect(saved.run_id).toBe(result.state.run_id);
     await expect(readFile(join(result.state.canonical_run_dir, 'inbox', 'missing.md'), 'utf8')).rejects.toThrow();
+  });
+
+  it('hydrates legacy built-in implementer write capability when reading state', async () => {
+    const result = await createRun({
+      cwd: dir,
+      goal: 'Legacy implementer state',
+      now: new Date('2026-07-01T12:00:00.000Z')
+    });
+    const legacy = JSON.parse(await readFile(result.statePath, 'utf8')) as RunState;
+    delete legacy.roles.implementer!.expected_writes;
+    await writeFile(result.statePath, `${JSON.stringify(legacy, null, 2)}\n`, 'utf8');
+
+    const hydrated = await readRunState(result.statePath);
+
+    expect(hydrated.roles.implementer?.expected_writes).toBe('worktree');
   });
 
   it('uses configured default roles, preserves their order, and carries custom role metadata', async () => {

@@ -199,6 +199,9 @@ function validateRoleRegistry(value: unknown): RoleRegistryConfig {
   if (!isStringArray(value.default)) {
     throw new Error('Config roles.default must be a string array.');
   }
+  if (value.default.length === 0) {
+    throw new Error('Config roles.default must include at least one role.');
+  }
   if (!isRecord(value.definitions)) {
     throw new Error('Config roles.definitions must be a mapping.');
   }

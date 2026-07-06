@@ -7580,6 +7580,9 @@ function validateRoleRegistry(value) {
   if (!isStringArray(value.default)) {
     throw new Error("Config roles.default must be a string array.");
   }
+  if (value.default.length === 0) {
+    throw new Error("Config roles.default must include at least one role.");
+  }
   if (!isRecord(value.definitions)) {
     throw new Error("Config roles.definitions must be a mapping.");
   }
@@ -7830,12 +7833,8 @@ var GITIGNORE_LINES = [`/${DEFAULT_RUNS_DIR}/`, `/${DEFAULT_WORKTREES_DIR.replac
 async function runInit(options) {
   const configPath = resolveConfigPath(options.cwd, options.configPath);
   const configDir = dirname2(configPath);
-  const runsDir = resolve2(options.cwd, DEFAULT_RUNS_DIR);
-  const promptsDir = resolve2(options.cwd, DEFAULT_PROMPTS_DIR);
   const result = { configPath, created: [], updated: [], skipped: [] };
   await ensureDir(configDir, result);
-  await ensureDir(runsDir, result);
-  await ensureDir(promptsDir, result);
   if (await exists(configPath)) {
     if (options.force) {
       await writeDefaultConfig(configPath);
@@ -7847,7 +7846,11 @@ async function runInit(options) {
     await writeDefaultConfig(configPath);
     result.created.push(configPath);
   }
-  const config = defaultConfig();
+  const config = await loadConfig(configPath);
+  const runsDir = resolve2(options.cwd, config.paths.runs_dir || DEFAULT_RUNS_DIR);
+  const promptsDir = resolve2(options.cwd, config.paths.prompts_dir || DEFAULT_PROMPTS_DIR);
+  await ensureDir(runsDir, result);
+  await ensureDir(promptsDir, result);
   for (const role of config.roles.default) {
     const definition = config.roles.definitions[role];
     const path = join(promptsDir, `${role}.md`);
@@ -8866,7 +8869,16 @@ function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 async function readRunState(path) {
-  return JSON.parse(await readFile3(path, "utf8"));
+  const state = JSON.parse(await readFile3(path, "utf8"));
+  hydrateLegacyRoleRecords(state);
+  return state;
+}
+function hydrateLegacyRoleRecords(state) {
+  for (const record of Object.values(state.roles)) {
+    if (record && record.expected_writes === void 0) {
+      record.expected_writes = DEFAULT_ROLE_REGISTRY.definitions[record.role]?.expected_writes ?? "none";
+    }
+  }
 }
 function toSummary(state) {
   return {
@@ -9152,7 +9164,7 @@ ${verdictInstruction(planPath, 1)}`;
     const delivery = await sendToPane(runner, state.repo_root, paneId, prompt);
     return delivery.note ? `planner kickoff: ${delivery.note}` : null;
   } catch (error) {
-    planner.status = "failed";
+    if (planner) planner.status = "failed";
     throw error;
   }
 }
@@ -10362,7 +10374,7 @@ function formatArtifactPaths(state, snapshot) {
   return paths.size ? Array.from(paths).map((path) => `- ${path}`) : ["- none"];
 }
 function orderedRoles(state) {
-  const ordered = state.role_order?.length ? state.role_order : LEGACY_ROLE_ORDER;
+  const ordered = state.role_order ?? LEGACY_ROLE_ORDER;
   const roles = [...ordered];
   for (const role of Object.keys(state.roles)) {
     if (!roles.includes(role)) {

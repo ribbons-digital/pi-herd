@@ -125,6 +125,22 @@ describe('config', () => {
     })).toThrow(/must use lowercase letters/);
   });
 
+  it('rejects an explicit empty roles.default selection with a roles.default error', () => {
+    expect(() => validateConfig({
+      ...legacyConfig(),
+      roles: {
+        default: [],
+        definitions: {
+          planner: {
+            display_name: 'Planner',
+            expected_writes: 'artifacts',
+            required_artifacts: ['PLAN.md']
+          }
+        }
+      }
+    })).toThrow(/roles\.default/);
+  });
+
   it('rejects roles.default entries that are not defined', () => {
     expect(() => validateConfig({
       ...legacyConfig(),
